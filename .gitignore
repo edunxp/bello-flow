@@ -9,6 +9,7 @@ dist/
 build/
 out/
 coverage/
+*.tsbuildinfo
 .angular/
 .nx/
 .turbo/
