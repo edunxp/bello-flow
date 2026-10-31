@@ -1,0 +1,25 @@
+{
+  "name": "bello-flow",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.19.1",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "npm run start --workspace=@bello/web",
+    "dev:api": "npm run start:dev --workspace=@bello/api",
+    "build": "npm run build --workspaces --if-present",
+    "build:web": "npm run build --workspace=@bello/web",
+    "build:api": "npm run build --workspace=@bello/api",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "9.2.5"
+  },
+  "engines": {
+    "node": "24.22.2",
+    "npm": "11.19.1"
+  }
+}
