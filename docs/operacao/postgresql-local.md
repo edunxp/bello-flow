@@ -156,6 +156,65 @@ segredos do ambiente de implantação. A aplicação nunca deve ser iniciada com
 `node --env-file=.env.postgres`, pois isso disponibilizaria todas as credenciais
 do arquivo ao processo normal.
 
+### Migrations locais
+
+Migrations usam credenciais distintas da aplicação. A função abaixo fornece ao
+Prisma CLI somente as URLs do migrator de desenvolvimento e do shadow database:
+
+```bash
+with_bello_dev_migrations() (
+  set +a
+  source ./.env.postgres
+
+  if [[ -z "${BELLO_DEV_MIGRATOR_PASSWORD:-}" || \
+        -z "${BELLO_SHADOW_MIGRATOR_PASSWORD:-}" ]]; then
+    echo 'Migration credentials are required' >&2
+    return 1
+  fi
+
+  MIGRATION_DATABASE_URL="$(
+    BELLO_DEV_MIGRATOR_PASSWORD="$BELLO_DEV_MIGRATOR_PASSWORD" node -e '
+      const url = new URL("postgresql://bello_dev_migrator@127.0.0.1:15432/bello_dev");
+      url.password = process.env.BELLO_DEV_MIGRATOR_PASSWORD;
+      process.stdout.write(url.toString());
+    '
+  )" || return
+
+  SHADOW_DATABASE_URL="$(
+    BELLO_SHADOW_MIGRATOR_PASSWORD="$BELLO_SHADOW_MIGRATOR_PASSWORD" node -e '
+      const url = new URL("postgresql://bello_shadow_migrator@127.0.0.1:15432/bello_shadow");
+      url.password = process.env.BELLO_SHADOW_MIGRATOR_PASSWORD;
+      process.stdout.write(url.toString());
+    '
+  )" || return
+
+  unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
+  unset BELLO_DEV_APP_PASSWORD BELLO_DEV_MIGRATOR_PASSWORD
+  unset BELLO_SHADOW_MIGRATOR_PASSWORD BELLO_TEST_APP_PASSWORD
+  unset BELLO_TEST_MIGRATOR_PASSWORD DATABASE_URL
+  export MIGRATION_DATABASE_URL SHADOW_DATABASE_URL
+
+  exec "$@"
+)
+```
+
+Defina a função na raiz do repositório. Antes de aplicar qualquer migration,
+gere o artefato sem aplicação, revise o SQL e só então execute o deploy:
+
+```bash
+with_bello_dev_migrations \
+  npm exec --workspace=@bello/api -- prisma migrate dev --create-only --name <nome>
+
+with_bello_dev_migrations \
+  npm exec --workspace=@bello/api -- prisma migrate deploy
+
+with_bello_dev_migrations \
+  npm exec --workspace=@bello/api -- prisma migrate status
+```
+
+Não use a credencial operacional da API para migrations e nunca configure o
+mesmo banco como datasource principal e shadow database.
+
 ## Validação
 
 Confirmar a versão e os bancos criados:
