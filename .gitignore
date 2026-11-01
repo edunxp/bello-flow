@@ -17,6 +17,7 @@ coverage/
 .parcel-cache/
 
 # Prisma and local databases
+/apps/api/src/generated/prisma/
 *.db
 *.db-journal
 *.sqlite

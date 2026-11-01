@@ -77,6 +77,85 @@ postgresql://bello_dev_app:<senha-local>@127.0.0.1:15432/bello_dev
 
 As credenciais administrativas e de migration não devem ser usadas pelo processo normal da aplicação.
 
+## Prisma e API local
+
+Gerar o Prisma Client não acessa o PostgreSQL e não requer URLs administrativas:
+
+```bash
+npm run prisma:generate --workspace=@bello/api
+```
+
+O processo da API deve receber somente `DATABASE_URL`. A função Bash abaixo lê o
+arquivo local em uma subshell, codifica a senha operacional com a API `URL` do
+Node.js, remove as demais credenciais do ambiente do processo filho e não exibe
+nem grava a senha no histórico:
+
+```bash
+with_bello_dev_database() (
+  set +a
+  source ./.env.postgres
+
+  if [[ -z "${BELLO_DEV_APP_PASSWORD:-}" ]]; then
+    echo 'BELLO_DEV_APP_PASSWORD is required' >&2
+    return 1
+  fi
+
+  DATABASE_URL="$(
+    BELLO_DEV_APP_PASSWORD="$BELLO_DEV_APP_PASSWORD" node -e '
+      const url = new URL("postgresql://bello_dev_app@127.0.0.1:15432/bello_dev");
+      url.password = process.env.BELLO_DEV_APP_PASSWORD;
+      process.stdout.write(url.toString());
+    '
+  )" || return
+
+  unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
+  unset BELLO_DEV_APP_PASSWORD BELLO_DEV_MIGRATOR_PASSWORD
+  unset BELLO_SHADOW_MIGRATOR_PASSWORD BELLO_TEST_APP_PASSWORD
+  unset BELLO_TEST_MIGRATOR_PASSWORD
+  unset MIGRATION_DATABASE_URL SHADOW_DATABASE_URL
+  export DATABASE_URL
+
+  exec "$@"
+)
+```
+
+Defina a função a partir da raiz do repositório e inicie a API:
+
+```bash
+with_bello_dev_database npm run dev:api
+```
+
+O `PrismaService` conecta durante a inicialização. Se a conexão falhar, o
+servidor HTTP não começa a escutar. `Ctrl+C` aciona os hooks de shutdown do
+NestJS e encerra o pool do Prisma.
+
+Executar somente a prova de integração Prisma/PostgreSQL:
+
+```bash
+with_bello_dev_database \
+  npm run test:prisma --workspace=@bello/api
+```
+
+Executar todos os testes E2E, incluindo a prova de conexão:
+
+```bash
+with_bello_dev_database \
+  npm run test:e2e --workspace=@bello/api
+```
+
+Gerar e compilar a API explicitamente:
+
+```bash
+npm run prisma:generate --workspace=@bello/api
+npm run build:api
+```
+
+Esse procedimento é exclusivo do desenvolvimento local. Ele pressupõe que
+`.env.postgres` seja um arquivo local confiável e não substitui o mecanismo de
+segredos do ambiente de implantação. A aplicação nunca deve ser iniciada com
+`node --env-file=.env.postgres`, pois isso disponibilizaria todas as credenciais
+do arquivo ao processo normal.
+
 ## Validação
 
 Confirmar a versão e os bancos criados:
