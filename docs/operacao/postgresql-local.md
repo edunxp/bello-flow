@@ -215,6 +215,111 @@ with_bello_dev_migrations \
 Não use a credencial operacional da API para migrations e nunca configure o
 mesmo banco como datasource principal e shadow database.
 
+### Prova local de transações
+
+A prova F0.2.2-C usa uma única tabela descartável em `bello_test`. O migrator
+cria e remove a tabela; o processo NestJS recebe somente a URL de
+`bello_test_app`, sem privilégios DDL. Execute a função abaixo a partir da raiz
+do repositório:
+
+```bash
+with_bello_test_transaction_probe() (
+  set +a
+  source ./.env.postgres
+
+  if [[ -z "${BELLO_TEST_APP_PASSWORD:-}" ]]; then
+    echo 'BELLO_TEST_APP_PASSWORD is required' >&2
+    return 1
+  fi
+
+  DATABASE_URL="$(
+    BELLO_TEST_APP_PASSWORD="$BELLO_TEST_APP_PASSWORD" node -e '
+      const url = new URL("postgresql://bello_test_app@127.0.0.1:15432/bello_test");
+      url.password = process.env.BELLO_TEST_APP_PASSWORD;
+      process.stdout.write(url.toString());
+    '
+  )" || return
+
+  docker compose exec -T postgres sh -ec '
+    PGPASSWORD="$BELLO_TEST_MIGRATOR_PASSWORD" psql \
+      -v ON_ERROR_STOP=1 -h 127.0.0.1 \
+      -U bello_test_migrator -d bello_test <<"SQL"
+BEGIN;
+DO $$
+BEGIN
+  IF current_database() <> '\''bello_test'\'' OR current_user <> '\''bello_test_migrator'\'' THEN
+    RAISE EXCEPTION '\''unexpected database identity'\'';
+  END IF;
+  IF to_regclass('\''public._f022c_transaction_probe'\'') IS NOT NULL THEN
+    RAISE EXCEPTION '\''transaction probe table already exists'\'';
+  END IF;
+END
+$$;
+CREATE TABLE public._f022c_transaction_probe (
+  run_id text NOT NULL,
+  step integer NOT NULL,
+  PRIMARY KEY (run_id, step)
+);
+REVOKE ALL ON TABLE public._f022c_transaction_probe FROM PUBLIC;
+GRANT SELECT, INSERT, DELETE
+  ON TABLE public._f022c_transaction_probe TO bello_test_app;
+COMMIT;
+SQL
+  ' || return
+
+  cleanup_transaction_probe() {
+    docker compose exec -T postgres sh -ec '
+      PGPASSWORD="$BELLO_TEST_MIGRATOR_PASSWORD" psql \
+        -v ON_ERROR_STOP=1 -h 127.0.0.1 \
+        -U bello_test_migrator -d bello_test <<"SQL"
+DO $$
+BEGIN
+  IF current_database() <> '\''bello_test'\'' OR current_user <> '\''bello_test_migrator'\'' THEN
+    RAISE EXCEPTION '\''unexpected database identity'\'';
+  END IF;
+  IF (SELECT pg_get_userbyid(relowner)
+      FROM pg_class
+      WHERE oid = '\''public._f022c_transaction_probe'\''::regclass) <> current_user THEN
+    RAISE EXCEPTION '\''unexpected transaction probe owner'\'';
+  END IF;
+END
+$$;
+DROP TABLE public._f022c_transaction_probe;
+SELECT to_regclass('\''public._f022c_transaction_probe'\'') IS NULL AS removed;
+SQL
+    '
+  }
+  trap cleanup_transaction_probe EXIT
+
+  unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
+  unset BELLO_DEV_APP_PASSWORD BELLO_DEV_MIGRATOR_PASSWORD
+  unset BELLO_SHADOW_MIGRATOR_PASSWORD BELLO_TEST_APP_PASSWORD
+  unset BELLO_TEST_MIGRATOR_PASSWORD
+  unset MIGRATION_DATABASE_URL SHADOW_DATABASE_URL
+  export DATABASE_URL
+
+  PATH=/home/matias/.nvm/versions/node/v24.22.2/bin:$PATH \
+    npm run test:transaction --workspace=@bello/api
+  test_status=$?
+
+  trap - EXIT
+  cleanup_transaction_probe
+  cleanup_status=$?
+
+  if ((test_status != 0)); then
+    return "$test_status"
+  fi
+  return "$cleanup_status"
+)
+```
+
+A checagem inicial interrompe sem remover nada se a tabela já existir. O trap
+faz o cleanup também quando o teste falha normalmente e remove somente essa
+tabela. Um encerramento não capturável, como `SIGKILL`, pode deixar a tabela;
+nesse caso, preserve o estado para diagnóstico em vez de executar limpeza
+genérica. O teste E2E comum continua usando `bello_dev` e exclui explicitamente
+esta prova, que só deve ser iniciada pela função acima.
+
 ## Validação
 
 Confirmar a versão e os bancos criados:
