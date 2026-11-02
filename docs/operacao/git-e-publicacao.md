@@ -139,29 +139,68 @@ identificado.
    git status --short --branch
    ```
 
+   A referência remota deve apontar para o SHA autorizado, `HEAD` e `origin/main`
+   devem coincidir, a comparação deve indicar `0 behind / 0 ahead` e o working
+   tree deve permanecer limpo. Se qualquer evidência divergir, não inicie a
+   verificação de CI como se a publicação estivesse confirmada.
+
 Nunca use `--force` ou `--force-with-lease` como recuperação automática de uma
 publicação rejeitada.
 
 ## GitHub Actions
 
-Após uma publicação bem-sucedida:
+Após confirmar a publicação e a sincronização da branch:
 
-1. Localize a execução do workflow `CI` associada ao hash publicado.
-2. Confirme que o `head_sha` da execução é exatamente o commit autorizado.
-3. Aguarde o estado terminal e verifique individualmente:
+1. Registre o SHA publicado e localize o workflow `CI` filtrando por esse SHA
+   exato. Não selecione uma execução apenas por ser a mais recente. Confirme na
+   execução encontrada:
+   - `head_sha` igual ao SHA publicado;
+   - branch `main`;
+   - workflow `CI`;
+   - evento de push correspondente;
+   - tentativa atual da execução, quando houver reexecuções.
+2. Registre o identificador e o link da execução. Se ainda não houver workflow
+   para o SHA, aguarde aproximadamente 15 segundos antes de consultar novamente.
+3. Consulte o estado do workflow e dos jobs obrigatórios:
    - `Quality`;
    - `API integration`;
    - `Required`.
-4. Registre o resultado de cada job e forneça o link da execução, quando
-   disponível.
+4. Enquanto o workflow ou qualquer job estiver `queued` ou `in_progress`, não o
+   classifique como aprovado ou reprovado. Consulte novamente em intervalos
+   moderados, aproximadamente a cada 15 segundos, evitando polling contínuo ou
+   consultas em rajada.
+5. Continue até obter estado terminal para o workflow e para os três jobs. Não
+   imponha um timeout de apenas um minuto. Se indisponibilidade de rede,
+   autenticação, limitação da ferramenta ou interrupção do ambiente impedir a
+   continuidade, registre o último estado observado e classifique a verificação
+   como não concluída, sem presumir o resultado.
+6. Declare sucesso somente quando:
+   - o workflow estiver `completed` com conclusão `success`;
+   - `Quality` estiver `completed` com conclusão `success`;
+   - `API integration` estiver `completed` com conclusão `success`;
+   - `Required` estiver `completed` com conclusão `success`.
+7. Em caso de conclusão diferente de `success`, informe o job, sua conclusão,
+   a etapa ou evidência disponível e o link da execução. Não altere código,
+   configuração ou dados e não reexecute o workflow automaticamente.
 
 Use o cliente GitHub configurado no ambiente ou a API do GitHub em modo somente
-leitura. Não declare sucesso com base apenas no resultado do `git push`. Se o CI
-falhar, apresente o job, a etapa e a evidência disponível sem alterar código ou
-reexecutar o workflow automaticamente.
+leitura. Durante o acompanhamento, não crie commits, não modifique arquivos, não
+execute novos pushes e não use force push. Não declare sucesso com base apenas no
+resultado do `git push`.
 
 Se o ambiente não tiver acesso ao GitHub Actions, informe explicitamente que o CI
-não pôde ser verificado e forneça apenas as evidências locais disponíveis.
+não pôde ser verificado e forneça apenas as evidências locais e o último estado
+remoto comprovado.
+
+O relatório final da publicação deve conter:
+
+- SHA publicado;
+- resultado do push;
+- confirmação do commit remoto, sincronização da branch e working tree;
+- status e conclusão de `Quality`, `API integration` e `Required`;
+- status e conclusão do workflow `CI`;
+- link da execução;
+- limitações ou pendências de verificação.
 
 ## Situações excepcionais
 
