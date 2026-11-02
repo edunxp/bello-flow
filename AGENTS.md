@@ -188,8 +188,6 @@ passar.
 
 ## Git
 
-Antes e depois do trabalho, inspecione o estado do Git.
-
 - Não descarte alterações do usuário.
 - Não use comandos destrutivos, force push ou reescrita de histórico sem
   autorização inequívoca.
@@ -198,8 +196,10 @@ Antes e depois do trabalho, inspecione o estado do Git.
 - Não execute `git commit` sem autorização específica.
 - Não execute `git push` sem autorização específica de publicação.
 - Autorização para commit não implica autorização para push.
-- Revise o staging antes de commit com `git diff --cached --stat`,
-  `git diff --cached --check` e `git diff --cached --name-status`.
+
+Sempre que a atividade envolver preparação de commit, publicação ou verificação
+de CI, consulte e siga o
+[Procedimento de Git e publicação](docs/operacao/git-e-publicacao.md).
 
 ## Relatório
 
