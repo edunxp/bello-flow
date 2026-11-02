@@ -9,5 +9,17 @@ export default defineConfig({
     root: './',
     include: ['**/*.spec.ts'],
     exclude: ['test/**'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.d.ts', 'src/**/*.spec.ts', 'src/generated/**'],
+      reporter: ['text', 'html', 'json-summary'],
+      thresholds: {
+        lines: 90,
+        statements: 90,
+        functions: 90,
+        branches: 90,
+      },
+    },
   },
 });
