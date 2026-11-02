@@ -10,10 +10,20 @@
     "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev:web\" \"npm run dev:api\"",
     "dev:web": "npm run start --workspace=@bello/web",
     "dev:api": "npm run start:dev --workspace=@bello/api",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspaces",
     "build:web": "npm run build --workspace=@bello/web",
     "build:api": "npm run build --workspace=@bello/api",
-    "test": "npm run test --workspaces --if-present"
+    "lint": "npm run lint --workspaces",
+    "format:check": "prettier --check package.json \"scripts/**/*.mjs\" && npm run format:check --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces",
+    "test:unit": "npm run test --workspaces",
+    "test:coverage:script": "node scripts/check-coverage.test.mjs",
+    "test:coverage": "npm run test:cov --workspaces && node scripts/check-coverage.mjs",
+    "test:e2e": "npm run test:e2e --workspace=@bello/api",
+    "test:prisma": "npm run test:prisma --workspace=@bello/api",
+    "test:transaction": "npm run test:transaction --workspace=@bello/api",
+    "quality:local": "npm run prisma:generate --workspace=@bello/api && npm run format:check && npm run lint && npm run typecheck && npm run test:coverage:script && npm run test:coverage && npm run build"
   },
   "devDependencies": {
     "concurrently": "9.2.5"
