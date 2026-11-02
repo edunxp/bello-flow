@@ -9,3 +9,74 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+model Account {
+  id              String                 @id @db.Uuid
+  firstName       String                 @map("first_name") @db.VarChar(100)
+  lastName        String                 @map("last_name") @db.VarChar(100)
+  email           String                 @db.VarChar(254)
+  emailKey        String                 @unique(map: "account_email_key_key") @map("email_key") @db.VarChar(254)
+  emailVerifiedAt DateTime?              @map("email_verified_at") @db.Timestamptz(6)
+  status          String                 @db.VarChar(20)
+  createdAt       DateTime               @map("created_at") @db.Timestamptz(6)
+  deactivatedAt   DateTime?              @map("deactivated_at") @db.Timestamptz(6)
+  credential      PasswordCredential?
+  globalRoles     GlobalRoleAssignment[]
+  bootstrapStates BootstrapState[]
+  auditEvents     AuditEvent[]
+
+  @@map("account")
+}
+
+model PasswordCredential {
+  accountId    String   @id @map("account_id") @db.Uuid
+  passwordHash String   @map("password_hash") @db.Text
+  changedAt    DateTime @map("changed_at") @db.Timestamptz(6)
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("password_credential")
+}
+
+model GlobalRoleAssignment {
+  accountId String   @map("account_id") @db.Uuid
+  role      String   @db.VarChar(30)
+  grantedAt DateTime @map("granted_at") @db.Timestamptz(6)
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([accountId, role], map: "global_role_assignment_pkey")
+  @@map("global_role_assignment")
+}
+
+model BootstrapState {
+  singletonId      Int       @id @map("singleton_id") @db.SmallInt
+  status           String    @db.VarChar(20)
+  initialAccountId String?   @map("initial_account_id") @db.Uuid
+  operationId      String?   @unique(map: "bootstrap_state_operation_id_key") @map("operation_id") @db.Uuid
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
+  initialAccount   Account?  @relation(fields: [initialAccountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("bootstrap_state")
+}
+
+model AuditEvent {
+  id             String   @id @db.Uuid
+  occurredAt     DateTime @map("occurred_at") @db.Timestamptz(6)
+  actorAccountId String?  @map("actor_account_id") @db.Uuid
+  origin         String   @db.VarChar(40)
+  scope          String   @db.VarChar(40)
+  operation      String   @db.VarChar(60)
+  result         String   @db.VarChar(30)
+  entityType     String   @map("entity_type") @db.VarChar(40)
+  entityId       String?  @map("entity_id") @db.Uuid
+  beforeData     Json?    @map("before_data") @db.JsonB
+  afterData      Json?    @map("after_data") @db.JsonB
+  context        Json?    @db.JsonB
+  correlationId  String   @map("correlation_id") @db.Uuid
+  operationId    String   @map("operation_id") @db.Uuid
+  sequence       Int
+  actorAccount   Account? @relation(fields: [actorAccountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([operationId, sequence], map: "audit_event_operation_id_sequence_key")
+  @@index([occurredAt(sort: Desc), id(sort: Desc)], map: "audit_event_occurred_at_id_idx")
+  @@map("audit_event")
+}

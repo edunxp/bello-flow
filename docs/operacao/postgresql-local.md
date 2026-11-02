@@ -57,13 +57,18 @@ Não use `docker compose down --volumes` ou comandos de remoção do volume sem 
 
 ## Bancos e papéis
 
-| Banco | Papel operacional | Papel de migration |
-|---|---|---|
-| `bello_dev` | `bello_dev_app` | `bello_dev_migrator` |
-| `bello_shadow` | nenhum | `bello_shadow_migrator` |
-| `bello_test` | `bello_test_app` | `bello_test_migrator` |
+| Banco | Papel operacional | Papel de migration | Papel de bootstrap | Papel de manutenção |
+|---|---|---|---|---|
+| `bello_dev` | `bello_dev_app` | `bello_dev_migrator` | `bello_dev_bootstrap` | `bello_dev_audit_maintenance` |
+| `bello_shadow` | nenhum | `bello_shadow_migrator` | nenhum | nenhum |
+| `bello_test` | `bello_test_app` | `bello_test_migrator` | `bello_test_bootstrap` | `bello_test_audit_maintenance` |
 
-Papéis operacionais possuem somente `CONNECT` no banco correspondente e `USAGE` no schema `public`. Papéis de migration também possuem `CREATE` no schema `public` do próprio banco. Nenhum desses papéis possui `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `REPLICATION` ou `BYPASSRLS`.
+Os logins recebem capacidades por meio dos papéis sem login `bello_runtime`,
+`bello_bootstrap_executor` e `bello_audit_maintenance`. O bootstrap herda somente
+a execução da função protegida e leituras mínimas de reconciliação; manutenção
+não recebe DML na F1-A.1. Papéis de migration possuem `CREATE` no schema
+`public` do próprio banco. Nenhum papel não administrativo possui `SUPERUSER`,
+`CREATEDB`, `CREATEROLE`, `REPLICATION` ou `BYPASSRLS`.
 
 Os scripts em `infra/postgres/init` são executados pela imagem oficial somente quando o volume está vazio. Alterar um script não modifica automaticamente um volume já inicializado.
 
@@ -110,9 +115,12 @@ with_bello_dev_database() (
 
   unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
   unset BELLO_DEV_APP_PASSWORD BELLO_DEV_MIGRATOR_PASSWORD
+  unset BELLO_DEV_BOOTSTRAP_PASSWORD BELLO_DEV_AUDIT_MAINTENANCE_PASSWORD
   unset BELLO_SHADOW_MIGRATOR_PASSWORD BELLO_TEST_APP_PASSWORD
-  unset BELLO_TEST_MIGRATOR_PASSWORD
-  unset MIGRATION_DATABASE_URL SHADOW_DATABASE_URL
+  unset BELLO_TEST_MIGRATOR_PASSWORD BELLO_TEST_BOOTSTRAP_PASSWORD
+  unset BELLO_TEST_AUDIT_MAINTENANCE_PASSWORD
+  unset MIGRATION_DATABASE_URL SHADOW_DATABASE_URL BOOTSTRAP_DATABASE_URL
+  unset MAINTENANCE_DATABASE_URL
   export DATABASE_URL
 
   exec "$@"
@@ -190,8 +198,11 @@ with_bello_dev_migrations() (
 
   unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
   unset BELLO_DEV_APP_PASSWORD BELLO_DEV_MIGRATOR_PASSWORD
+  unset BELLO_DEV_BOOTSTRAP_PASSWORD BELLO_DEV_AUDIT_MAINTENANCE_PASSWORD
   unset BELLO_SHADOW_MIGRATOR_PASSWORD BELLO_TEST_APP_PASSWORD
-  unset BELLO_TEST_MIGRATOR_PASSWORD DATABASE_URL
+  unset BELLO_TEST_MIGRATOR_PASSWORD BELLO_TEST_BOOTSTRAP_PASSWORD
+  unset BELLO_TEST_AUDIT_MAINTENANCE_PASSWORD DATABASE_URL
+  unset BOOTSTRAP_DATABASE_URL MAINTENANCE_DATABASE_URL
   export MIGRATION_DATABASE_URL SHADOW_DATABASE_URL
 
   exec "$@"
@@ -214,6 +225,76 @@ with_bello_dev_migrations \
 
 Não use a credencial operacional da API para migrations e nunca configure o
 mesmo banco como datasource principal e shadow database.
+
+A primeira migration funcional exige que os três papéis de capacidade tenham
+sido provisionados pelo administrador do cluster. Ela falha antes de criar
+objetos se eles estiverem ausentes; o migrator continua sem `CREATEROLE`. Em um
+volume local criado antes da F1-A.1, alterar o script de inicialização não cria
+os novos papéis automaticamente. Preserve o volume e trate sua atualização como
+procedimento administrativo explícito; não amplie os privilégios do migrator.
+
+#### Provisionar um volume local existente para a F1-A.1
+
+O procedimento abaixo não executa o script de inicialização, não cria bancos e
+não remove nem recria o volume. O script administrativo valida o
+`system_identifier`, o banco selecionado, o superusuário atual, os logins já
+existentes, os atributos globais, memberships inesperados e a ausência de
+privilégios de `PUBLIC` antes de alterar o cluster. Conflitos interrompem a
+execução.
+
+Confirme primeiro que o serviço é o alvo pretendido e registre o identificador
+exibido:
+
+```bash
+docker compose ps postgres
+docker compose exec postgres sh -ec \
+  'psql --no-psqlrc -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+    "SELECT system_identifier FROM pg_control_system()"'
+```
+
+Copie somente o procedimento versionado para o container. A cópia fica no
+filesystem descartável do container, não no volume de dados:
+
+```bash
+docker compose cp \
+  infra/postgres/admin/provision-f1-a-1-roles.sh \
+  postgres:/tmp/provision-f1-a-1-roles.sh
+```
+
+Execute separadamente para desenvolvimento e teste. É obrigatório um terminal
+interativo: confirme digitando exatamente o par `system_identifier:banco` que o
+script apresentar. Senhas são solicitadas sem eco somente quando um login novo
+de bootstrap ou manutenção precisa ser criado.
+
+```bash
+docker compose exec postgres \
+  bash /tmp/provision-f1-a-1-roles.sh dev
+
+docker compose exec postgres \
+  bash /tmp/provision-f1-a-1-roles.sh test
+```
+
+Não informe senhas como argumentos nem grave os comandos com senhas no histórico.
+Para autenticar o administrador em ambientes que não usam o socket local do
+container, utilize um mecanismo libpq protegido, como `PGPASSFILE` com permissão
+`0600`; o procedimento não aceita senha administrativa em argumento.
+
+Na primeira execução, o script cria somente as roles de capacidade ausentes e
+os dois logins novos do ambiente selecionado, configura os três memberships e
+concede `CONNECT`/`USAGE` mínimos. Ele não altera a senha de login existente,
+não remove memberships e não cria, altera ou exclui tabelas e dados; no schema,
+limita-se ao `GRANT USAGE` descrito. Uma role com atributos administrativos,
+membership inesperado ou login existente sem senha é tratada como conflito e
+exige análise manual, não correção automática.
+
+A reexecução preserva roles, senhas e grants existentes e reaplica apenas grants
+idempotentes. Ao final, o próprio script exibe atributos, memberships,
+`CONNECT` e `USAGE` efetivos. Somente depois de ambos os alvos necessários
+estarem provisionados aplique a migration funcional com
+`with_bello_dev_migrations`.
+
+`BOOTSTRAP_DATABASE_URL` é reservada à futura CLI e nunca deve ser entregue ao
+processo da API. A F1-A.1 não implementa nem executa o bootstrap administrativo.
 
 ### Prova local de transações
 
@@ -293,9 +374,12 @@ SQL
 
   unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
   unset BELLO_DEV_APP_PASSWORD BELLO_DEV_MIGRATOR_PASSWORD
+  unset BELLO_DEV_BOOTSTRAP_PASSWORD BELLO_DEV_AUDIT_MAINTENANCE_PASSWORD
   unset BELLO_SHADOW_MIGRATOR_PASSWORD BELLO_TEST_APP_PASSWORD
-  unset BELLO_TEST_MIGRATOR_PASSWORD
-  unset MIGRATION_DATABASE_URL SHADOW_DATABASE_URL
+  unset BELLO_TEST_MIGRATOR_PASSWORD BELLO_TEST_BOOTSTRAP_PASSWORD
+  unset BELLO_TEST_AUDIT_MAINTENANCE_PASSWORD
+  unset MIGRATION_DATABASE_URL SHADOW_DATABASE_URL BOOTSTRAP_DATABASE_URL
+  unset MAINTENANCE_DATABASE_URL
   export DATABASE_URL
 
   PATH=/home/matias/.nvm/versions/node/v24.22.2/bin:$PATH \

@@ -51,9 +51,13 @@ jobs:
           POSTGRES_DB: postgres
           BELLO_DEV_APP_PASSWORD: ci-dev-app-${{ github.run_id }}-${{ github.run_attempt }}
           BELLO_DEV_MIGRATOR_PASSWORD: ci-dev-migrator-${{ github.run_id }}-${{ github.run_attempt }}
+          BELLO_DEV_BOOTSTRAP_PASSWORD: ci-dev-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}
+          BELLO_DEV_AUDIT_MAINTENANCE_PASSWORD: ci-dev-audit-maintenance-${{ github.run_id }}-${{ github.run_attempt }}
           BELLO_SHADOW_MIGRATOR_PASSWORD: ci-shadow-migrator-${{ github.run_id }}-${{ github.run_attempt }}
           BELLO_TEST_APP_PASSWORD: ci-test-app-${{ github.run_id }}-${{ github.run_attempt }}
           BELLO_TEST_MIGRATOR_PASSWORD: ci-test-migrator-${{ github.run_id }}-${{ github.run_attempt }}
+          BELLO_TEST_BOOTSTRAP_PASSWORD: ci-test-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}
+          BELLO_TEST_AUDIT_MAINTENANCE_PASSWORD: ci-test-audit-maintenance-${{ github.run_id }}-${{ github.run_attempt }}
         ports:
           - 5432
         options: >-
@@ -84,6 +88,29 @@ jobs:
         run: >-
           docker exec -i "${{ job.services.postgres.id }}"
           bash -s < infra/postgres/init/01-init-databases.sh
+
+      - name: Apply Prisma migrations to clean databases
+        env:
+          CI_DB_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          migration_url() {
+            CI_DB_NAME="$1" CI_DB_USER="$2" CI_DB_PASSWORD="$3" node -e '
+              const url = new URL(`postgresql://${process.env.CI_DB_USER}@127.0.0.1/${process.env.CI_DB_NAME}`);
+              url.port = process.env.CI_DB_PORT;
+              url.password = process.env.CI_DB_PASSWORD;
+              process.stdout.write(url.toString());
+            '
+          }
+
+          MIGRATION_DATABASE_URL="$(migration_url \
+            bello_dev bello_dev_migrator \
+            "ci-dev-migrator-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")" \
+            npm exec --workspace=@bello/api -- prisma migrate deploy
+
+          MIGRATION_DATABASE_URL="$(migration_url \
+            bello_test bello_test_migrator \
+            "ci-test-migrator-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")" \
+            npm exec --workspace=@bello/api -- prisma migrate deploy
 
       - name: Run API E2E tests
         run: |
@@ -143,6 +170,36 @@ jobs:
           )"
           export DATABASE_URL
           npm run test:transaction
+
+      - name: Run F1-A.1 PostgreSQL tests
+        env:
+          CI_DB_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          database_url() {
+            CI_DB_USER="$1" CI_DB_PASSWORD="$2" node -e '
+              const url = new URL(`postgresql://${process.env.CI_DB_USER}@127.0.0.1/bello_test`);
+              url.port = process.env.CI_DB_PORT;
+              url.password = process.env.CI_DB_PASSWORD;
+              process.stdout.write(url.toString());
+            '
+          }
+
+          DATABASE_URL="$(database_url \
+            bello_test_app \
+            "ci-test-app-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")"
+          BOOTSTRAP_DATABASE_URL="$(database_url \
+            bello_test_bootstrap \
+            "ci-test-bootstrap-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")"
+          MIGRATION_DATABASE_URL="$(database_url \
+            bello_test_migrator \
+            "ci-test-migrator-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")"
+          MAINTENANCE_DATABASE_URL="$(database_url \
+            bello_test_audit_maintenance \
+            "ci-test-audit-maintenance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")"
+          export DATABASE_URL BOOTSTRAP_DATABASE_URL
+          export MIGRATION_DATABASE_URL MAINTENANCE_DATABASE_URL
+
+          npm run test:f1a1 --workspace=@bello/api
 
   required:
     name: Required
