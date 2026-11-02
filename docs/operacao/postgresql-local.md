@@ -293,8 +293,9 @@ idempotentes. Ao final, o próprio script exibe atributos, memberships,
 estarem provisionados aplique a migration funcional com
 `with_bello_dev_migrations`.
 
-`BOOTSTRAP_DATABASE_URL` é reservada à futura CLI e nunca deve ser entregue ao
-processo da API. A F1-A.1 não implementa nem executa o bootstrap administrativo.
+`BOOTSTRAP_DATABASE_URL` é reservada à CLI e nunca deve ser entregue ao processo
+HTTP da API. O uso, a reconciliação e os cuidados operacionais estão documentados
+em [bootstrap administrativo](bootstrap-administrativo.md).
 
 ### Prova local de transações
 

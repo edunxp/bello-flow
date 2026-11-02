@@ -171,7 +171,7 @@ jobs:
           export DATABASE_URL
           npm run test:transaction
 
-      - name: Run F1-A.1 PostgreSQL tests
+      - name: Run F1-A PostgreSQL tests
         env:
           CI_DB_PORT: ${{ job.services.postgres.ports[5432] }}
         run: |
@@ -198,8 +198,11 @@ jobs:
             "ci-test-audit-maintenance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")"
           export DATABASE_URL BOOTSTRAP_DATABASE_URL
           export MIGRATION_DATABASE_URL MAINTENANCE_DATABASE_URL
+          export BELLO_EPHEMERAL_TEST_DATABASE=true
 
           npm run test:f1a1 --workspace=@bello/api
+          npm run test:f1a2:provider --workspace=@bello/api
+          npm run test:f1a2:cli --workspace=@bello/api
 
   required:
     name: Required

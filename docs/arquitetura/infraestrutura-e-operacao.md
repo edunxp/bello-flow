@@ -71,7 +71,9 @@ Destino, criptografia operacional, retenção de backups e ferramenta de backup 
 - Conclusão persistida impede repetição comum.
 - Evidência e auditoria registram a origem autorizada.
 - Recuperação emergencial offline é um procedimento distinto e prioriza conta existente.
-- O mecanismo concreto será especificado antes da implementação.
+- O procedimento concreto de bootstrap e reconciliação está documentado em
+  [bootstrap administrativo](../operacao/bootstrap-administrativo.md); recuperação
+  emergencial continua sendo um mecanismo separado e pendente.
 
 ## E-mails e Central de Notificações
 
