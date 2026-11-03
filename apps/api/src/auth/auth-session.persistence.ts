@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import {
   AUTH_SESSION_AUDIT_OPERATION,
   deriveAccountAdvisoryLockKey,
+  deriveOperationAdvisoryLockKey,
   generateOperationId,
   generateSessionId,
   generateSessionToken,
@@ -67,6 +68,16 @@ export interface CreatedAuthSession {
   readonly absoluteExpiresAt: Date;
 }
 
+export interface RecordFailedLoginInput {
+  readonly accountId: string | null;
+  readonly operationId?: OperationId;
+}
+
+export interface RecordedFailedLogin {
+  readonly operationId: OperationId;
+  readonly alreadyCompleted: boolean;
+}
+
 export interface ResolvedAuthSession {
   readonly sessionId: SessionId;
   readonly accountId: string;
@@ -95,12 +106,22 @@ export interface SessionRevocationResult {
 export type ReconciliationStatus =
   'COMPLETED' | 'NOT_FOUND' | 'INCONSISTENT' | 'UNKNOWN';
 
-export interface ReconcileAuthSessionOperationInput {
-  readonly accountId: string;
-  readonly operationId: OperationId;
-  readonly operation: AuthSessionAuditOperation;
-  readonly sessionId?: SessionId;
-}
+export type ReconcileAuthSessionOperationInput =
+  | {
+      readonly accountId: string | null;
+      readonly operationId: OperationId;
+      readonly operation: typeof AUTH_SESSION_AUDIT_OPERATION.LOGIN_FAILED;
+      readonly sessionId?: never;
+    }
+  | {
+      readonly accountId: string;
+      readonly operationId: OperationId;
+      readonly operation: Exclude<
+        AuthSessionAuditOperation,
+        typeof AUTH_SESSION_AUDIT_OPERATION.LOGIN_FAILED
+      >;
+      readonly sessionId?: SessionId;
+    };
 
 type DatabaseClock = {
   databaseNow: Date;
@@ -181,7 +202,7 @@ export class AuthSessionPersistence {
       const committed = await this.prisma.$transaction(
         async (tx) => {
           await this.configureTransaction(tx);
-          await this.acquireAccountLock(tx, lockKey);
+          await this.acquireAdvisoryLock(tx, lockKey);
 
           const existing = await this.reconcileWithinTransaction(tx, {
             accountId: input.accountId,
@@ -307,6 +328,71 @@ export class AuthSessionPersistence {
     }
   }
 
+  async recordFailedLogin(
+    input: RecordFailedLoginInput,
+  ): Promise<RecordedFailedLogin> {
+    if (input.accountId !== null) {
+      assertUuidV4(input.accountId);
+    }
+    const operationId = input.operationId ?? generateOperationId();
+    assertUuidV4(operationId);
+    const lockKey = deriveOperationAdvisoryLockKey(operationId);
+
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          await this.configureTransaction(tx);
+          await this.acquireAdvisoryLock(tx, lockKey);
+          const existing = await this.reconcileWithinTransaction(tx, {
+            accountId: input.accountId,
+            operationId,
+            operation: AUTH_SESSION_AUDIT_OPERATION.LOGIN_FAILED,
+          });
+          if (existing === 'COMPLETED') {
+            return { operationId, alreadyCompleted: true };
+          }
+          if (existing === 'INCONSISTENT') {
+            throw new SessionPersistenceError(
+              SESSION_PERSISTENCE_ERROR_CODE.RECONCILIATION_INCONSISTENT,
+              operationId,
+            );
+          }
+
+          const clock = await this.readDatabaseClock(tx);
+          await this.insertFailedLoginAuditEvent(tx, {
+            occurredAt: clock.databaseNow,
+            accountId: input.accountId,
+            operationId,
+          });
+          const reconciliation = await this.reconcileWithinTransaction(tx, {
+            accountId: input.accountId,
+            operationId,
+            operation: AUTH_SESSION_AUDIT_OPERATION.LOGIN_FAILED,
+          });
+          if (reconciliation === 'COMPLETED') {
+            return { operationId, alreadyCompleted: false };
+          }
+          if (reconciliation === 'INCONSISTENT') {
+            throw new SessionPersistenceError(
+              SESSION_PERSISTENCE_ERROR_CODE.RECONCILIATION_INCONSISTENT,
+              operationId,
+            );
+          }
+          throw new Error('Failed login audit was not reconciled');
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+      );
+    } catch (error) {
+      if (isKnownPersistenceError(error)) {
+        throw error;
+      }
+      throw new SessionPersistenceError(
+        SESSION_PERSISTENCE_ERROR_CODE.OPERATION_INDETERMINATE,
+        operationId,
+      );
+    }
+  }
+
   async logoutSession(
     input: RevokeAuthSessionInput,
   ): Promise<SessionRevocationResult> {
@@ -339,7 +425,7 @@ export class AuthSessionPersistence {
       return await this.prisma.$transaction(
         async (tx) => {
           await this.configureTransaction(tx);
-          await this.acquireAccountLock(tx, lockKey);
+          await this.acquireAdvisoryLock(tx, lockKey);
 
           const reconciliation = await this.reconcileWithinTransaction(tx, {
             accountId: input.accountId,
@@ -415,7 +501,15 @@ export class AuthSessionPersistence {
   async reconcileOperation(
     input: ReconcileAuthSessionOperationInput,
   ): Promise<ReconciliationStatus> {
-    assertUuidV4(input.accountId);
+    if (input.accountId === null) {
+      if (input.operation !== AUTH_SESSION_AUDIT_OPERATION.LOGIN_FAILED) {
+        throw new SessionPersistenceError(
+          SESSION_PERSISTENCE_ERROR_CODE.INVALID_INPUT,
+        );
+      }
+    } else {
+      assertUuidV4(input.accountId);
+    }
     assertUuidV4(input.operationId);
     if (input.sessionId !== undefined) {
       assertUuidV4(input.sessionId);
@@ -453,7 +547,7 @@ export class AuthSessionPersistence {
       return await this.prisma.$transaction(
         async (tx) => {
           await this.configureTransaction(tx);
-          await this.acquireAccountLock(tx, lockKey);
+          await this.acquireAdvisoryLock(tx, lockKey);
 
           const reconciliation = await this.reconcileWithinTransaction(tx, {
             accountId: input.accountId,
@@ -548,7 +642,7 @@ export class AuthSessionPersistence {
     await tx.$executeRaw`SET LOCAL statement_timeout = '5s'`;
   }
 
-  private async acquireAccountLock(
+  private async acquireAdvisoryLock(
     tx: Prisma.TransactionClient,
     lockKey: bigint,
   ): Promise<void> {
@@ -700,6 +794,39 @@ export class AuthSessionPersistence {
         NULL,
         NULL,
         ${JSON.stringify(event.context)}::jsonb,
+        ${event.operationId}::uuid,
+        ${event.operationId}::uuid,
+        1
+      )
+    `;
+  }
+
+  private async insertFailedLoginAuditEvent(
+    tx: Prisma.TransactionClient,
+    event: {
+      occurredAt: Date;
+      accountId: string | null;
+      operationId: OperationId;
+    },
+  ): Promise<void> {
+    await tx.$executeRaw`
+      INSERT INTO public.audit_event (
+        id, occurred_at, actor_account_id, origin, scope, operation, result,
+        entity_type, entity_id, before_data, after_data, context,
+        correlation_id, operation_id, sequence
+      ) VALUES (
+        ${randomUUID()}::uuid,
+        ${event.occurredAt},
+        ${event.accountId}::uuid,
+        'HTTP_API',
+        'SECURITY',
+        ${AUTH_SESSION_AUDIT_OPERATION.LOGIN_FAILED},
+        'DENIED',
+        'ACCOUNT',
+        ${event.accountId}::uuid,
+        NULL,
+        NULL,
+        ${JSON.stringify({ authentication_type: 'PASSWORD' })}::jsonb,
         ${event.operationId}::uuid,
         ${event.operationId}::uuid,
         1

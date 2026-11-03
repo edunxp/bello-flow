@@ -105,7 +105,14 @@ outros segredos, incluindo:
 - URLs de banco contendo credenciais.
 
 Hashes sintéticos são permitidos exclusivamente em testes, desde que não tenham
-relação com senhas, contas ou credenciais operacionais reais.
+relação com contas, senhas ou credenciais reais.
+
+Excepcionalmente, um PHC Argon2id sintético e constante pode ser usado
+exclusivamente para verificação negativa de autenticação. Nesse uso operacional,
+o PHC deve seguir o perfil criptográfico aprovado, não possuir vínculo com contas,
+senhas ou credenciais reais, não ser persistido no PostgreSQL, não ser registrado
+em logs ou auditoria, não ser tratado como segredo operacional e nunca autorizar
+autenticação.
 
 Não registre valores sensíveis em logs, mensagens de erro, stdout, stderr,
 fixtures, auditoria ou relatórios.

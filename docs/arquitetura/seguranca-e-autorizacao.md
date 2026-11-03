@@ -10,6 +10,12 @@ Este documento detalha as responsabilidades decorrentes de [AT-001](decisoes-tec
 - Não existe cadastro público.
 - A identidade interna imutável é distinta do e-mail mutável.
 - Senhas utilizam Argon2id e não podem ser recuperadas por administradores.
+- Tentativas sem credencial real utilizam um PHC Argon2id sintético constante,
+  gerado uma única vez de candidato aleatório descartado e com o mesmo perfil
+  aprovado, para preservar o trabalho criptográfico negativo. Esse PHC não se
+  vincula a conta, senha ou credencial real, não é persistido no PostgreSQL e
+  nunca pode ser registrado em logs ou auditoria. O mecanismo reduz diferenças
+  estruturais, mas não promete tempo constante.
 - A sessão persistida é o estado revogável de autenticação.
 - O Angular não recebe token de sessão para armazenamento em APIs JavaScript persistentes.
 - Inatividade de 8 horas e vida absoluta de 7 dias são limites independentes; atingir qualquer deles invalida a sessão.

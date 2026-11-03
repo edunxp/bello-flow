@@ -40,6 +40,7 @@ const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ADVISORY_LOCK_DOMAIN = 'bello:auth:account:';
+const OPERATION_ADVISORY_LOCK_DOMAIN = 'bello:auth:operation:';
 
 export function generateSessionId(): SessionId {
   return randomUUID() as SessionId;
@@ -93,6 +94,19 @@ export function deriveAccountAdvisoryLockKey(accountId: unknown): bigint {
   const canonicalAccountId = accountId.toLowerCase();
   const digest = createHash('sha256')
     .update(`${ADVISORY_LOCK_DOMAIN}${canonicalAccountId}`, 'utf8')
+    .digest();
+
+  return readSignedBigInt64BigEndian(digest.subarray(0, 8));
+}
+
+export function deriveOperationAdvisoryLockKey(operationId: unknown): bigint {
+  if (typeof operationId !== 'string' || !UUID_V4_PATTERN.test(operationId)) {
+    throw new TypeError('Invalid operation identifier');
+  }
+
+  const canonicalOperationId = operationId.toLowerCase();
+  const digest = createHash('sha256')
+    .update(`${OPERATION_ADVISORY_LOCK_DOMAIN}${canonicalOperationId}`, 'utf8')
     .digest();
 
   return readSignedBigInt64BigEndian(digest.subarray(0, 8));

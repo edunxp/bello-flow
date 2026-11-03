@@ -3,6 +3,7 @@ import {
   AUTH_SESSION_AUDIT_OPERATION,
   decodeSessionToken,
   deriveAccountAdvisoryLockKey,
+  deriveOperationAdvisoryLockKey,
   generateOperationId,
   generateSessionId,
   generateSessionToken,
@@ -157,6 +158,23 @@ describe('account advisory lock key', () => {
       );
     },
   );
+});
+
+describe('operation advisory lock key', () => {
+  const operationId = '00000000-0000-4000-8000-000000000001';
+
+  it('is deterministic, canonical and separate from the account lock domain', () => {
+    const key = deriveOperationAdvisoryLockKey(operationId);
+
+    expect(deriveOperationAdvisoryLockKey(operationId.toUpperCase())).toBe(key);
+    expect(key).not.toBe(deriveAccountAdvisoryLockKey(operationId));
+  });
+
+  it('rejects an invalid UUID v4', () => {
+    expect(() => deriveOperationAdvisoryLockKey('invalid')).toThrow(
+      'Invalid operation identifier',
+    );
+  });
 });
 
 describe('controlled session vocabulary', () => {

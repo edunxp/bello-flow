@@ -237,6 +237,121 @@ describe('AuthSessionPersistence creation', () => {
   });
 });
 
+describe('AuthSessionPersistence failed login auditing', () => {
+  const accountId = '00000000-0000-4000-8000-000000000001';
+
+  function configureHarness(existing = false) {
+    const harness = createHarness();
+    let reconciliationCount = 0;
+    harness.queryRaw.mockImplementation(async (...call: RawCall) => {
+      const sql = sqlOf(call);
+      if (sql.includes('pg_advisory_xact_lock')) {
+        return [{ pg_advisory_xact_lock: null }];
+      }
+      if (sql.includes('observed_at + INTERVAL')) {
+        return [
+          {
+            databaseNow: harness.createdAt,
+            absoluteExpiresAt: harness.absoluteExpiresAt,
+          },
+        ];
+      }
+      if (sql.includes('reconcile_auth_session_operation')) {
+        reconciliationCount += 1;
+        return [
+          {
+            status:
+              existing || reconciliationCount > 1 ? 'COMPLETED' : 'NOT_FOUND',
+          },
+        ];
+      }
+      return [];
+    });
+    return harness;
+  }
+
+  it.each([
+    ['known account', accountId],
+    ['unknown identity', null],
+  ])('records one denied audit event for %s', async (_name, account) => {
+    const harness = configureHarness();
+    const operationId = generateOperationId();
+
+    await expect(
+      harness.service.recordFailedLogin({ accountId: account, operationId }),
+    ).resolves.toEqual({ operationId, alreadyCompleted: false });
+
+    const auditCall = harness.executeRaw.mock.calls.find((call) =>
+      sqlOf(call as RawCall).includes('INSERT INTO public.audit_event'),
+    ) as RawCall;
+    expect(sqlOf(auditCall)).not.toContain('ON CONFLICT');
+    expect(auditCall).toContain(account);
+    expect(auditCall).toContain(AUTH_SESSION_AUDIT_OPERATION.LOGIN_FAILED);
+    expect(auditCall).toContain(
+      JSON.stringify({ authentication_type: 'PASSWORD' }),
+    );
+    expect(JSON.stringify(auditCall)).not.toContain('email@example.com');
+    expect(JSON.stringify(auditCall)).not.toContain('candidate-password');
+    expect(JSON.stringify(auditCall)).not.toContain('$argon2id$');
+  });
+
+  it('returns an idempotent result when the operation already exists', async () => {
+    const harness = configureHarness(true);
+    const operationId = generateOperationId();
+
+    await expect(
+      harness.service.recordFailedLogin({ accountId: null, operationId }),
+    ).resolves.toEqual({ operationId, alreadyCompleted: true });
+  });
+
+  it('rejects incompatible operation evidence', async () => {
+    const harness = createHarness();
+    harness.queryRaw.mockImplementation(async (...call: RawCall) => {
+      const sql = sqlOf(call);
+      if (sql.includes('pg_advisory_xact_lock')) {
+        return [{ pg_advisory_xact_lock: null }];
+      }
+      if (sql.includes('reconcile_auth_session_operation')) {
+        return [{ status: 'INCONSISTENT' }];
+      }
+      return [];
+    });
+
+    await expect(
+      harness.service.recordFailedLogin({
+        accountId,
+        operationId: generateOperationId(),
+      }),
+    ).rejects.toMatchObject({
+      code: SESSION_PERSISTENCE_ERROR_CODE.RECONCILIATION_INCONSISTENT,
+    });
+  });
+
+  it('classifies an unexpected transaction failure conservatively', async () => {
+    const harness = createHarness();
+    const operationId = generateOperationId();
+    harness.transaction.mockRejectedValueOnce(new Error('commit unavailable'));
+
+    await expect(
+      harness.service.recordFailedLogin({ accountId: null, operationId }),
+    ).rejects.toMatchObject({
+      code: SESSION_PERSISTENCE_ERROR_CODE.OPERATION_INDETERMINATE,
+      operationId,
+    });
+  });
+
+  it('rejects an invalid known account before opening a transaction', async () => {
+    const harness = createHarness();
+
+    await expect(
+      harness.service.recordFailedLogin({ accountId: 'invalid' }),
+    ).rejects.toMatchObject({
+      code: SESSION_PERSISTENCE_ERROR_CODE.INVALID_INPUT,
+    });
+    expect(harness.transaction).not.toHaveBeenCalled();
+  });
+});
+
 describe('AuthSessionPersistence resolution and reconciliation', () => {
   it('rejects malformed tokens without querying PostgreSQL', async () => {
     const harness = createHarness();
@@ -371,6 +486,21 @@ describe('AuthSessionPersistence resolution and reconciliation', () => {
     ).rejects.toMatchObject({
       code: SESSION_PERSISTENCE_ERROR_CODE.INVALID_INPUT,
     });
+  });
+
+  it('allows a null account for failed-login reconciliation', async () => {
+    const harness = createHarness();
+    harness.rootQueryRaw.mockResolvedValueOnce([{ status: 'COMPLETED' }]);
+    const operationId = generateOperationId();
+
+    await expect(
+      harness.service.reconcileOperation({
+        accountId: null,
+        operationId,
+        operation: AUTH_SESSION_AUDIT_OPERATION.LOGIN_FAILED,
+      }),
+    ).resolves.toBe('COMPLETED');
+    expect(harness.rootQueryRaw.mock.calls[0]).toContain(null);
   });
 });
 

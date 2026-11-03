@@ -1,5 +1,4 @@
-const EMAIL_PATTERN =
-  /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+import { normalizeAccountEmail } from '../identity/account-email.js';
 
 export class BootstrapInputValidationError extends Error {
   constructor(field: string) {
@@ -68,18 +67,11 @@ export function validateLastName(value: string): string {
 }
 
 export function validateEmail(value: string): string {
-  const email = trimAsciiSpaces(value);
-  const localPart = email.split('@', 1)[0];
-  if (
-    email.length < 3 ||
-    email.length > 254 ||
-    localPart.length < 1 ||
-    localPart.length > 64 ||
-    !EMAIL_PATTERN.test(email)
-  ) {
+  const result = normalizeAccountEmail(value);
+  if (result.status === 'INVALID') {
     throw new BootstrapInputValidationError('email');
   }
-  return email;
+  return result.email;
 }
 
 export function validateOperatorReference(value: string): string {
