@@ -11,8 +11,10 @@ aprovado ou um marco relevante for publicado.
 - **Próxima etapa proposta:** F1-B.4 — Camada HTTP de Autenticação.
 - **Estado:** planejamento; implementação ainda não autorizada.
 - **Decisão de planejamento concluída:** PT-005 — cookies, CSRF, origem e CORS.
-- **Limites:** a aprovação documental da PT-005 não declara implementação nem
-  autoriza endpoints HTTP, cookies, CSRF, proxy ou frontend.
+- **Contratos de planejamento aprovados:** D1–D5 — endpoints, erros, logout,
+  operações indeterminadas, CSRF/auditoria e encapsulamento da camada HTTP.
+- **Limites:** as aprovações documentais da PT-005 e de D1–D5 não declaram
+  implementação nem autorizam endpoints HTTP, cookies, CSRF, proxy ou frontend.
 
 ## Etapas concluídas
 
@@ -45,24 +47,28 @@ normativas nem alteram o estado de decisões ou pendências.
 
 ## Próximo objetivo
 
-Planejar a camada HTTP de autenticação sem antecipar decisões de implementação.
-O planejamento deve tratar:
+Concluir o planejamento técnico da camada HTTP de autenticação sem iniciar sua
+implementação. Os contratos aprovados definem:
 
-- endpoints de autenticação;
-- transporte seguro do token opaco;
-- aplicação do contrato aprovado de cookies, origem, CORS e proteção CSRF;
-- erros HTTP;
-- resolução e revogação de sessões;
-- PT-008 — limites de tentativas de login.
+- `POST /api/auth/login`, `GET /api/auth/session`,
+  `POST /api/auth/logout` e `POST /api/auth/logout-all`;
+- identidade mínima e matriz externa de erros;
+- semânticas distintas de logout atual e global;
+- tratamento de resultado indeterminado e falha comprovada de entrega;
+- logs técnicos para rejeições isoladas de origem/CSRF, sem novos eventos
+  funcionais de auditoria; e
+- uso exclusivo do contrato público de `AuthenticationService` pela camada HTTP.
 
 O planejamento deve preservar [AT-001 e AT-002](arquitetura/decisoes-tecnicas.md),
 [DEC-020](produto/decisoes-funcionais.md), BEL-038 em
 [requisitos funcionais](produto/requisitos-funcionais.md), RN-069–RN-072 e
 RN-120–RN-129 em [regras de negócio](produto/regras-de-negocio.md) e os fluxos de
 [segurança e autorização](arquitetura/seguranca-e-autorizacao.md). Esses
-contratos aprovados são limites do planejamento; este documento não escolhe
-rotas nem formatos de resposta. O contrato de cookie, origem, CORS e CSRF está
-aprovado na resolução da PT-005, sem evidência de implementação.
+contratos aprovados são limites do planejamento. As rotas, formatos de resposta
+e decisões D1–D5 estão detalhados em
+[segurança e autorização](arquitetura/seguranca-e-autorizacao.md#contratos-http-de-autenticação--d1d5).
+O contrato de cookie, origem, CORS e CSRF permanece aprovado na resolução da
+PT-005. Não há evidência de implementação da camada HTTP.
 
 ## Decisão técnica relevante
 
@@ -75,11 +81,27 @@ e [segurança e autorização](arquitetura/seguranca-e-autorizacao.md#transporte
 
 Esse fechamento é documental e não move a F1-B.4 para implementação.
 
+## Contratos HTTP aprovados
+
+As decisões **D1–D5** foram aprovadas e documentadas em 2026-11-03 como
+complemento de AT-001, AT-003 e PT-005. Elas definem os quatro endpoints de
+autenticação, a matriz externa de erros, as semânticas de logout, o tratamento
+de operações indeterminadas, os limites entre logs técnicos e auditoria e o
+encapsulamento por `AuthenticationService`.
+
+Essa aprovação define comportamento esperado para planejamento e testes
+futuros, mas não declara os endpoints, cookies, validações ou controllers como
+implementados. A F1-B.4 permanece em planejamento e a implementação requer
+autorização posterior específica.
+
 ## Pendência relevante
 
 Permanece com o estado registrado no documento canônico de
 [pendências técnicas](arquitetura/pendencias-tecnicas.md):
 
 - **PT-008:** limites de tentativas para login, recuperação, transações e e-mail.
+
+Para o login HTTP, continuam pendentes limiares, janelas, chaves, bloqueios,
+armazenamento, `Retry-After` e comportamento definitivo de `429`.
 
 Esta referência não fecha, resolve nem reclassifica qualquer pendência.

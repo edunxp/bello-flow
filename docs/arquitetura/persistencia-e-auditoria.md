@@ -30,6 +30,20 @@ Uma mutação auditável segue esta fronteira conceitual:
 
 Falha dos passos obrigatórios anteriores ao commit provoca rollback. O identificador único permite reconciliar um resultado de commit indeterminado antes de repetir. Uma repetição precisa revalidar o estado e não pode duplicar efeitos.
 
+### Autenticação HTTP e resultado indeterminado
+
+Nos contratos HTTP de autenticação da F1-B.4, a camada pública preserva essa
+fronteira sem expor identificadores internos. Operação indeterminada não é
+repetida automaticamente, não é apresentada como sucesso e retorna erro externo
+genérico enquanto a reconciliação não for conclusiva. Em revogação ainda
+indeterminada, o cookie não é limpo.
+
+Quando uma sessão foi criada e sua falha de entrega é comprovada antes da
+transmissão da resposta, a compensação de sessão não entregue permanece uma
+revogação auditável e reconciliável. Depois do envio dos headers, fechamento da
+conexão não constitui evidência de falha de entrega e não autoriza compensação
+por suposição.
+
 ## Isolamento, bloqueios e repetição
 
 - O nível de isolamento será escolhido por classe de operação, após validação técnica.
@@ -73,6 +87,13 @@ Armazenamento e consulta são controles distintos:
 - consultas reavaliam permissão atual e contexto original;
 - campos são omitidos ou redigidos sem alterar o registro original;
 - Administrador Global e Administrador de Workspace não herdam auditoria de conteúdo.
+
+Rejeições isoladas de origem ou CSRF na fronteira HTTP, anteriores à
+autenticação e à autorização funcional, geram somente logs técnicos estruturados
+e sem segredos nesta etapa. Elas não criam nova classificação funcional de
+auditoria. Permanecem obrigatórios os eventos aprovados de login, falha de login,
+logout, revogação global e negativas funcionais de autorização. Tratamento
+adicional de abuso repetido depende da PT-008.
 
 ## Proteção append-only
 

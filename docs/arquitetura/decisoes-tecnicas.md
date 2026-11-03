@@ -85,6 +85,37 @@
 O contrato detalhado e seus limites operacionais estão em
 [segurança e autorização](seguranca-e-autorizacao.md#transporte-http-cookie-origem-cors-e-csrf).
 
+### Complemento aprovado — contratos HTTP D1–D5 da F1-B.4
+
+- **Estado:** Aprovado para planejamento; não implementado
+- **Data de aprovação:** 2026-11-03
+- **Justificativa:** definir a fronteira HTTP mínima de autenticação sobre os
+  serviços e a persistência já existentes, sem expor contratos internos.
+- **Impacto:** detalha AT-001, AT-003 e a PT-005; não altera regras funcionais,
+  prazos de sessão, política de auditoria ou escopos de autorização.
+- **Substituições:** nenhuma AT, DEC ou RN é substituída.
+- **D1 — endpoints e erros:** a API de autenticação possui os contratos
+  `POST /api/auth/login`, `GET /api/auth/session`,
+  `POST /api/auth/logout` e `POST /api/auth/logout-all`, com identidade externa
+  mínima, respostas de erro genéricas e sem exposição de token ou
+  identificadores internos.
+- **D2 — logout:** o logout atual sem sessão válida admite limpeza local
+  idempotente e `204`; o logout global exige identidade autenticada válida e
+  responde `401` quando ela não puder ser determinada.
+- **D3 — indeterminação:** resultado indeterminado não é repetido
+  automaticamente, não produz sucesso aparente e, em revogação, não limpa o
+  cookie enquanto não houver confirmação ou reconciliação conclusiva.
+- **D4 — CSRF e auditoria:** rejeições isoladas na fronteira HTTP por origem ou
+  CSRF produzem somente logs técnicos estruturados e sem segredos. Os eventos
+  funcionais existentes de autenticação e revogação permanecem inalterados;
+  tratamento adicional de abuso repetido depende da PT-008.
+- **D5 — encapsulamento:** controllers utilizam exclusivamente o contrato
+  público de `AuthenticationService`; `AuthSessionPersistence` permanece
+  interno ao módulo e DTOs externos selecionam explicitamente seus campos.
+
+O contrato completo, inclusive matriz de erros e limites de implementação, está
+em [segurança e autorização](seguranca-e-autorizacao.md#contratos-http-de-autenticação--d1d5).
+
 ### Rastreabilidade
 
 - **Requisitos:** BEL-032, BEL-038.
@@ -400,6 +431,7 @@ O contrato detalhado e seus limites operacionais estão em
 
 | Data | Alteração |
 |---|---|
+| 2026-11-03 | D1–D5 aprovadas para os contratos HTTP de autenticação da F1-B.4, sem declarar implementação e preservando PT-005 e PT-008. |
 | 2026-11-03 | PT-005 resolvida como complemento aprovado de AT-001 e AT-005, definindo topologia same-origin, cookie, origem, CORS e proteção CSRF da camada HTTP sem declarar implementação. |
 | 2026-10-30 | AT-001 a AT-010 consolidadas como aprovadas pelo responsável pelo produto. |
 

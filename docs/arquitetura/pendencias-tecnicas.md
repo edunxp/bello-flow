@@ -21,6 +21,12 @@ fonte normativa que aprovou cada resolução.
 | PT-007 | tratamento seguro de links/tokens nas solicitações persistidas de e-mail | AT-009 | fluxo sem segredo recuperável desnecessário |
 | PT-008 | limites de tentativas para login, recuperação, transações e e-mail | AT-001, AT-003, AT-009 | limites e respostas aprovados com critérios de segurança |
 
+Para a camada HTTP de autenticação, PT-008 permanece aberta e deverá integrar o
+login aos controles aprovados futuramente. Até seu encerramento, não estão
+definidos limiares, janelas, chaves do limitador, política ou duração de bloqueio,
+armazenamento, valor de `Retry-After` nem comportamento definitivo de
+`429 RATE_LIMITED`. As decisões D1–D5 não resolvem nem reclassificam a PT-008.
+
 ## Pendências técnicas resolvidas
 
 Esta seção registra encerramentos para preservar rastreabilidade. O contrato

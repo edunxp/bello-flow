@@ -102,6 +102,155 @@ conjunta e não substituem autorização do recurso.
   recebeu ou armazenou o cookie. Fechamento posterior da conexão não comprova
   falha de entrega e não provoca revogação por suposição.
 
+## Contratos HTTP de autenticação — D1–D5
+
+As decisões D1–D5 abaixo estão aprovadas para o planejamento da F1-B.4. Elas
+definem contratos normativos para a implementação futura, mas não declaram que
+controllers, validações, cookies ou filtros HTTP já existam.
+
+### Representação externa comum
+
+Login e consulta de sessão retornam somente a identidade interna mínima:
+
+```json
+{
+  "account": {
+    "id": "7ceac8d7-f290-4e48-8b42-67e83c982548"
+  }
+}
+```
+
+O UUID é apenas ilustrativo. Token, `sessionId`, `operationId`, prazos e objetos
+internos não integram o JSON. DTOs de resposta são construídos por seleção
+explícita dos campos permitidos, nunca por serialização direta do resultado de
+um serviço ou da persistência.
+
+Erros usam o formato externo mínimo:
+
+```json
+{
+  "error": {
+    "code": "AUTHENTICATION_FAILED",
+    "message": "Authentication failed"
+  }
+}
+```
+
+Erros internos não são serializados diretamente. Corpos de erro não contêm
+identificador de operação ou sessão, token, cookie, senha, credencial nem
+detalhe operacional sensível.
+
+| HTTP | Código externo | Aplicação |
+|---:|---|---|
+| `400` | `INVALID_REQUEST` | falha estrutural da requisição HTTP |
+| `401` | `AUTHENTICATION_FAILED` | rejeição determinada no login |
+| `401` | `UNAUTHENTICATED` | ausência de sessão autenticada válida |
+| `403` | `REQUEST_FORBIDDEN` | rejeição dos controles de origem ou CSRF |
+| `415` | `UNSUPPORTED_MEDIA_TYPE` | media type incompatível com o corpo JSON exigido |
+| `429` | `RATE_LIMITED` | reservado à integração futura da PT-008 |
+| `503` | `SERVICE_UNAVAILABLE` | falha operacional ou resultado ainda indeterminado |
+| `500` | `INTERNAL_ERROR` | falha interna não classificada |
+
+O mesmo `AUTHENTICATION_FAILED` cobre identidade inexistente, senha incorreta,
+conta inelegível e demais rejeições determinadas da credencial. O `401` não
+revela existência, elegibilidade ou estado da conta, e o `503` não revela a
+causa operacional. Limiares, janelas, chaves, bloqueios, armazenamento,
+`Retry-After` e o comportamento definitivo de `429` permanecem na PT-008.
+
+### `POST /api/auth/login`
+
+- recebe um objeto JSON com exatamente `email` e `password`, ambos strings;
+- não exige sessão prévia;
+- antes da autenticação, exige uma única ocorrência lógica de
+  `X-Bello-Flow-Request: 1`, origem ou `Referer` válidos conforme a PT-005 e
+  media type `application/json`;
+- retorna `400 INVALID_REQUEST` para estrutura HTTP, JSON, campos ou tipos
+  inválidos e `415 UNSUPPORTED_MEDIA_TYPE` para media type inadequado;
+- retorna `401 AUTHENTICATION_FAILED` para toda rejeição determinada da
+  autenticação, sem distinguir a causa externamente;
+- após autenticação e criação confirmadas, retorna `200 OK` com a identidade
+  mínima e emite o cookie do perfil aplicável;
+- nunca retorna token, `sessionId` ou `operationId`; e
+- preserva a auditoria transacional de login bem-sucedido ou malsucedido, sem
+  segredos.
+
+Falha comprovada depois da criação da sessão e antes da transmissão da resposta
+aciona a compensação de sessão não entregue. Depois do envio dos headers, o
+servidor não presume falha de entrega nem revoga a sessão por fechamento da
+conexão.
+
+### `GET /api/auth/session`
+
+- exige cookie de sessão válido e uma única ocorrência lógica de
+  `X-Bello-Flow-Request: 1`;
+- não exige `Origin`, `Referer`, corpo ou `Content-Type`;
+- retorna `200 OK` com a mesma identidade mínima do login;
+- retorna `401 UNAUTHENTICATED` quando não houver sessão autenticada válida;
+- pode limpar cookie comprovadamente inválido; e
+- pode contar como atividade, preservando o intervalo mínimo de cinco minutos,
+  a inatividade de oito horas e a vida absoluta de sete dias.
+
+A consulta e a atualização técnica de atividade não criam novo evento funcional
+de auditoria.
+
+### `POST /api/auth/logout`
+
+- exige uma única ocorrência lógica de `X-Bello-Flow-Request: 1` e os controles
+  de origem e CSRF da PT-005;
+- não recebe corpo e não exige `Content-Type` artificial;
+- com sessão válida, revoga a sessão atual e retorna `204 No Content` somente
+  depois de confirmação ou reconciliação conclusiva;
+- com cookie ausente ou sessão inválida, expirada ou já revogada, pode retornar
+  `204 No Content` e limpar o cookie de forma idempotente; e
+- não cria auditoria de logout quando nenhuma revogação foi efetivada.
+
+A limpeza local do cookie não comprova, por si, revogação no PostgreSQL.
+
+### `POST /api/auth/logout-all`
+
+- exige sessão autenticada válida, uma única ocorrência lógica de
+  `X-Bello-Flow-Request: 1` e os controles de origem e CSRF da PT-005;
+- não recebe corpo e não exige `Content-Type` artificial;
+- revoga todas as sessões da conta, preservando a auditoria na mesma transação;
+- retorna `204 No Content` e limpa o cookie atual somente depois de confirmação
+  ou reconciliação conclusiva; e
+- retorna `401 UNAUTHENTICATED` quando não houver sessão válida, pois não existe
+  identidade autenticada que permita garantir a revogação global.
+
+### Resultado indeterminado e cookie
+
+Uma operação indeterminada não é repetida automaticamente nem classificada por
+suposição. Enquanto a revogação permanecer indeterminada, a API não declara
+sucesso, não limpa o cookie e retorna `503 SERVICE_UNAVAILABLE` genérico. A
+limpeza ocorre somente depois de revogação confirmada, reconciliação conclusiva
+ou constatação segura de sessão já inválida nos casos idempotentes permitidos.
+
+### Logs, auditoria e abuso
+
+Rejeições isoladas por origem ou CSRF, realizadas na fronteira HTTP antes da
+autenticação e da autorização funcional, produzem apenas logs técnicos
+estruturados, minimizados e sem segredos. Elas não criam novos eventos
+funcionais de auditoria nesta etapa. Essa classificação não altera a auditoria
+aprovada de login, falha de login, logout, revogação global ou negativa
+funcional de autorização. Detecção e tratamento adicional de abuso repetido
+dependem da PT-008.
+
+### Encapsulamento da camada HTTP
+
+A camada HTTP utiliza exclusivamente o contrato público de
+`AuthenticationService`. A evolução pública mínima prevista compreende:
+
+- `authenticateWithPassword`;
+- `resolveAuthenticatedSession`;
+- `logoutCurrentSession`;
+- `logoutAllSessions`; e
+- `revokeUndeliveredSession`, restrito à compensação necessária.
+
+As assinaturas definitivas são validadas durante o planejamento técnico da
+implementação. `AuthSessionPersistence` permanece interno ao módulo, e
+controllers não o acessam diretamente. Essa fronteira não autoriza repositório
+genérico, nova abstração ou dependência sem necessidade concreta.
+
 ## Fluxo de uma requisição protegida
 
 1. Validar transporte seguro e o header obrigatório; em operação mutável,
