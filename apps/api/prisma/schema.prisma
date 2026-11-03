@@ -21,11 +21,29 @@ model Account {
   createdAt       DateTime               @map("created_at") @db.Timestamptz(6)
   deactivatedAt   DateTime?              @map("deactivated_at") @db.Timestamptz(6)
   credential      PasswordCredential?
+  authSessions    AuthSession[]
   globalRoles     GlobalRoleAssignment[]
   bootstrapStates BootstrapState[]
   auditEvents     AuditEvent[]
 
   @@map("account")
+}
+
+model AuthSession {
+  id                 String    @id @db.Uuid
+  accountId          String    @map("account_id") @db.Uuid
+  tokenHash          Bytes     @unique(map: "auth_session_token_hash_key") @map("token_hash") @db.ByteA
+  createdAt          DateTime  @map("created_at") @db.Timestamptz(6)
+  lastActivityAt     DateTime  @map("last_activity_at") @db.Timestamptz(6)
+  absoluteExpiresAt  DateTime  @map("absolute_expires_at") @db.Timestamptz(6)
+  createdOperationId String    @unique(map: "auth_session_created_operation_id_key") @map("created_operation_id") @db.Uuid
+  revokedAt          DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revocationReason   String?   @map("revocation_reason") @db.VarChar(40)
+  revokedOperationId String?   @map("revoked_operation_id") @db.Uuid
+  account            Account   @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([revokedOperationId], map: "auth_session_revoked_operation_id_idx")
+  @@map("auth_session")
 }
 
 model PasswordCredential {

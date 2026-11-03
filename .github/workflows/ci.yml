@@ -171,7 +171,7 @@ jobs:
           export DATABASE_URL
           npm run test:transaction
 
-      - name: Run F1-A PostgreSQL tests
+      - name: Run identity and session PostgreSQL tests
         env:
           CI_DB_PORT: ${{ job.services.postgres.ports[5432] }}
         run: |
@@ -196,6 +196,14 @@ jobs:
           MAINTENANCE_DATABASE_URL="$(database_url \
             bello_test_audit_maintenance \
             "ci-test-audit-maintenance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")"
+          ADMIN_TEST_DATABASE_URL="$(CI_DB_USER=bello_admin \
+            CI_DB_PASSWORD="ci-admin-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            node -e '
+              const url = new URL(`postgresql://${process.env.CI_DB_USER}@127.0.0.1/postgres`);
+              url.port = process.env.CI_DB_PORT;
+              url.password = process.env.CI_DB_PASSWORD;
+              process.stdout.write(url.toString());
+            ')"
           export DATABASE_URL BOOTSTRAP_DATABASE_URL
           export MIGRATION_DATABASE_URL MAINTENANCE_DATABASE_URL
           export BELLO_EPHEMERAL_TEST_DATABASE=true
@@ -203,6 +211,8 @@ jobs:
           npm run test:f1a1 --workspace=@bello/api
           npm run test:f1a2:provider --workspace=@bello/api
           npm run test:f1a2:cli --workspace=@bello/api
+          ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:sessions --workspace=@bello/api
+          npm run test:f1b:persistence --workspace=@bello/api
 
   required:
     name: Required
