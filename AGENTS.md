@@ -14,6 +14,10 @@ específicos não substituem silenciosamente decisões AT, DEC ou RN aprovadas. 
 caso de conflito material, apresente a evidência e solicite uma decisão antes de
 alterar o contrato aprovado.
 
+Para identificar o estado atual e o próximo objetivo, consulte
+[docs/estado-do-projeto.md](docs/estado-do-projeto.md). Esse documento é
+informativo e não substitui as fontes normativas aprovadas.
+
 ## Fontes normativas
 
 Antes de alterar comportamento, identifique as decisões e regras aplicáveis:

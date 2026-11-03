@@ -1,6 +1,10 @@
 # Bello Flow Web
 
-Aplicação web da fundação F0.1, criada com Angular 22.2.4.
+Aplicação frontend Angular do Bello Flow, responsável pela interface web do
+produto.
+
+O estado atual e o próximo objetivo estão em
+[Estado do projeto](../../docs/estado-do-projeto.md).
 
 Os comandos devem ser executados na raiz do monorepositório:
 

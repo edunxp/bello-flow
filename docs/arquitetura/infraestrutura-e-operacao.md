@@ -31,7 +31,7 @@ Desenvolvimento pode separar o servidor Angular do backend e usar um capturador 
 - Política de reinício não substitui diagnóstico de falhas recorrentes.
 - Logs são controlados e não contêm segredos.
 
-Arquivos Compose, imagens, portas e mecanismo de segredos serão definidos na implementação.
+A configuração executável da implantação do MVP, incluindo imagens, portas e mecanismo de segredos, deve ser definida e validada para a topologia operacional aprovada. A configuração local do PostgreSQL está documentada separadamente em [PostgreSQL local](../operacao/postgresql-local.md).
 
 ## Banco e persistência operacional
 
@@ -62,7 +62,7 @@ Destino, criptografia operacional, retenção de backups e ferramenta de backup 
 - Artefatos são versionados e validados antes de produção.
 - Compatibilidade entre aplicação e banco é verificada antes da entrada em serviço.
 - Cada mudança possui procedimento de recuperação compatível com sua natureza.
-- Nenhuma migration foi criada nesta consolidação documental.
+- As migrations versionadas ficam em `apps/api/prisma/migrations` e são validadas separadamente da inicialização comum da aplicação.
 
 ## Bootstrap e emergência
 

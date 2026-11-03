@@ -1,6 +1,10 @@
 # Bello Flow API
 
-API da fundação F0.1, criada com NestJS 12.3.2.
+Aplicação backend NestJS do Bello Flow. Concentra os módulos e casos de uso do
+monólito modular e sua integração com PostgreSQL por Prisma.
+
+O estado atual e o próximo objetivo estão em
+[Estado do projeto](../../docs/estado-do-projeto.md).
 
 Os comandos devem ser executados na raiz do monorepositório:
 

@@ -2,7 +2,7 @@
 
 ## Escopo
 
-Este documento detalha [AT-010](decisoes-tecnicas.md#at-010--observabilidade-testes-e-prontidão). Ferramentas específicas ainda não foram escolhidas.
+Este documento detalha [AT-010](decisoes-tecnicas.md#at-010--observabilidade-testes-e-prontidão). O pipeline automatizado está versionado em [CI](../../.github/workflows/ci.yml); ferramentas e limiares operacionais de observabilidade permanecem nas pendências técnicas aplicáveis.
 
 ## Estratégia de testes
 
@@ -73,7 +73,7 @@ Antes de incorporar alterações à branch principal, o pipeline precisa conclui
 - build do Angular e do NestJS;
 - cenários críticos aplicáveis ao conjunto alterado.
 
-A ferramenta, os estágios físicos e a política detalhada de execução permanecem pendentes. Nenhuma configuração de CI foi criada nesta etapa.
+O workflow versionado de CI executa os jobs obrigatórios `Quality`, `API integration` e `Required`. O procedimento de preparação, publicação e verificação está em [Git e publicação](../operacao/git-e-publicacao.md).
 
 ## Observabilidade
 
