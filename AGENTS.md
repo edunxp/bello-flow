@@ -91,6 +91,45 @@ amplas sem necessidade comprovada.
 - Não crie arquivos `AGENTS.md` adicionais sem diferenças reais e permanentes de
   instrução para o diretório.
 
+## Autonomia operacional e autorizações
+
+Uma tarefa de implementação previamente aprovada autoriza, dentro de seu escopo,
+sem nova aprovação humana de escopo:
+
+- ler e analisar o código;
+- criar e modificar os arquivos relacionados à tarefa;
+- executar formatação, lint, typecheck, build, testes unitários, cobertura e
+  integração, inclusive reexecutá-los após correções;
+- criar e utilizar PostgreSQL comprovadamente descartável e executar migrations
+  exclusivamente nesse ambiente;
+- realizar as inspeções operacionais necessárias; e
+- remover somente os recursos temporários criados e identificados pela própria
+  atividade.
+
+Essa autonomia não elimina confirmações técnicas exigidas pelo sandbox. Antes de
+prosseguir, solicite aprovação humana quando for necessário modificar decisões
+arquiteturais aprovadas, regras de negócio, contratos normativos ou políticas de
+segurança; ampliar materialmente o escopo; introduzir dependência de produção não
+aprovada; ou alterar privilégios permanentes fora do escopo expressamente
+autorizado.
+
+Exigem autorização específica: commit; push; reescrita de histórico Git; acesso
+ou alteração de bancos persistentes; exclusão de recursos preexistentes ou cuja
+propriedade não esteja comprovada; operações administrativas reais; e uso de
+recursos externos ou credenciais não autorizados. Commit e push permanecem
+autorizações independentes.
+
+Preserve o sandbox e os controles de execução. Não crie regras `allow` amplas,
+não armazene credenciais em regras do Codex, não execute limpeza Docker global,
+confirme identidade e propriedade antes de remover recursos temporários e não use
+credenciais de bancos persistentes em testes. Autorização operacional não implica
+aprovação de mudança arquitetural.
+
+Estas regras complementam as demais instruções deste arquivo e o
+[Procedimento de Git e publicação](docs/operacao/git-e-publicacao.md). Em caso de
+conflito, aplique a restrição mais específica e segura, sem alterar a precedência
+das fontes normativas já estabelecida.
+
 ## Segurança e dados sensíveis
 
 Nunca exponha ou versione credenciais reais, hashes associados a senhas reais ou
