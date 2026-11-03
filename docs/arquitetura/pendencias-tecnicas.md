@@ -19,13 +19,16 @@ fonte normativa que aprovou cada resolução.
 | PT-004 | modelo físico, restrições e índices | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho |
 | PT-006 | protocolo de revisão, mensagens, reconexão e verificações periódicas | AT-005 | contrato de sincronização e recuperação testável |
 | PT-007 | tratamento seguro de links/tokens nas solicitações persistidas de e-mail | AT-009 | fluxo sem segredo recuperável desnecessário |
-| PT-008 | limites de tentativas para login, recuperação, transações e e-mail | AT-001, AT-003, AT-009 | limites e respostas aprovados com critérios de segurança |
+| PT-008 | limites de tentativas para recuperação, transações e e-mail; o subconjunto de login está aprovado para planejamento | AT-001, AT-003, AT-009 | limites e respostas restantes aprovados com critérios de segurança |
 
-Para a camada HTTP de autenticação, PT-008 permanece aberta e deverá integrar o
-login aos controles aprovados futuramente. Até seu encerramento, não estão
-definidos limiares, janelas, chaves do limitador, política ou duração de bloqueio,
-armazenamento, valor de `Retry-After` nem comportamento definitivo de
-`429 RATE_LIMITED`. As decisões D1–D5 não resolvem nem reclassificam a PT-008.
+O subconjunto de login da PT-008 foi aprovado em 2026-11-03 para planejamento,
+sem declarar implementação. Ele define os dois token buckets, respostas `429` e
+`503`, memória efêmera limitada, saturação, concorrência Argon2id e critérios de
+teste no [complemento de AT-001](decisoes-tecnicas.md#complemento-aprovado--proteção-do-login-da-pt-008)
+e no [contrato de segurança](seguranca-e-autorizacao.md#proteção-do-login--subconjunto-aprovado-da-pt-008).
+PT-008 permanece parcialmente aberta para recuperação de senha, retentativas
+transacionais e processamento de e-mails. As decisões D1–D5 dos contratos HTTP
+permanecem preservadas e não criam quotas genéricas para outros endpoints.
 
 ## Pendências técnicas resolvidas
 

@@ -51,6 +51,21 @@ de cookie definido em
 - Política de reinício não substitui diagnóstico de falhas recorrentes.
 - Logs são controlados e não contêm segredos.
 
+### Capacidade efêmera da proteção de login
+
+O subconjunto aprovado da PT-008 usa somente memória local da instância única,
+sem Redis ou persistência adicional. Os limites configuráveis não podem exceder
+16.000 buckets de identidade, 4.000 buckets de IP, duas autenticações protegidas
+simultâneas, quatro posições FIFO ou um segundo de espera. Configuração fora dos
+intervalos aprovados impede a inicialização.
+
+Reinicialização zera os contadores. Esse limite é aceito para a topologia inicial
+e não constitui garantia para múltiplas instâncias. Aumento futuro dos limites
+ou mudança da topologia exige evidência de capacidade e desempenho vinculada à
+PT-016. Saturação de um mapa não ativa indisponibilidade global: somente uma
+requisição cuja nova chave não possa ser representada com todas as proteções
+recebe `503`, após limpeza segura das entradas recuperadas.
+
 A configuração executável da implantação do MVP, incluindo imagens, portas e mecanismo de segredos, deve ser definida e validada para a topologia operacional aprovada. A configuração local do PostgreSQL está documentada separadamente em [PostgreSQL local](../operacao/postgresql-local.md).
 
 ## Banco e persistência operacional

@@ -147,15 +147,16 @@ detalhe operacional sensível.
 | `401` | `UNAUTHENTICATED` | ausência de sessão autenticada válida |
 | `403` | `REQUEST_FORBIDDEN` | rejeição dos controles de origem ou CSRF |
 | `415` | `UNSUPPORTED_MEDIA_TYPE` | media type incompatível com o corpo JSON exigido |
-| `429` | `RATE_LIMITED` | reservado à integração futura da PT-008 |
+| `429` | `RATE_LIMITED` | admissão do login rejeitada pelos limites aprovados da PT-008 |
 | `503` | `SERVICE_UNAVAILABLE` | falha operacional ou resultado ainda indeterminado |
 | `500` | `INTERNAL_ERROR` | falha interna não classificada |
 
 O mesmo `AUTHENTICATION_FAILED` cobre identidade inexistente, senha incorreta,
 conta inelegível e demais rejeições determinadas da credencial. O `401` não
 revela existência, elegibilidade ou estado da conta, e o `503` não revela a
-causa operacional. Limiares, janelas, chaves, bloqueios, armazenamento,
-`Retry-After` e o comportamento definitivo de `429` permanecem na PT-008.
+causa operacional. Para o login, limites, chaves, armazenamento, `Retry-After`
+e `429` estão definidos no subconjunto aprovado da PT-008; recuperação de senha,
+retentativas transacionais e processamento de e-mails permanecem abertos.
 
 ### `POST /api/auth/login`
 
@@ -232,8 +233,8 @@ autenticação e da autorização funcional, produzem apenas logs técnicos
 estruturados, minimizados e sem segredos. Elas não criam novos eventos
 funcionais de auditoria nesta etapa. Essa classificação não altera a auditoria
 aprovada de login, falha de login, logout, revogação global ou negativa
-funcional de autorização. Detecção e tratamento adicional de abuso repetido
-dependem da PT-008.
+funcional de autorização. A admissão abusiva do login segue o subconjunto
+aprovado da PT-008; outros tratamentos adicionais permanecem fora deste contrato.
 
 ### Encapsulamento da camada HTTP
 
@@ -250,6 +251,139 @@ As assinaturas definitivas são validadas durante o planejamento técnico da
 implementação. `AuthSessionPersistence` permanece interno ao módulo, e
 controllers não o acessam diretamente. Essa fronteira não autoriza repositório
 genérico, nova abstração ou dependência sem necessidade concreta.
+
+## Proteção do login — subconjunto aprovado da PT-008
+
+Este contrato está aprovado para o planejamento de `POST /api/auth/login`, mas
+ainda não está implementado. Ele não cria quotas para consulta de sessão, logout
+ou logout global e não encerra as partes da PT-008 relativas a recuperação de
+senha, retentativas transacionais ou processamento de e-mails.
+
+### Admissão e token buckets
+
+A admissão usa dois token buckets independentes e exige orçamento em ambos:
+
+| Chave | Capacidade | Reposição | Sucesso confirmado |
+|---|---:|---:|---|
+| identidade normalizada | 5 tokens | 1 token a cada 180 segundos | remove ou reseta o bucket |
+| IP confiável | 60 tokens | 1 token a cada 5 segundos | preserva o débito |
+
+A identidade usa exatamente a normalização de e-mail do serviço existente. O
+bucket é criado da mesma forma para identidades existentes ou inexistentes, sem
+consulta ao PostgreSQL para decidir a limitação. O IP é derivado exclusivamente
+da cadeia de proxy confiável da PT-005; `X-Forwarded-For` fornecido diretamente
+pelo cliente não é fonte confiável.
+
+Depois dos controles de origem, CSRF, conteúdo e estrutura da requisição, a
+camada de admissão aplica reposição e reserva os dois tokens em uma única seção
+síncrona, sem `await`, antes de PostgreSQL ou Argon2id. Se qualquer orçamento
+estiver esgotado, nenhum bucket é debitado parcialmente e a autenticação não
+começa. Requisições já limitadas não consomem token adicional nem deslocam o
+próximo instante de reposição.
+
+Cada reserva possui identidade própria. Restituição é idempotente, ocorre no
+máximo uma vez e nunca eleva o bucket além de sua capacidade. Os resultados são:
+
+| Conclusão | Identidade | IP |
+|---|---|---|
+| rejeição determinada da credencial | confirma o consumo | confirma o consumo |
+| autenticação confirmada | remove ou reseta o bucket | confirma o consumo |
+| falha operacional | restitui a reserva | restitui a reserva |
+| resultado indeterminado | restitui sem repetir automaticamente | restitui sem repetir automaticamente |
+| falha antes do início da autenticação | restitui a reserva | restitui a reserva |
+
+### Resposta de limite
+
+O limite responde `429` com corpo invariável:
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests"
+  }
+}
+```
+
+`Retry-After` contém segundos inteiros até o próximo token disponível. Quando os
+dois buckets estiverem esgotados, usa-se a maior espera. Corpo, header, log e
+métrica não revelam qual identidade ou IP causou a rejeição. Depois de `429`, a
+API não consulta o banco nem executa Argon2id.
+
+### Memória, remoção e saturação
+
+O estado é local e efêmero na única instância do backend. Os mapas possuem
+capacidades independentes de até 16.000 identidades e 4.000 IPs, totalizando no
+máximo 20.000 entradas. Reinicialização da instância zera os contadores.
+
+Um bucket somente pode ser removido quando, após aplicar sua reposição, estiver
+integralmente recuperado, sem reserva aberta e sem outra obrigação ou restrição
+pendente. Buckets parcialmente consumidos, esgotados ou associados a autenticação
+em andamento não são removidos. A limpeza normal é preguiçosa e incremental, com
+trabalho limitado; uma varredura completa é admitida excepcionalmente diante de
+saturação.
+
+Para admitir chave nova, a camada remove primeiro somente entradas elegíveis. Se
+o mapa continuar cheio, rejeita apenas aquela requisição com
+`503 SERVICE_UNAVAILABLE`, restitui eventual reserva provisória e não cria bucket
+parcial nem inicia autenticação. Buckets existentes continuam operando. É
+proibido expulsar bucket restritivo, operar somente com um dos limites ou ativar
+indisponibilidade global apenas porque um mapa atingiu sua capacidade.
+
+O `503` permanece genérico e não inclui `Retry-After` quando não houver previsão
+confiável de recuperação, nem dados pessoais ou identificadores internos.
+
+### Capacidade de Argon2id
+
+No máximo duas autenticações protegidas executam simultaneamente. Até quatro
+requisições adicionais aguardam em fila FIFO por prazo positivo de no máximo um
+segundo. A fila é amortecimento limitado, não garantia de execução; fila
+ilimitada e repetição automática são proibidas. Fila cheia, timeout ou falha de
+aquisição retornam `503 SERVICE_UNAVAILABLE` sem iniciar autenticação.
+
+Aquisição, timeout e cancelamento são transições mutuamente exclusivas. Uma
+requisição expirada ou cancelada não recebe vaga depois. Reserva anterior ao
+início é restituída no máximo uma vez, e cada vaga adquirida é liberada exatamente
+uma vez. Desconexão após o início do trabalho nativo não antecipa a liberação: a
+vaga permanece ocupada até o término real do trabalho protegido.
+
+Configuração pode escolher valores menores dentro destes intervalos: até 16.000
+identidades, até 4.000 IPs, concorrência de 1 a 2, fila de 0 a 4 e timeout
+positivo de até um segundo. Valor fora do intervalo impede a inicialização.
+Aumento futuro requer evidência de capacidade e desempenho vinculada à PT-016.
+
+### Auditoria e minimização
+
+Um `429` anterior à avaliação da credencial é rejeição técnica de admissão, não
+login funcionalmente avaliado. Ele produz somente log técnico ou métrica sem
+e-mail, IP bruto, chave de bucket, senha, token ou cookie e não cria
+`AUTH_LOGIN_FAILED`. Essa distinção não altera RN-128: login bem-sucedido ou
+malsucedido que efetivamente alcance o serviço de autenticação preserva a
+auditoria funcional aprovada.
+
+### Critérios mínimos de teste
+
+Os testes futuros devem comprovar:
+
+- capacidade, reposição, teto e reset distintos dos dois buckets;
+- normalização idêntica para variações da mesma identidade e tratamento
+  indistinguível de conta existente ou inexistente;
+- reserva conjunta sem débito parcial, restituição idempotente e ausência de
+  saldo acima da capacidade sob concorrência;
+- `429`, `Retry-After`, ausência de banco/Argon2id e ausência de auditoria
+  funcional para tentativa não avaliada;
+- concorrência máxima, FIFO, fila cheia, timeout, cancelamento, liberação única
+  e desconexão posterior ao início;
+- remoção apenas de bucket recuperado, limpeza incremental e excepcional,
+  saturação localizada, recuperação de capacidade e teto estrito dos mapas;
+- ausência de expulsão de bucket ativo ou degradação para somente um limite;
+- IP derivado de proxy conhecido e resistência a headers encaminhados forjados;
+- reinicialização do estado efêmero, configuração inválida impedindo startup e
+  isolamento entre a camada de admissão e `AuthSessionPersistence`.
+
+Relógio controlável e promises coordenadas substituem esperas reais. Esses
+testes não repetem provas criptográficas existentes e preservam o gate mínimo
+de 90% em lines, statements, functions e branches.
 
 ## Fluxo de uma requisição protegida
 

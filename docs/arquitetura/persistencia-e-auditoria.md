@@ -92,8 +92,17 @@ Rejeições isoladas de origem ou CSRF na fronteira HTTP, anteriores à
 autenticação e à autorização funcional, geram somente logs técnicos estruturados
 e sem segredos nesta etapa. Elas não criam nova classificação funcional de
 auditoria. Permanecem obrigatórios os eventos aprovados de login, falha de login,
-logout, revogação global e negativas funcionais de autorização. Tratamento
-adicional de abuso repetido depende da PT-008.
+logout, revogação global e negativas funcionais de autorização. O subconjunto de
+admissão abusiva do login está aprovado na PT-008; os demais escopos da pendência
+permanecem abertos.
+
+No subconjunto aprovado de proteção do login, uma requisição rejeitada com `429`
+antes de alcançar `AuthenticationService` é rejeição técnica de admissão e não
+uma tentativa de credencial avaliada. Ela produz somente log técnico ou métrica
+minimizada e não cria `AUTH_LOGIN_FAILED`. Essa distinção preserva RN-128: todo
+login bem-sucedido ou malsucedido efetivamente avaliado continua sujeito à
+auditoria funcional existente. Limitação, saturação ou capacidade não registram
+e-mail, IP bruto, chave de bucket, senha, token ou cookie.
 
 ## Proteção append-only
 

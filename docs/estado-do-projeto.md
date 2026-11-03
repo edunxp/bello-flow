@@ -13,8 +13,11 @@ aprovado ou um marco relevante for publicado.
 - **Decisão de planejamento concluída:** PT-005 — cookies, CSRF, origem e CORS.
 - **Contratos de planejamento aprovados:** D1–D5 — endpoints, erros, logout,
   operações indeterminadas, CSRF/auditoria e encapsulamento da camada HTTP.
+- **Proteção de login aprovada:** subconjunto da PT-008 — token buckets por
+  identidade e IP, memória limitada, saturação segura e concorrência Argon2id.
 - **Limites:** as aprovações documentais da PT-005 e de D1–D5 não declaram
-  implementação nem autorizam endpoints HTTP, cookies, CSRF, proxy ou frontend.
+  implementação; o mesmo vale para o subconjunto de login da PT-008. Nenhuma
+  delas autoriza endpoints HTTP, cookies, CSRF, proxy ou frontend.
 
 ## Etapas concluídas
 
@@ -99,9 +102,17 @@ autorização posterior específica.
 Permanece com o estado registrado no documento canônico de
 [pendências técnicas](arquitetura/pendencias-tecnicas.md):
 
-- **PT-008:** limites de tentativas para login, recuperação, transações e e-mail.
+- **PT-008:** o subconjunto de proteção do login está aprovado para planejamento;
+  limites de recuperação de senha, retentativas transacionais e processamento de
+  e-mails permanecem abertos.
 
-Para o login HTTP, continuam pendentes limiares, janelas, chaves, bloqueios,
-armazenamento, `Retry-After` e comportamento definitivo de `429`.
+Para o login HTTP, foram aprovados token buckets independentes por identidade e
+IP confiável, reserva atômica, `429` com `Retry-After`, memória efêmera limitada,
+saturação localizada, duas execuções Argon2id e fila limitada. Os contratos estão
+em [decisões técnicas](arquitetura/decisoes-tecnicas.md#complemento-aprovado--proteção-do-login-da-pt-008)
+e [segurança e autorização](arquitetura/seguranca-e-autorizacao.md#proteção-do-login--subconjunto-aprovado-da-pt-008).
+Essas decisões estão documentadas, mas não implementadas. Aumentos de capacidade
+dependem de evidências relacionadas à PT-016.
 
-Esta referência não fecha, resolve nem reclassifica qualquer pendência.
+Esta referência não encerra integralmente a PT-008 nem reclassifica suas partes
+remanescentes.

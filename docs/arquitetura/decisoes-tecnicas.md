@@ -107,14 +107,72 @@ O contrato detalhado e seus limites operacionais estão em
   cookie enquanto não houver confirmação ou reconciliação conclusiva.
 - **D4 — CSRF e auditoria:** rejeições isoladas na fronteira HTTP por origem ou
   CSRF produzem somente logs técnicos estruturados e sem segredos. Os eventos
-  funcionais existentes de autenticação e revogação permanecem inalterados;
-  tratamento adicional de abuso repetido depende da PT-008.
+  funcionais existentes de autenticação e revogação permanecem inalterados; a
+  admissão abusiva do login é detalhada pelo subconjunto aprovado da PT-008.
 - **D5 — encapsulamento:** controllers utilizam exclusivamente o contrato
   público de `AuthenticationService`; `AuthSessionPersistence` permanece
   interno ao módulo e DTOs externos selecionam explicitamente seus campos.
 
 O contrato completo, inclusive matriz de erros e limites de implementação, está
 em [segurança e autorização](seguranca-e-autorizacao.md#contratos-http-de-autenticação--d1d5).
+
+### Complemento aprovado — proteção do login da PT-008
+
+- **Estado:** Aprovado para planejamento; não implementado
+- **Data de aprovação:** 2026-11-03
+- **Escopo:** somente `POST /api/auth/login`; recuperação de senha, retentativas
+  transacionais e processamento de e-mails permanecem pendentes na PT-008.
+- **Impacto:** detalha AT-001, AT-003, AT-005, AT-010 e os contratos HTTP D1–D5,
+  sem alterar PT-005, regras funcionais, Argon2id ou auditoria de autenticações
+  efetivamente avaliadas.
+- **Substituições:** nenhuma AT, DEC ou RN é substituída.
+- **PT-008/D1 — escopo:** somente o login é fechado; recuperação de senha,
+  retentativas transacionais e processamento de e-mails permanecem abertos.
+- **PT-008/D2 — limites do login:** a admissão exige simultaneamente um token
+  bucket por identidade normalizada,
+  com capacidade 5 e reposição de um token a cada 180 segundos, e outro por IP
+  confiável, com capacidade 60 e reposição de um token a cada 5 segundos.
+- A normalização de e-mail é a mesma da autenticação existente. O bucket independe
+  da existência da conta e não exige consulta ao PostgreSQL. Sucesso confirmado
+  remove o bucket da identidade; o bucket do IP não é resetado.
+- A reserva dos dois tokens é síncrona, atômica, identificada e anterior a
+  PostgreSQL e Argon2id. Rejeição por limite não debita parcialmente, não desloca
+  a reposição nem inicia autenticação.
+- Rejeição determinada confirma o consumo; sucesso confirmado reseta somente a
+  identidade; falha anterior à autenticação, falha operacional ou resultado
+  indeterminado restituem a reserva de forma idempotente e sem exceder a
+  capacidade. Resultado indeterminado preserva a reconciliação e não é repetido.
+- **PT-008/D3 — auditoria:** `429` anterior à avaliação da credencial é rejeição
+  técnica de admissão e produz somente log técnico ou métrica sem dados
+  sensíveis. Não cria `AUTH_LOGIN_FAILED`; a auditoria funcional aprovada por
+  RN-128 permanece para autenticações efetivamente avaliadas.
+- **PT-008/D4 — resposta de limite:** a rejeição retorna
+  `429 RATE_LIMITED` genérico com `Retry-After` em segundos até o próximo token;
+  se ambos estiverem esgotados, prevalece a maior espera.
+- **PT-008/D5 — armazenamento:** o estado é efêmero e local à instância única,
+  com limites independentes de
+  16.000 identidades e 4.000 IPs. Reinicialização zera os contadores. Somente
+  bucket integralmente recuperado, sem reserva ou obrigação pendente, pode ser
+  removido; bucket restritivo não é expulso nem tem sua proteção degradada.
+- Na saturação, uma limpeza excepcional remove somente entradas elegíveis. Se a
+  nova chave ainda não puder ser admitida, somente aquela requisição recebe
+  `503 SERVICE_UNAVAILABLE`, sem autenticação, admissão parcial ou indisponibilidade
+  global; buckets existentes continuam operando.
+- **PT-008/D6 — capacidade Argon2id:** a execução protegida admite no máximo duas
+  autenticações simultâneas e fila
+  FIFO de até quatro posições, com espera positiva limitada a um segundo. Falha
+  de aquisição retorna `503`; timeout, cancelamento e aquisição são mutuamente
+  exclusivos; reserva e vaga são restituídas ou liberadas exatamente uma vez.
+  Desconexão após o início não libera capacidade antes do fim real do trabalho.
+- Configuração pode reduzir os limites aprovados, respeitando: identidades até
+  16.000, IPs até 4.000, concorrência de 1 a 2, fila de 0 a 4 e timeout positivo
+  de até um segundo. Configuração inválida impede a inicialização. Aumentos
+  exigem evidência de capacidade e desempenho vinculada à PT-016.
+- **PT-008/D7 — demais endpoints:** não são criadas quotas genéricas para sessão,
+  logout ou logout global.
+
+O detalhamento, os critérios de teste e os limites de saturação estão em
+[segurança e autorização](seguranca-e-autorizacao.md#proteção-do-login--subconjunto-aprovado-da-pt-008).
 
 ### Rastreabilidade
 
@@ -431,6 +489,7 @@ em [segurança e autorização](seguranca-e-autorizacao.md#contratos-http-de-aut
 
 | Data | Alteração |
 |---|---|
+| 2026-11-03 | Subconjunto de login da PT-008 aprovado para planejamento, com token buckets, memória limitada, saturação segura e concorrência Argon2id, sem declarar implementação; recuperação, transações e e-mail permanecem pendentes. |
 | 2026-11-03 | D1–D5 aprovadas para os contratos HTTP de autenticação da F1-B.4, sem declarar implementação e preservando PT-005 e PT-008. |
 | 2026-11-03 | PT-005 resolvida como complemento aprovado de AT-001 e AT-005, definindo topologia same-origin, cookie, origem, CORS e proteção CSRF da camada HTTP sem declarar implementação. |
 | 2026-10-30 | AT-001 a AT-010 consolidadas como aprovadas pelo responsável pelo produto. |

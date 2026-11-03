@@ -19,6 +19,10 @@ A cobertura global mínima é 90% e precisa gerar relatório. Esse número não 
 ## Cenários críticos obrigatórios
 
 - login, expiração, logout, revogação global e redefinição de senha;
+- limitação do login por identidade e IP confiável, incluindo reposição,
+  normalização, reserva atômica, `429`, `Retry-After` e ausência de enumeração;
+- concorrência Argon2id, fila FIFO, timeout, cancelamento, restituição e liberação
+  únicas, saturação e recuperação dos mapas sem expulsão de buckets ativos;
 - negação por padrão e segregação entre papéis global, Workspace e quadro;
 - respostas 404/403 sem vazamento de existência ou conteúdo;
 - ausência de acesso automático de administradores ao conteúdo;
@@ -36,6 +40,11 @@ A cobertura global mínima é 90% e precisa gerar relatório. Esse número não 
 - processamento posterior de e-mail, expiração e uso único de tokens;
 - desativação sem deixar escopo administrativo sem sucessor;
 - restauração mensal e verificação dos objetivos RPO/RTO.
+
+Os testes da proteção de login usam relógio controlável e promises coordenadas,
+sem sleeps. Eles comprovam os tetos de memória e concorrência, `503` localizado,
+reinicialização do estado efêmero, configuração inválida e resistência a headers
+de proxy forjados, sem repetir provas criptográficas já cobertas.
 
 ## Integração com PostgreSQL real
 
