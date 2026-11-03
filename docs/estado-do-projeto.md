@@ -10,8 +10,9 @@ aprovado ou um marco relevante for publicado.
 - **Última entrega funcional concluída:** F1-B.3 — `AuthenticationService`.
 - **Próxima etapa proposta:** F1-B.4 — Camada HTTP de Autenticação.
 - **Estado:** planejamento; implementação ainda não autorizada.
-- **Limites:** não implementar endpoints HTTP, cookies, CSRF ou frontend sem
-  aprovação arquitetural.
+- **Decisão de planejamento concluída:** PT-005 — cookies, CSRF, origem e CORS.
+- **Limites:** a aprovação documental da PT-005 não declara implementação nem
+  autoriza endpoints HTTP, cookies, CSRF, proxy ou frontend.
 
 ## Etapas concluídas
 
@@ -49,8 +50,7 @@ O planejamento deve tratar:
 
 - endpoints de autenticação;
 - transporte seguro do token opaco;
-- cookies e atributos de segurança;
-- proteção CSRF;
+- aplicação do contrato aprovado de cookies, origem, CORS e proteção CSRF;
 - erros HTTP;
 - resolução e revogação de sessões;
 - PT-008 — limites de tentativas de login.
@@ -61,14 +61,25 @@ O planejamento deve preservar [AT-001 e AT-002](arquitetura/decisoes-tecnicas.md
 RN-120–RN-129 em [regras de negócio](produto/regras-de-negocio.md) e os fluxos de
 [segurança e autorização](arquitetura/seguranca-e-autorizacao.md). Esses
 contratos aprovados são limites do planejamento; este documento não escolhe
-rotas, formatos de resposta, nomes de cookies ou mecanismos adicionais.
+rotas nem formatos de resposta. O contrato de cookie, origem, CORS e CSRF está
+aprovado na resolução da PT-005, sem evidência de implementação.
 
-## Pendências relevantes
+## Decisão técnica relevante
 
-As pendências permanecem com o estado registrado no documento canônico de
+A **PT-005** foi resolvida em 2026-11-03 como complemento aprovado de AT-001 e
+AT-005. Ela define mesma origem pública, API sob `/api`, preservação de
+`/health/live`, cookie seguro, origem canônica, CORS desabilitado e proteção
+CSRF. O contrato está em
+[decisões técnicas](arquitetura/decisoes-tecnicas.md#complemento-aprovado--resolução-da-pt-005)
+e [segurança e autorização](arquitetura/seguranca-e-autorizacao.md#transporte-http-cookie-origem-cors-e-csrf).
+
+Esse fechamento é documental e não move a F1-B.4 para implementação.
+
+## Pendência relevante
+
+Permanece com o estado registrado no documento canônico de
 [pendências técnicas](arquitetura/pendencias-tecnicas.md):
 
-- **PT-005:** configuração final de cookies, CSRF, origens e domínios;
 - **PT-008:** limites de tentativas para login, recuperação, transações e e-mail.
 
 Esta referência não fecha, resolve nem reclassifica qualquer pendência.

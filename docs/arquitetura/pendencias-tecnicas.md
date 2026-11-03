@@ -2,7 +2,12 @@
 
 ## Convenção
 
-Os itens abaixo não são decisões aprovadas. Eles registram escolhas, provas de conceito ou validações necessárias antes ou durante a implementação. Uma resolução futura deve indicar a AT afetada, evidências e impactos, sem alterar silenciosamente regras funcionais.
+Os itens das seções de pendências abaixo não são decisões aprovadas. Eles
+registram escolhas, provas de conceito ou validações necessárias antes ou
+durante a implementação. Uma resolução futura deve indicar a AT afetada,
+evidências e impactos, sem alterar silenciosamente regras funcionais. A seção
+de pendências resolvidas preserva apenas a rastreabilidade e aponta para a
+fonte normativa que aprovou cada resolução.
 
 ## Pendências prioritárias antes da implementação
 
@@ -12,10 +17,19 @@ Os itens abaixo não são decisões aprovadas. Eles registram escolhas, provas d
 | PT-002 | representação física das posições esparsas e critério de rebalanceamento | AT-004 | prova de concorrência, precisão, crescimento e ordenação estável |
 | PT-003 | bloqueios, ordem de aquisição, isolamento e repetição por operação | AT-003, AT-004 | catálogo por mutação crítica com comportamento de conflito |
 | PT-004 | modelo físico, restrições e índices | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho |
-| PT-005 | configuração final de cookies, CSRF, origens e domínios | AT-001, AT-005 | configuração validada na topologia de implantação |
 | PT-006 | protocolo de revisão, mensagens, reconexão e verificações periódicas | AT-005 | contrato de sincronização e recuperação testável |
 | PT-007 | tratamento seguro de links/tokens nas solicitações persistidas de e-mail | AT-009 | fluxo sem segredo recuperável desnecessário |
 | PT-008 | limites de tentativas para login, recuperação, transações e e-mail | AT-001, AT-003, AT-009 | limites e respostas aprovados com critérios de segurança |
+
+## Pendências técnicas resolvidas
+
+Esta seção registra encerramentos para preservar rastreabilidade. O contrato
+normativo aprovado permanece na decisão técnica e no documento arquitetural
+indicados; o registro de encerramento não declara implementação.
+
+| ID técnico | Estado | Resolução | Evidência normativa |
+|---|---|---|---|
+| PT-005 | **Resolvida — aprovada em 2026-11-03** | mesma origem pública para Angular e NestJS; cookie host-only seguro; origem canônica; CORS desabilitado; proteção CSRF por header, origem e conteúdo; perfis de desenvolvimento controlados | [complemento de AT-001](decisoes-tecnicas.md#complemento-aprovado--resolução-da-pt-005) e [contrato de segurança](seguranca-e-autorizacao.md#transporte-http-cookie-origem-cors-e-csrf) |
 
 ## Pendências operacionais
 

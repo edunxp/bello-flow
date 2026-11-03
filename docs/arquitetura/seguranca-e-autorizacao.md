@@ -23,12 +23,91 @@ Este documento detalha as responsabilidades decorrentes de [AT-001](decisoes-tec
 - Redefinição de senha ou desativação revoga todas as sessões existentes.
 - Cookies, CSRF, origem e HTTPS formam controles complementares; nenhum deles substitui a autorização do recurso.
 
-A configuração concreta de domínio, caminho, atributo `SameSite` e demais propriedades do cookie permanece pendente e deve ser validada contra a topologia real.
+## Transporte HTTP, cookie, origem, CORS e CSRF
+
+A PT-005 está resolvida pelo complemento aprovado de
+[AT-001](decisoes-tecnicas.md#complemento-aprovado--resolução-da-pt-005), com
+os seguintes contratos:
+
+### Topologia e cookie
+
+- Angular e NestJS compartilham uma origem pública. A aplicação ocupa `/`, a
+  API funcional ocupa `/api`, `/health/live` permanece operacional e público,
+  e o frontend usa URLs relativas.
+- Produção usa proxy reverso. Desenvolvimento usa o proxy do Angular para
+  preservar a mesma origem percebida pelo navegador.
+- O cookie de produção chama-se `__Host-bello_flow_session` e possui
+  `HttpOnly=true`, `Secure=true`, `SameSite=Lax`, `Path=/`, nenhum `Domain` e
+  `Max-Age=604800` segundos.
+- O prazo do cookie limita sua retenção no cliente, mas não autentica uma
+  sessão inválida. PostgreSQL permanece como autoridade sobre revogação,
+  inatividade de 8 horas e vida absoluta de 7 dias.
+- O token de sessão não aparece em JSON, logs, métricas ou auditoria.
+
+HTTPS local é preferido para validar o contrato de produção. Como conveniência,
+HTTP pode ser usado somente em endereço loopback, com cookie de nome distinto,
+como `bello_flow_session`, mantendo `HttpOnly`, `SameSite=Lax`, `Path=/` e
+ausência de `Domain`; apenas esse perfil pode omitir `Secure`. A aplicação deve
+recusar esse perfil fora do ambiente local. Testes HTTP locais sem TLS não
+comprovam os atributos do cookie de produção.
+
+### Origem pública, proxy e CORS
+
+- Cada ambiente define uma origem pública canônica, comparada por esquema,
+  host e porta exatos.
+- A origem autorizada não é derivada de `Host` ou de `X-Forwarded-*` enviados
+  pelo cliente.
+- O proxy remove ou sobrescreve headers encaminhados. A aplicação confia
+  somente no proxy conhecido e não habilita confiança irrestrita.
+- A API same-origin não habilita CORS no MVP, não retorna
+  `Access-Control-Allow-Origin` ou `Access-Control-Allow-Credentials`, não
+  autoriza preflight de origens externas e não usa wildcard nem reflexão
+  dinâmica de `Origin`.
+
+### Requisições protegidas
+
+- Toda chamada protegida da aplicação, inclusive GET autenticado, apresenta
+  uma única ocorrência lógica de `X-Bello-Flow-Request` com valor exato `1`.
+- Header ausente, duplicado, combinado ou com outro valor é rejeitado.
+- Endpoints operacionais explicitamente públicos são dispensados e não
+  resolvem sessão.
+- Qualquer requisição protegida válida pode contar como atividade, inclusive
+  GET e polling. A atualização respeita o intervalo mínimo existente de cinco
+  minutos e nunca amplia a vida absoluta de sete dias.
+
+Antes de qualquer método mutável:
+
+1. validar `Origin` exatamente contra a origem pública configurada;
+2. rejeitar `Origin: null`, valores múltiplos ou inválidos;
+3. quando `Origin` estiver ausente, aceitar somente `Referer` válido cuja
+   propriedade de origem da URL coincida exatamente, sem comparação textual
+   por prefixo;
+4. rejeitar quando nenhum sinal confiável estiver disponível;
+5. exigir `application/json` quando o endpoint receber corpo JSON, sem criar
+   exigência artificial de `Content-Type` para endpoints sem corpo; e
+6. aplicar os mesmos controles ao login antes da autenticação.
+
+Não há token CSRF persistido adicional nesta versão. Header customizado,
+validação de origem, restrição de conteúdo, cookie e HTTPS formam a proteção
+conjunta e não substituem autorização do recurso.
+
+### Logout e entrega
+
+- Logout confirma a revogação server-side antes de responder sucesso e limpa
+  o cookie com nome, `Path` e escopo compatíveis.
+- Sessão já inválida admite limpeza idempotente segura.
+- Resultado indeterminado segue o contrato de reconciliação antes de qualquer
+  classificação ou repetição.
+- Depois de transmitir a resposta, o servidor não presume se o navegador
+  recebeu ou armazenou o cookie. Fechamento posterior da conexão não comprova
+  falha de entrega e não provoca revogação por suposição.
 
 ## Fluxo de uma requisição protegida
 
-1. Validar transporte seguro, origem e proteção CSRF quando a operação for mutável.
-2. Resolver a sessão persistida sem registrar seu identificador em logs.
+1. Validar transporte seguro e o header obrigatório; em operação mutável,
+   validar também origem, proteção CSRF e tipo de conteúdo aplicável.
+2. Resolver a sessão persistida sem registrar seu identificador em logs; um
+   endpoint operacional público não executa esta etapa.
 3. Validar expiração por inatividade e absoluta.
 4. Validar conta ativa e e-mail verificado quando exigido.
 5. Carregar o estado atual necessário à política do domínio.

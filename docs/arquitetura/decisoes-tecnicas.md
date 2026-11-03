@@ -33,6 +33,58 @@
 - múltiplos dispositivos permitidos;
 - encerramento global de sessões disponível.
 
+### Complemento aprovado — resolução da PT-005
+
+- **Estado:** Aprovada
+- **Estado anterior:** pendência técnica não aprovada em PT-005
+- **Data de aprovação:** 2026-11-03
+- **Justificativa:** validar o transporte HTTP de sessão e os controles de CSRF
+  na topologia same-origin escolhida para o MVP.
+- **Impacto:** detalha AT-001 e a validação de origem prevista em AT-005, sem
+  alterar regras funcionais, prazos server-side ou escopos de autorização.
+- **Substituições:** nenhuma AT, DEC ou RN é substituída.
+- Angular e NestJS compartilham a mesma origem pública; a aplicação ocupa `/`,
+  a API funcional ocupa `/api` e o endpoint operacional `/health/live` é
+  preservado. Produção usa proxy reverso, desenvolvimento usa o proxy do
+  Angular e o frontend chama a API por URLs relativas.
+- Em produção, a sessão usa o cookie `__Host-bello_flow_session`, com
+  `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, sem `Domain` e com
+  `Max-Age=604800`. O prazo do cookie não substitui a validade server-side de
+  8 horas de inatividade e 7 dias de vida absoluta.
+- O token de sessão não integra respostas JSON, logs, métricas ou auditoria.
+- Desenvolvimento prefere HTTPS para paridade. HTTP é permitido somente em
+  loopback, com nome de cookie distinto, sem `Secure` exclusivamente nesse
+  perfil, e deve ser rejeitado fora do ambiente local.
+- Cada ambiente possui uma origem pública canônica. Esquema, host e porta são
+  comparados exatamente; a origem autorizada não é derivada de `Host` ou de
+  `X-Forwarded-*` fornecidos pelo cliente. Somente proxies conhecidos são
+  confiados e devem remover ou sobrescrever headers encaminhados.
+- CORS não é habilitado no MVP same-origin: a API não autoriza origens
+  externas, não emite `Access-Control-Allow-Origin` ou
+  `Access-Control-Allow-Credentials` e não usa wildcard nem reflexão de
+  `Origin`.
+- Chamadas protegidas da aplicação, inclusive GET autenticado, exigem uma
+  única ocorrência lógica de `X-Bello-Flow-Request: 1`; endpoints operacionais
+  explicitamente públicos são dispensados e não resolvem sessão.
+- Métodos mutáveis validam `Origin` exatamente contra a origem configurada ou,
+  quando ele estiver ausente, a origem de um `Referer` válido. `Origin: null`,
+  valores múltiplos, inválidos ou ausência de ambos são rejeitados. Endpoints
+  mutáveis com corpo JSON aceitam somente `application/json`; endpoints sem
+  corpo não recebem exigência artificial de `Content-Type`. O login aplica os
+  controles antes da autenticação.
+- Não há token CSRF persistido adicional nesta primeira versão. Os controles
+  de header, origem, conteúdo, cookie e HTTPS permanecem complementares.
+- Toda requisição protegida válida pode contar como atividade, inclusive GET e
+  polling, preservando o intervalo mínimo existente de cinco minutos e sem
+  ampliar a vida absoluta.
+- Logout confirma a revogação antes do sucesso e limpa o cookie com nome,
+  `Path` e escopo compatíveis. Resultado indeterminado segue reconciliação; o
+  servidor não presume entrega do cookie após transmitir a resposta nem trata
+  o fechamento posterior da conexão como falha de entrega.
+
+O contrato detalhado e seus limites operacionais estão em
+[segurança e autorização](seguranca-e-autorizacao.md#transporte-http-cookie-origem-cors-e-csrf).
+
 ### Rastreabilidade
 
 - **Requisitos:** BEL-032, BEL-038.
@@ -348,6 +400,7 @@
 
 | Data | Alteração |
 |---|---|
+| 2026-11-03 | PT-005 resolvida como complemento aprovado de AT-001 e AT-005, definindo topologia same-origin, cookie, origem, CORS e proteção CSRF da camada HTTP sem declarar implementação. |
 | 2026-10-30 | AT-001 a AT-010 consolidadas como aprovadas pelo responsável pelo produto. |
 
 ## Política de alteração

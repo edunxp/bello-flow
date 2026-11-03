@@ -21,6 +21,26 @@ Dependências externas:
 
 Desenvolvimento pode separar o servidor Angular do backend e usar um capturador de e-mails, mas esses componentes não são requisitos da implantação do MVP.
 
+## Topologia HTTP aprovada
+
+Conforme a resolução da PT-005, Angular e NestJS são expostos sob uma única
+origem pública. A aplicação Angular ocupa `/`, a API funcional ocupa `/api` e o
+endpoint operacional `/health/live` é preservado. Produção utiliza proxy
+reverso para o roteamento; desenvolvimento utiliza o proxy do Angular, e o
+frontend chama a API por URLs relativas. Essa decisão não define produto de
+proxy, terminação TLS ou configuração executável de implantação.
+
+Cada ambiente define sua origem pública canônica. O proxy precisa remover ou
+sobrescrever headers encaminhados, e a aplicação confia somente no proxy
+conhecido, nunca de forma irrestrita. A origem autorizada não é derivada de
+`Host` ou de `X-Forwarded-*` fornecidos pelo cliente.
+
+O MVP same-origin não habilita CORS na API nem autoriza preflight de origens
+externas. Todo acesso externo usa HTTPS. Desenvolvimento prefere HTTPS para
+paridade; HTTP é uma conveniência restrita a loopback e utiliza o perfil local
+de cookie definido em
+[segurança e autorização](seguranca-e-autorizacao.md#topologia-e-cookie).
+
 ## Ambientes e configuração
 
 - Produção possui configuração própria e imagens versionadas.
