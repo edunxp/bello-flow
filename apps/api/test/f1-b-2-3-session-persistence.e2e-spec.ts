@@ -49,10 +49,10 @@ describe('F1-B.2.3 session persistence (PostgreSQL)', () => {
     );
     const rows = await migrator.query<{ changed_at: Date }>(
       `INSERT INTO public.password_credential (
-         account_id, password_hash, changed_at
-       ) VALUES ($1, $2, pg_catalog.clock_timestamp())
+         account_id, password_hash, changed_at, changed_operation_id
+       ) VALUES ($1, $2, pg_catalog.clock_timestamp(), $3)
        RETURNING changed_at`,
-      [id, validPasswordHash],
+      [id, validPasswordHash, randomUUID()],
     );
     changedAt = rows.rows[0]!.changed_at;
     return id;
@@ -252,9 +252,10 @@ describe('F1-B.2.3 session persistence (PostgreSQL)', () => {
   it('enforces account and current credential preconditions after the lock', async () => {
     await migrator.query(
       `UPDATE public.password_credential
-       SET changed_at = changed_at + INTERVAL '1 second'
+       SET changed_at = changed_at + INTERVAL '1 second',
+           changed_operation_id = $2
        WHERE account_id = $1`,
-      [accountId],
+      [accountId, randomUUID()],
     );
     await expect(
       service.createSession({ accountId, credential: credential() }),

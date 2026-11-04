@@ -215,6 +215,7 @@ jobs:
           npm run test:f1b:persistence --workspace=@bello/api
           npm run test:f1b:failed-login --workspace=@bello/api
           npm run test:f1b:authentication --workspace=@bello/api
+          ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:password-recovery-foundation --workspace=@bello/api
 
   required:
     name: Required

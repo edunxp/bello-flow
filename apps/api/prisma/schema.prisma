@@ -11,20 +11,23 @@ datasource db {
 }
 
 model Account {
-  id              String                 @id @db.Uuid
-  firstName       String                 @map("first_name") @db.VarChar(100)
-  lastName        String                 @map("last_name") @db.VarChar(100)
-  email           String                 @db.VarChar(254)
-  emailKey        String                 @unique(map: "account_email_key_key") @map("email_key") @db.VarChar(254)
-  emailVerifiedAt DateTime?              @map("email_verified_at") @db.Timestamptz(6)
-  status          String                 @db.VarChar(20)
-  createdAt       DateTime               @map("created_at") @db.Timestamptz(6)
-  deactivatedAt   DateTime?              @map("deactivated_at") @db.Timestamptz(6)
-  credential      PasswordCredential?
-  authSessions    AuthSession[]
-  globalRoles     GlobalRoleAssignment[]
-  bootstrapStates BootstrapState[]
-  auditEvents     AuditEvent[]
+  id                      String                    @id @db.Uuid
+  firstName               String                    @map("first_name") @db.VarChar(100)
+  lastName                String                    @map("last_name") @db.VarChar(100)
+  email                   String                    @db.VarChar(254)
+  emailKey                String                    @unique(map: "account_email_key_key") @map("email_key") @db.VarChar(254)
+  emailVerifiedAt         DateTime?                 @map("email_verified_at") @db.Timestamptz(6)
+  status                  String                    @db.VarChar(20)
+  createdAt               DateTime                  @map("created_at") @db.Timestamptz(6)
+  deactivatedAt           DateTime?                 @map("deactivated_at") @db.Timestamptz(6)
+  credential              PasswordCredential?
+  authSessions            AuthSession[]
+  recoveryRequests        PasswordRecoveryRequest[]
+  passwordResetTokens     PasswordResetToken[]
+  passwordResetOperations PasswordResetOperation[]
+  globalRoles             GlobalRoleAssignment[]
+  bootstrapStates         BootstrapState[]
+  auditEvents             AuditEvent[]
 
   @@map("account")
 }
@@ -47,12 +50,88 @@ model AuthSession {
 }
 
 model PasswordCredential {
-  accountId    String   @id @map("account_id") @db.Uuid
-  passwordHash String   @map("password_hash") @db.Text
-  changedAt    DateTime @map("changed_at") @db.Timestamptz(6)
-  account      Account  @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  accountId          String   @id @map("account_id") @db.Uuid
+  passwordHash       String   @map("password_hash") @db.Text
+  changedAt          DateTime @map("changed_at") @db.Timestamptz(6)
+  changedOperationId String   @unique(map: "password_credential_changed_operation_id_key") @map("changed_operation_id") @db.Uuid
+  account            Account  @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@map("password_credential")
+}
+
+model PasswordRecoveryRequest {
+  recoveryRequestId    String                            @id @map("recovery_request_id") @db.Uuid
+  accountId            String?                           @map("account_id") @db.Uuid
+  state                String                            @db.VarChar(20)
+  receivedAt           DateTime                          @map("received_at") @db.Timestamptz(6)
+  updatedAt            DateTime                          @map("updated_at") @db.Timestamptz(6)
+  terminalAt           DateTime?                         @map("terminal_at") @db.Timestamptz(6)
+  currentAttemptNumber Int                               @map("current_attempt_number") @db.SmallInt
+  cancelledOperationId String?                           @map("cancelled_operation_id") @db.Uuid
+  account              Account?                          @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  deliveryAttempts     PasswordRecoveryDeliveryAttempt[]
+
+  @@index([accountId, receivedAt(sort: Desc), recoveryRequestId], map: "password_recovery_request_account_received_idx")
+  @@index([state, updatedAt, recoveryRequestId], map: "password_recovery_request_state_updated_idx")
+  @@index([cancelledOperationId], map: "password_recovery_request_cancelled_operation_idx")
+  @@map("password_recovery_request")
+}
+
+model PasswordRecoveryDeliveryAttempt {
+  deliveryAttemptId  String                  @id @map("delivery_attempt_id") @db.Uuid
+  recoveryRequestId  String                  @map("recovery_request_id") @db.Uuid
+  attemptNumber      Int                     @map("attempt_number") @db.SmallInt
+  state              String                  @db.VarChar(20)
+  scheduledAt        DateTime                @map("scheduled_at") @db.Timestamptz(6)
+  leaseId            String?                 @map("lease_id") @db.Uuid
+  leaseExpiresAt     DateTime?               @map("lease_expires_at") @db.Timestamptz(6)
+  sendingConfirmedAt DateTime?               @map("sending_confirmed_at") @db.Timestamptz(6)
+  acceptedAt         DateTime?               @map("accepted_at") @db.Timestamptz(6)
+  terminalAt         DateTime?               @map("terminal_at") @db.Timestamptz(6)
+  failureClass       String?                 @map("failure_class") @db.VarChar(30)
+  recoveryRequest    PasswordRecoveryRequest @relation(fields: [recoveryRequestId], references: [recoveryRequestId], onDelete: Restrict, onUpdate: Restrict)
+  resetToken         PasswordResetToken?
+
+  @@unique([recoveryRequestId, attemptNumber], map: "password_recovery_delivery_attempt_request_number_key")
+  @@index([state, scheduledAt, deliveryAttemptId], map: "password_recovery_delivery_attempt_state_schedule_idx")
+  @@map("password_recovery_delivery_attempt")
+}
+
+model PasswordResetToken {
+  passwordResetTokenId   String                          @id @map("password_reset_token_id") @db.Uuid
+  deliveryAttemptId      String                          @unique(map: "password_reset_token_delivery_attempt_id_key") @map("delivery_attempt_id") @db.Uuid
+  accountId              String                          @map("account_id") @db.Uuid
+  tokenHash              Bytes                           @unique(map: "password_reset_token_hash_key") @map("token_hash") @db.ByteA
+  createdAt              DateTime                        @map("created_at") @db.Timestamptz(6)
+  expiresAt              DateTime                        @map("expires_at") @db.Timestamptz(6)
+  consumedAt             DateTime?                       @map("consumed_at") @db.Timestamptz(6)
+  consumedOperationId    String?                         @unique(map: "password_reset_token_consumed_operation_id_key") @map("consumed_operation_id") @db.Uuid
+  invalidatedAt          DateTime?                       @map("invalidated_at") @db.Timestamptz(6)
+  invalidatedOperationId String?                         @map("invalidated_operation_id") @db.Uuid
+  deliveryAttempt        PasswordRecoveryDeliveryAttempt @relation(fields: [deliveryAttemptId], references: [deliveryAttemptId], onDelete: Restrict, onUpdate: Restrict)
+  account                Account                         @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  resetOperations        PasswordResetOperation[]
+
+  @@index([invalidatedOperationId], map: "password_reset_token_invalidated_operation_idx")
+  @@map("password_reset_token")
+}
+
+model PasswordResetOperation {
+  resetOperationId           String             @id @map("reset_operation_id") @db.Uuid
+  accountId                  String             @map("account_id") @db.Uuid
+  passwordResetTokenId       String             @map("password_reset_token_id") @db.Uuid
+  expectedChangedOperationId String             @map("expected_changed_operation_id") @db.Uuid
+  state                      String             @db.VarChar(20)
+  startedAt                  DateTime           @map("started_at") @db.Timestamptz(6)
+  updatedAt                  DateTime           @map("updated_at") @db.Timestamptz(6)
+  terminalAt                 DateTime?          @map("terminal_at") @db.Timestamptz(6)
+  account                    Account            @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  passwordResetToken         PasswordResetToken @relation(fields: [passwordResetTokenId], references: [passwordResetTokenId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([state, updatedAt, resetOperationId], map: "password_reset_operation_state_updated_idx")
+  @@index([accountId], map: "password_reset_operation_account_id_idx")
+  @@index([passwordResetTokenId], map: "password_reset_operation_token_id_idx")
+  @@map("password_reset_operation")
 }
 
 model GlobalRoleAssignment {

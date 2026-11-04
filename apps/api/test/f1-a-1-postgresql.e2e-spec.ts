@@ -198,6 +198,7 @@ describe('F1-A.1 physical identity foundation (PostgreSQL)', () => {
       where: { accountId: input.accountId },
     });
     expect(credential.passwordHash).toBe(validPasswordHash);
+    expect(credential.changedOperationId).toBe(input.operationId);
 
     expect(await migrator.globalRoleAssignment.findMany()).toEqual([
       {

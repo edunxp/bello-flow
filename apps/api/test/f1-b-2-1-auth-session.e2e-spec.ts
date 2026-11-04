@@ -185,9 +185,9 @@ describe('F1-B.2.1 auth session foundation (PostgreSQL)', () => {
       );
       await migrator.query(
         `INSERT INTO public.password_credential (
-           account_id, password_hash, changed_at
-         ) VALUES ($1, $2, pg_catalog.clock_timestamp())`,
-        [accountId, validPasswordHash],
+           account_id, password_hash, changed_at, changed_operation_id
+         ) VALUES ($1, $2, pg_catalog.clock_timestamp(), $3)`,
+        [accountId, validPasswordHash, randomUUID()],
       );
       await migrator.query('COMMIT');
     } catch (error) {

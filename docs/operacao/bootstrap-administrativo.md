@@ -102,7 +102,7 @@ Resultados:
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------: |
 | `COMPLETED`         | A tentativa consultada criou o Administrador Global e as evidências acessíveis são consistentes.                                       |       `0` |
 | `ALREADY_COMPLETED` | Outro `operation_id` concluiu o bootstrap consistentemente. A tentativa consultada não criou o administrador.                          |       `0` |
-| `INCONSISTENT`      | Estado, conta, papel ou auditoria acessível são contraditórios.                                                                        |       `2` |
+| `INCONSISTENT`      | Estado, conta, credencial, papel ou auditoria acessível são contraditórios.                                                            |       `2` |
 | `UNKNOWN`           | A consulta falhou, excedeu o limite ou encontrou `bootstrap_state` em `PENDING`, pois não é possível excluir uma operação concorrente. |       `2` |
 
 Entrada inválida, cancelamento e erros funcionais usam exit code `1`. Código `0`
@@ -118,16 +118,18 @@ A role de bootstrap pode ler somente:
 
 - estado, conta inicial e operação em `bootstrap_state`;
 - `account.id`;
+- `password_credential.account_id` e `changed_operation_id`;
 - `global_role_assignment.account_id` e `role`;
 - `audit_event.id`, `result`, `entity_type`, `entity_id`, `operation_id` e
   `sequence`.
 
-A consulta correlaciona o singleton concluído, a conta inicial, o papel
-`GLOBAL_ADMIN` e exatamente dois eventos bem-sucedidos nas sequências `1` e `2`.
-Ela não lê `password_hash`. A coluna `audit_event.operation` não está concedida à
-role; portanto, os nomes textuais `ACCOUNT_CREATED` e `GLOBAL_ADMIN_GRANTED` não
-são relidos. A correlação usa as sequências e os demais campos não secretos
-aprovados, sem ampliar privilégios.
+A consulta correlaciona o singleton concluído, a conta inicial, a credencial cuja
+última alteração aponta para a operação do bootstrap, o papel `GLOBAL_ADMIN` e
+exatamente dois eventos bem-sucedidos nas sequências `1` e `2`. Ela não lê
+`password_hash`. A coluna `audit_event.operation` não está concedida à role;
+portanto, os nomes textuais `ACCOUNT_CREATED` e `GLOBAL_ADMIN_GRANTED` não são
+relidos. A correlação usa as sequências e os demais campos não secretos aprovados,
+sem ampliar privilégios.
 
 A leitura usa um único `SELECT` com snapshot consistente e não solicita row locks.
 Um estado `PENDING` é sempre `UNKNOWN`, mesmo sem outras evidências visíveis,

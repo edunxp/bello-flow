@@ -107,9 +107,9 @@ describe('F1-B.3.3.3 password authentication (PostgreSQL)', () => {
     if (options.credential !== false) {
       await migrator.query(
         `INSERT INTO public.password_credential (
-           account_id, password_hash, changed_at
-         ) VALUES ($1, $2, pg_catalog.clock_timestamp())`,
-        [accountId, options.hash ?? passwordHash],
+           account_id, password_hash, changed_at, changed_operation_id
+         ) VALUES ($1, $2, pg_catalog.clock_timestamp(), $3)`,
+        [accountId, options.hash ?? passwordHash, randomUUID()],
       );
     }
     return accountId;
@@ -374,9 +374,11 @@ describe('F1-B.3.3.3 password authentication (PostgreSQL)', () => {
         const result = await verifyPassword(...parameters);
         await migrator.query(
           `UPDATE public.password_credential
-           SET password_hash = $2, changed_at = pg_catalog.clock_timestamp()
+           SET password_hash = $2,
+               changed_at = pg_catalog.clock_timestamp(),
+               changed_operation_id = $3
            WHERE account_id = $1`,
-          [accountId, replacementHash],
+          [accountId, replacementHash, randomUUID()],
         );
         return result;
       },

@@ -54,6 +54,17 @@ const RECONCILIATION_SQL = `
         AND role = 'GLOBAL_ADMIN'
     ) AS "roleCount",
     (
+      SELECT COUNT(account_id)::integer
+      FROM public.password_credential
+      WHERE account_id = state."accountId"
+    ) AS "credentialCount",
+    (
+      SELECT COUNT(account_id)::integer
+      FROM public.password_credential
+      WHERE account_id = state."accountId"
+        AND changed_operation_id = state."completedOperationId"
+    ) AS "validCredentialCount",
+    (
       SELECT COUNT(id)::integer
       FROM public.audit_event
       WHERE operation_id = state."completedOperationId"

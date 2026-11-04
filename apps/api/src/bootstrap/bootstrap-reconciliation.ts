@@ -17,6 +17,8 @@ export interface BootstrapReconciliationEvidence {
   completedOperationId: string | null;
   accountCount: number;
   roleCount: number;
+  credentialCount: number;
+  validCredentialCount: number;
   completedAuditCount: number;
   sequenceOneCount: number;
   sequenceTwoCount: number;
@@ -59,6 +61,8 @@ export function classifyBootstrapReconciliation(
       evidence.completedOperationId === null &&
       evidence.accountCount === 0 &&
       evidence.roleCount === 0 &&
+      evidence.credentialCount === 0 &&
+      evidence.validCredentialCount === 0 &&
       evidence.completedAuditCount === 0 &&
       evidence.sequenceOneCount === 0 &&
       evidence.sequenceTwoCount === 0 &&
@@ -81,6 +85,8 @@ export function classifyBootstrapReconciliation(
     UUID_V4_PATTERN.test(evidence.completedOperationId) &&
     evidence.accountCount === 1 &&
     evidence.roleCount === 1 &&
+    evidence.credentialCount === 1 &&
+    evidence.validCredentialCount === 1 &&
     evidence.completedAuditCount === 2 &&
     evidence.sequenceOneCount === 1 &&
     evidence.sequenceTwoCount === 1 &&

@@ -320,6 +320,24 @@ describe('F1-A.2 bootstrap PostgreSQL provider', () => {
     });
   });
 
+  it('detects a credential not correlated with the completed bootstrap', async () => {
+    const parameters = bootstrapParameters();
+    await new BootstrapPostgresProvider().executeBootstrap(parameters);
+    await migrator.passwordCredential.update({
+      where: { accountId: parameters.accountId },
+      data: { changedOperationId: randomUUID() },
+    });
+
+    await expect(
+      new BootstrapPostgresProvider().reconcileBootstrap(
+        parameters.operationId,
+      ),
+    ).resolves.toMatchObject({
+      status: 'INCONSISTENT',
+      operationId: parameters.operationId,
+    });
+  });
+
   it('returns UNKNOWN while bootstrap owns the state lock, then confirms completion', async () => {
     const blocker = new Client({
       connectionString: requiredUrl('MIGRATION_DATABASE_URL'),

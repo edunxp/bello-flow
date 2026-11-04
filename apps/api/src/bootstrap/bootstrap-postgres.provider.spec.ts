@@ -51,6 +51,8 @@ const reconciliationEvidence = {
   completedOperationId: reconciliationOperationId,
   accountCount: 1,
   roleCount: 1,
+  credentialCount: 1,
+  validCredentialCount: 1,
   completedAuditCount: 2,
   sequenceOneCount: 1,
   sequenceTwoCount: 1,
@@ -318,7 +320,9 @@ describe('BootstrapPostgresProvider', () => {
     );
     expect(query.text).not.toMatch(/\b(?:INSERT|UPDATE|DELETE|TRUNCATE)\b/i);
     expect(query.text).not.toContain('bootstrap_initial_admin');
-    expect(query.text).not.toContain('password_credential');
+    expect(query.text).toContain('password_credential');
+    expect(query.text).toContain('changed_operation_id');
+    expect(query.text).not.toContain('password_hash');
     expect(pgMocks.end).toHaveBeenCalledOnce();
   });
 
@@ -368,6 +372,8 @@ describe('BootstrapPostgresProvider', () => {
           completedOperationId: null,
           accountCount: 0,
           roleCount: 0,
+          credentialCount: 0,
+          validCredentialCount: 0,
           completedAuditCount: 0,
           sequenceOneCount: 0,
           sequenceTwoCount: 0,
