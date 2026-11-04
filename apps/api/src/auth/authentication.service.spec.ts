@@ -12,6 +12,7 @@ import {
   type AuthenticateWithPasswordInput,
 } from './authentication.service.js';
 import {
+  AUTH_SESSION_AUDIT_OPERATION,
   generateOperationId,
   generateSessionId,
   generateSessionToken,
@@ -29,6 +30,11 @@ describe('AuthenticationService', () => {
   const performNegativeVerification = vi.fn();
   const createSession = vi.fn();
   const recordFailedLogin = vi.fn();
+  const resolveSession = vi.fn();
+  const logoutSession = vi.fn();
+  const revokeAllSessions = vi.fn();
+  const revokeUndeliveredSession = vi.fn();
+  const reconcileOperation = vi.fn();
   let service: AuthenticationService;
 
   function eligibleAccount(overrides: Record<string, unknown> = {}) {
@@ -54,6 +60,28 @@ describe('AuthenticationService', () => {
     }
   }
 
+  async function serviceFailure(
+    operation: () => Promise<unknown>,
+  ): Promise<AuthenticationError> {
+    try {
+      await operation();
+      throw new Error('Expected session operation to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AuthenticationError);
+      return error as AuthenticationError;
+    }
+  }
+
+  function resolvedSession() {
+    return {
+      sessionId: generateSessionId(),
+      accountId,
+      createdAt,
+      lastActivityAt: createdAt,
+      absoluteExpiresAt,
+    };
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     findUnique.mockResolvedValue(eligibleAccount());
@@ -77,13 +105,38 @@ describe('AuthenticationService', () => {
         absoluteExpiresAt,
       }),
     );
+    resolveSession.mockResolvedValue(null);
+    logoutSession.mockResolvedValue({
+      operationId: generateOperationId(),
+      revokedSessionCount: 1,
+      alreadyCompleted: false,
+    });
+    revokeAllSessions.mockResolvedValue({
+      operationId: generateOperationId(),
+      revokedSessionCount: 1,
+      alreadyCompleted: false,
+    });
+    revokeUndeliveredSession.mockResolvedValue({
+      operationId: generateOperationId(),
+      revokedSessionCount: 1,
+      alreadyCompleted: false,
+    });
+    reconcileOperation.mockResolvedValue('COMPLETED');
     service = new AuthenticationService(
       { account: { findUnique } } as unknown as PrismaService,
       {
         verifyPassword,
         performNegativeVerification,
       } as unknown as PasswordCredentialService,
-      { createSession, recordFailedLogin } as unknown as AuthSessionPersistence,
+      {
+        createSession,
+        recordFailedLogin,
+        resolveSession,
+        logoutSession,
+        revokeAllSessions,
+        revokeUndeliveredSession,
+        reconcileOperation,
+      } as unknown as AuthSessionPersistence,
     );
   });
 
@@ -349,5 +402,369 @@ describe('AuthenticationService', () => {
     );
     expect(cryptoError.message).not.toContain('candidate');
     expect(recordFailedLogin).toHaveBeenCalledOnce();
+  });
+
+  describe('public session use cases', () => {
+    it('resolves only the authenticated account identity', async () => {
+      const token = generateSessionToken();
+      resolveSession.mockResolvedValue(resolvedSession());
+
+      await expect(service.resolveAuthenticatedSession(token)).resolves.toEqual(
+        {
+          accountId,
+        },
+      );
+      expect(resolveSession).toHaveBeenCalledWith(token);
+    });
+
+    it.each([
+      ['absent', undefined],
+      ['invalid', 'invalid-token'],
+      ['expired', generateSessionToken()],
+      ['revoked', generateSessionToken()],
+    ])('maps an %s session to null', async (_state, token) => {
+      resolveSession.mockResolvedValue(null);
+
+      await expect(
+        service.resolveAuthenticatedSession(token),
+      ).resolves.toBeNull();
+      expect(resolveSession).toHaveBeenCalledWith(token);
+    });
+
+    it.each([
+      SESSION_PERSISTENCE_ERROR_CODE.SESSION_RESOLUTION_FAILED,
+      SESSION_PERSISTENCE_ERROR_CODE.OPERATION_INDETERMINATE,
+    ])(
+      'maps resolution failure %s without exposing the token',
+      async (code) => {
+        const token = generateSessionToken();
+        resolveSession.mockRejectedValue(new SessionPersistenceError(code));
+
+        const error = await serviceFailure(() =>
+          service.resolveAuthenticatedSession(token),
+        );
+
+        expect(error.code).toBe(AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE);
+        expect(error.message).not.toContain(token);
+        expect(resolveSession).toHaveBeenCalledOnce();
+      },
+    );
+
+    it('logs out the current session once and returns only completion', async () => {
+      const token = generateSessionToken();
+      const session = resolvedSession();
+      resolveSession.mockResolvedValue(session);
+
+      const result = await service.logoutCurrentSession(token);
+
+      expect(result).toEqual({ status: 'COMPLETED' });
+      expect(logoutSession).toHaveBeenCalledOnce();
+      expect(logoutSession).toHaveBeenCalledWith({
+        accountId,
+        sessionId: session.sessionId,
+        operationId: expect.any(String),
+      });
+      expect(reconcileOperation).not.toHaveBeenCalled();
+      expect(resolveSession.mock.invocationCallOrder[0]).toBeLessThan(
+        logoutSession.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('treats an absent current session idempotently without mutation', async () => {
+      const token = generateSessionToken();
+      resolveSession.mockResolvedValue(null);
+
+      await expect(service.logoutCurrentSession(token)).resolves.toEqual({
+        status: 'NO_ACTIVE_SESSION',
+      });
+      expect(logoutSession).not.toHaveBeenCalled();
+      expect(reconcileOperation).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      SESSION_PERSISTENCE_ERROR_CODE.SESSION_NOT_FOUND,
+      SESSION_PERSISTENCE_ERROR_CODE.SESSION_ALREADY_REVOKED,
+    ])('treats a current-session race %s idempotently', async (code) => {
+      resolveSession.mockResolvedValue(resolvedSession());
+      logoutSession.mockRejectedValue(new SessionPersistenceError(code));
+
+      await expect(
+        service.logoutCurrentSession(generateSessionToken()),
+      ).resolves.toEqual({ status: 'NO_ACTIVE_SESSION' });
+      expect(logoutSession).toHaveBeenCalledOnce();
+      expect(reconcileOperation).not.toHaveBeenCalled();
+    });
+
+    it('maps a determined current logout failure without retrying', async () => {
+      resolveSession.mockResolvedValue(resolvedSession());
+      logoutSession.mockRejectedValue(new Error('database detail'));
+
+      const error = await serviceFailure(() =>
+        service.logoutCurrentSession(generateSessionToken()),
+      );
+
+      expect(error.code).toBe(AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE);
+      expect(error.message).not.toContain('database detail');
+      expect(logoutSession).toHaveBeenCalledOnce();
+      expect(reconcileOperation).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['COMPLETED', null],
+      ['NOT_FOUND', AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE],
+      ['INCONSISTENT', AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE],
+      ['UNKNOWN', AUTHENTICATION_ERROR_CODE.OPERATION_INDETERMINATE],
+    ] as const)(
+      'reconciles an indeterminate current logout as %s',
+      async (status, expectedErrorCode) => {
+        const session = resolvedSession();
+        resolveSession.mockResolvedValue(session);
+        logoutSession.mockImplementation(
+          async (input: {
+            operationId: ReturnType<typeof generateOperationId>;
+          }) => {
+            throw new SessionPersistenceError(
+              SESSION_PERSISTENCE_ERROR_CODE.OPERATION_INDETERMINATE,
+              input.operationId,
+              session.sessionId,
+            );
+          },
+        );
+        reconcileOperation.mockResolvedValue(status);
+
+        const operation = () =>
+          service.logoutCurrentSession(generateSessionToken());
+        if (expectedErrorCode === null) {
+          await expect(operation()).resolves.toEqual({ status: 'COMPLETED' });
+        } else {
+          const error = await serviceFailure(operation);
+          expect(error.code).toBe(expectedErrorCode);
+        }
+
+        const mutationInput = logoutSession.mock.calls[0]![0];
+        expect(logoutSession).toHaveBeenCalledOnce();
+        expect(reconcileOperation).toHaveBeenCalledWith({
+          accountId,
+          sessionId: session.sessionId,
+          operationId: mutationInput.operationId,
+          operation: AUTH_SESSION_AUDIT_OPERATION.SESSION_LOGOUT,
+        });
+        expect(reconcileOperation).toHaveBeenCalledOnce();
+        expect(logoutSession.mock.invocationCallOrder[0]).toBeLessThan(
+          reconcileOperation.mock.invocationCallOrder[0]!,
+        );
+      },
+    );
+
+    it('logs out all sessions once without exposing persistence details', async () => {
+      const session = resolvedSession();
+      resolveSession.mockResolvedValue(session);
+      revokeAllSessions.mockResolvedValue({
+        operationId: generateOperationId(),
+        revokedSessionCount: 42,
+        alreadyCompleted: false,
+      });
+
+      const result = await service.logoutAllSessions(generateSessionToken());
+
+      expect(result).toEqual({ status: 'COMPLETED' });
+      expect(revokeAllSessions).toHaveBeenCalledWith({
+        accountId,
+        operationId: expect.any(String),
+      });
+      expect(revokeAllSessions).toHaveBeenCalledOnce();
+      expect(reconcileOperation).not.toHaveBeenCalled();
+    });
+
+    it('rejects global logout without an authenticated session', async () => {
+      resolveSession.mockResolvedValue(null);
+
+      await expect(
+        service.logoutAllSessions(generateSessionToken()),
+      ).resolves.toEqual({ status: 'UNAUTHENTICATED' });
+      expect(revokeAllSessions).not.toHaveBeenCalled();
+      expect(reconcileOperation).not.toHaveBeenCalled();
+    });
+
+    it('maps a determined global logout failure without retrying', async () => {
+      resolveSession.mockResolvedValue(resolvedSession());
+      revokeAllSessions.mockRejectedValue(
+        new SessionPersistenceError(
+          SESSION_PERSISTENCE_ERROR_CODE.ACCOUNT_NOT_ELIGIBLE,
+        ),
+      );
+
+      const error = await serviceFailure(() =>
+        service.logoutAllSessions(generateSessionToken()),
+      );
+
+      expect(error.code).toBe(AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE);
+      expect(revokeAllSessions).toHaveBeenCalledOnce();
+      expect(reconcileOperation).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['COMPLETED', null],
+      ['NOT_FOUND', AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE],
+      ['INCONSISTENT', AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE],
+      ['UNKNOWN', AUTHENTICATION_ERROR_CODE.OPERATION_INDETERMINATE],
+    ] as const)(
+      'reconciles an indeterminate global logout as %s',
+      async (status, expectedErrorCode) => {
+        resolveSession.mockResolvedValue(resolvedSession());
+        revokeAllSessions.mockImplementation(
+          async (input: {
+            operationId: ReturnType<typeof generateOperationId>;
+          }) => {
+            throw new SessionPersistenceError(
+              SESSION_PERSISTENCE_ERROR_CODE.OPERATION_INDETERMINATE,
+              input.operationId,
+            );
+          },
+        );
+        reconcileOperation.mockResolvedValue(status);
+
+        const operation = () =>
+          service.logoutAllSessions(generateSessionToken());
+        if (expectedErrorCode === null) {
+          await expect(operation()).resolves.toEqual({ status: 'COMPLETED' });
+        } else {
+          const error = await serviceFailure(operation);
+          expect(error.code).toBe(expectedErrorCode);
+        }
+
+        const mutationInput = revokeAllSessions.mock.calls[0]![0];
+        expect(revokeAllSessions).toHaveBeenCalledOnce();
+        expect(reconcileOperation).toHaveBeenCalledWith({
+          accountId,
+          operationId: mutationInput.operationId,
+          operation: AUTH_SESSION_AUDIT_OPERATION.SESSIONS_REVOKED,
+        });
+        expect(reconcileOperation).toHaveBeenCalledOnce();
+      },
+    );
+
+    it('revokes an undelivered session once and returns no value', async () => {
+      const sessionId = generateSessionId();
+
+      const result = await service.revokeUndeliveredSession({
+        accountId,
+        sessionId,
+      });
+
+      expect(result).toBeUndefined();
+      expect(revokeUndeliveredSession).toHaveBeenCalledWith({
+        accountId,
+        sessionId,
+        operationId: expect.any(String),
+      });
+      expect(revokeUndeliveredSession).toHaveBeenCalledOnce();
+      expect(reconcileOperation).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      SESSION_PERSISTENCE_ERROR_CODE.SESSION_NOT_FOUND,
+      SESSION_PERSISTENCE_ERROR_CODE.SESSION_ALREADY_REVOKED,
+    ])('treats an undelivered session %s idempotently', async (code) => {
+      revokeUndeliveredSession.mockRejectedValue(
+        new SessionPersistenceError(code),
+      );
+
+      await expect(
+        service.revokeUndeliveredSession({
+          accountId,
+          sessionId: generateSessionId(),
+        }),
+      ).resolves.toBeUndefined();
+      expect(revokeUndeliveredSession).toHaveBeenCalledOnce();
+      expect(reconcileOperation).not.toHaveBeenCalled();
+    });
+
+    it('maps a determined compensation failure without retrying', async () => {
+      revokeUndeliveredSession.mockRejectedValue(
+        new SessionPersistenceError(
+          SESSION_PERSISTENCE_ERROR_CODE.INVALID_INPUT,
+        ),
+      );
+
+      const error = await serviceFailure(() =>
+        service.revokeUndeliveredSession({
+          accountId,
+          sessionId: generateSessionId(),
+        }),
+      );
+
+      expect(error.code).toBe(AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE);
+      expect(revokeUndeliveredSession).toHaveBeenCalledOnce();
+      expect(reconcileOperation).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['COMPLETED', null],
+      ['NOT_FOUND', AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE],
+      ['INCONSISTENT', AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE],
+      ['UNKNOWN', AUTHENTICATION_ERROR_CODE.OPERATION_INDETERMINATE],
+    ] as const)(
+      'reconciles an indeterminate compensation as %s',
+      async (status, expectedErrorCode) => {
+        const sessionId = generateSessionId();
+        revokeUndeliveredSession.mockImplementation(
+          async (input: {
+            operationId: ReturnType<typeof generateOperationId>;
+          }) => {
+            throw new SessionPersistenceError(
+              SESSION_PERSISTENCE_ERROR_CODE.OPERATION_INDETERMINATE,
+              input.operationId,
+              sessionId,
+            );
+          },
+        );
+        reconcileOperation.mockResolvedValue(status);
+
+        const operation = () =>
+          service.revokeUndeliveredSession({ accountId, sessionId });
+        if (expectedErrorCode === null) {
+          await expect(operation()).resolves.toBeUndefined();
+        } else {
+          const error = await serviceFailure(operation);
+          expect(error.code).toBe(expectedErrorCode);
+        }
+
+        const mutationInput = revokeUndeliveredSession.mock.calls[0]![0];
+        expect(revokeUndeliveredSession).toHaveBeenCalledOnce();
+        expect(reconcileOperation).toHaveBeenCalledWith({
+          accountId,
+          sessionId,
+          operationId: mutationInput.operationId,
+          operation: AUTH_SESSION_AUDIT_OPERATION.SESSIONS_REVOKED,
+        });
+        expect(reconcileOperation).toHaveBeenCalledOnce();
+      },
+    );
+
+    it('maps a reconciliation exception without repeating compensation', async () => {
+      const sessionId = generateSessionId();
+      revokeUndeliveredSession.mockImplementation(
+        async (input: {
+          operationId: ReturnType<typeof generateOperationId>;
+        }) => {
+          throw new SessionPersistenceError(
+            SESSION_PERSISTENCE_ERROR_CODE.OPERATION_INDETERMINATE,
+            input.operationId,
+            sessionId,
+          );
+        },
+      );
+      reconcileOperation.mockRejectedValue(new Error('reconciliation detail'));
+
+      const error = await serviceFailure(() =>
+        service.revokeUndeliveredSession({ accountId, sessionId }),
+      );
+
+      expect(error.code).toBe(AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE);
+      expect(error.message).not.toContain('reconciliation detail');
+      expect(revokeUndeliveredSession).toHaveBeenCalledOnce();
+      expect(reconcileOperation).toHaveBeenCalledOnce();
+    });
   });
 });

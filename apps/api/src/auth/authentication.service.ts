@@ -5,10 +5,13 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import {
   AuthSessionPersistence,
   type CreatedAuthSession,
+  type ReconcileAuthSessionOperationInput,
+  type ResolvedAuthSession,
   SESSION_PERSISTENCE_ERROR_CODE,
   SessionPersistenceError,
 } from './auth-session.persistence.js';
 import {
+  AUTH_SESSION_AUDIT_OPERATION,
   generateOperationId,
   type OperationId,
   type SessionId,
@@ -42,6 +45,21 @@ export interface AuthenticateWithPasswordInput {
 
 export interface AuthenticatedPasswordSession extends CreatedAuthSession {
   readonly accountId: string;
+}
+
+export interface AuthenticatedSessionIdentity {
+  readonly accountId: string;
+}
+
+export type LogoutCurrentSessionResult =
+  { readonly status: 'COMPLETED' } | { readonly status: 'NO_ACTIVE_SESSION' };
+
+export type LogoutAllSessionsResult =
+  { readonly status: 'COMPLETED' } | { readonly status: 'UNAUTHENTICATED' };
+
+export interface RevokeUndeliveredSessionInput {
+  readonly accountId: string;
+  readonly sessionId: SessionId;
 }
 
 type AuthenticationAccount = {
@@ -86,6 +104,84 @@ export class AuthenticationService {
         AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE,
         operationId,
       );
+    }
+  }
+
+  async resolveAuthenticatedSession(
+    token: unknown,
+  ): Promise<AuthenticatedSessionIdentity | null> {
+    const session = await this.resolveSession(token, generateOperationId());
+    return session ? { accountId: session.accountId } : null;
+  }
+
+  async logoutCurrentSession(
+    token: unknown,
+  ): Promise<LogoutCurrentSessionResult> {
+    const operationId = generateOperationId();
+    const session = await this.resolveSession(token, operationId);
+    if (session === null) {
+      return { status: 'NO_ACTIVE_SESSION' };
+    }
+
+    try {
+      await this.sessions.logoutSession({
+        accountId: session.accountId,
+        sessionId: session.sessionId,
+        operationId,
+      });
+      return { status: 'COMPLETED' };
+    } catch (error) {
+      if (this.isSafelyAbsentSession(error)) {
+        return { status: 'NO_ACTIVE_SESSION' };
+      }
+      await this.reconcileIndeterminateRevocation(error, {
+        accountId: session.accountId,
+        sessionId: session.sessionId,
+        operationId,
+        operation: AUTH_SESSION_AUDIT_OPERATION.SESSION_LOGOUT,
+      });
+      return { status: 'COMPLETED' };
+    }
+  }
+
+  async logoutAllSessions(token: unknown): Promise<LogoutAllSessionsResult> {
+    const operationId = generateOperationId();
+    const session = await this.resolveSession(token, operationId);
+    if (session === null) {
+      return { status: 'UNAUTHENTICATED' };
+    }
+
+    try {
+      await this.sessions.revokeAllSessions({
+        accountId: session.accountId,
+        operationId,
+      });
+      return { status: 'COMPLETED' };
+    } catch (error) {
+      await this.reconcileIndeterminateRevocation(error, {
+        accountId: session.accountId,
+        operationId,
+        operation: AUTH_SESSION_AUDIT_OPERATION.SESSIONS_REVOKED,
+      });
+      return { status: 'COMPLETED' };
+    }
+  }
+
+  async revokeUndeliveredSession(
+    input: RevokeUndeliveredSessionInput,
+  ): Promise<void> {
+    const operationId = generateOperationId();
+    try {
+      await this.sessions.revokeUndeliveredSession({ ...input, operationId });
+    } catch (error) {
+      if (this.isSafelyAbsentSession(error)) {
+        return;
+      }
+      await this.reconcileIndeterminateRevocation(error, {
+        ...input,
+        operationId,
+        operation: AUTH_SESSION_AUDIT_OPERATION.SESSIONS_REVOKED,
+      });
     }
   }
 
@@ -212,6 +308,62 @@ export class AuthenticationService {
       throw this.mapPersistenceError(error, operationId);
     }
     throw new AuthenticationError(code, operationId);
+  }
+
+  private async resolveSession(
+    token: unknown,
+    operationId: OperationId,
+  ): Promise<ResolvedAuthSession | null> {
+    try {
+      return await this.sessions.resolveSession(token);
+    } catch {
+      throw new AuthenticationError(
+        AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE,
+        operationId,
+      );
+    }
+  }
+
+  private isSafelyAbsentSession(error: unknown): boolean {
+    return (
+      error instanceof SessionPersistenceError &&
+      (error.code === SESSION_PERSISTENCE_ERROR_CODE.SESSION_NOT_FOUND ||
+        error.code === SESSION_PERSISTENCE_ERROR_CODE.SESSION_ALREADY_REVOKED)
+    );
+  }
+
+  private async reconcileIndeterminateRevocation(
+    error: unknown,
+    input: ReconcileAuthSessionOperationInput,
+  ): Promise<void> {
+    if (
+      !(error instanceof SessionPersistenceError) ||
+      error.code !== SESSION_PERSISTENCE_ERROR_CODE.OPERATION_INDETERMINATE
+    ) {
+      throw this.mapPersistenceError(error, input.operationId);
+    }
+
+    let reconciliation;
+    try {
+      reconciliation = await this.sessions.reconcileOperation(input);
+    } catch (reconciliationError) {
+      throw this.mapPersistenceError(reconciliationError, input.operationId);
+    }
+
+    if (reconciliation === 'COMPLETED') {
+      return;
+    }
+    if (reconciliation === 'UNKNOWN') {
+      throw new AuthenticationError(
+        AUTHENTICATION_ERROR_CODE.OPERATION_INDETERMINATE,
+        input.operationId,
+        input.sessionId,
+      );
+    }
+    throw new AuthenticationError(
+      AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE,
+      input.operationId,
+    );
   }
 
   private mapPersistenceError(
