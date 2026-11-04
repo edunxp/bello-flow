@@ -16,8 +16,10 @@ aprovado ou um marco relevante for publicado.
   e integração dos quatro endpoints implementados e publicados.
 - **Decisão técnica:** PT-005 resolvida; D1–D5 materializadas e publicadas sem
   alteração dos contratos aprovados.
-- **PT-008:** o subconjunto do login está implementado; recuperação de senha,
-  retentativas transacionais e processamento de e-mails permanecem abertos.
+- **PT-008:** o subconjunto do login está implementado; o contrato normativo de
+  recuperação da F1-B.4.5 foi aprovado e está sendo formalizado documentalmente,
+  mas implementação, migration, processamento e validação permanecem pendentes.
+  PT-009 continua aberta e não há disponibilidade produtiva de recuperação.
 
 ## Etapas concluídas
 
@@ -80,8 +82,25 @@ normativas nem alteram o estado de decisões ou pendências.
 
 ## Próximo incremento
 
-- **F1-B.4.5:** não implementada; seu escopo ainda não foi definido
-  normativamente.
+- **F1-B.4.5 — Recuperação de Senha:** contrato normativo aprovado e formalizado
+  localmente; implementação ainda não iniciada. Esta alteração documental ainda
+  depende de commit, publicação e validação do CI.
+- **Objetivo:** expor solicitação e redefinição anti-enumeração sobre outbox
+  PostgreSQL específica, token de uso único e reset transacional com revogação de
+  sessões e auditoria.
+- **Escopo:** `POST /api/auth/password-recovery` e
+  `POST /api/auth/password-reset`; admissão, cooldown, token, até três tentativas,
+  estados e leases, reconciliação, retenção, privilégios e adapter controlado de
+  teste.
+- **Exclusões:** provider SMTP/API produtivo, alteração de e-mail, verificação
+  inicial de e-mail, administração de contas, outbox genérica e qualquer outro
+  incremento. A PT-009 permanece aberta.
+- **Critérios de aceite:** contratos HTTP e respostas uniformes; nenhum segredo
+  persistido ou exposto; `SENDING` confirmado antes do provider; `UNKNOWN` sem
+  reenvio; no máximo três tokens ativos; reset e auditoria atômicos; reconciliação
+  sem falso sucesso; PostgreSQL real para locks, backfill, grants e rollback;
+  regressão dos endpoints existentes; cobertura mínima de 90% e jobs `Quality`,
+  `API integration` e `Required` aprovados.
 
 Qualquer operação de versionamento, publicação ou próximo incremento exige
 autorização específica. As rotas, formatos de resposta e decisões D1–D5
@@ -122,8 +141,9 @@ Permanece com o estado registrado no documento canônico de
 [pendências técnicas](arquitetura/pendencias-tecnicas.md):
 
 - **PT-008:** o subconjunto de proteção do login está implementado e publicado na
-  F1-B.4.3; limites de recuperação de senha, retentativas transacionais e
-  processamento de e-mails permanecem abertos.
+  F1-B.4.3. O recorte normativo da recuperação foi aprovado para a F1-B.4.5, mas
+  sua implementação, evidências PostgreSQL, processamento e validação permanecem
+  pendentes; a pendência não está integralmente encerrada.
 
 Para o login HTTP, foram aprovados token buckets independentes por identidade ou
 sentinela compartilhada para e-mails não normalizáveis e por IP confiável,
@@ -135,5 +155,5 @@ A admissão foi publicada na F1-B.4.3 e ligada ao endpoint pela F1-B.4.4
 publicada.
 Aumentos de capacidade continuam dependendo de evidências relacionadas à PT-016.
 
-Esta referência não encerra integralmente a PT-008 nem reclassifica suas partes
-remanescentes.
+Esta referência não encerra integralmente a PT-003, PT-007 ou PT-008, não resolve
+a PT-009 e não declara a F1-B.4.5 implementada ou disponível em produção.

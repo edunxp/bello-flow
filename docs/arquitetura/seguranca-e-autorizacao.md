@@ -162,8 +162,8 @@ O mesmo `AUTHENTICATION_FAILED` cobre identidade inexistente, senha incorreta,
 conta inelegível e demais rejeições determinadas da credencial. O `401` não
 revela existência, elegibilidade ou estado da conta, e o `503` não revela a
 causa operacional. Para o login, limites, chaves, armazenamento, `Retry-After`
-e `429` estão definidos no subconjunto aprovado da PT-008; recuperação de senha,
-retentativas transacionais e processamento de e-mails permanecem abertos.
+e `429` estão definidos no subconjunto aprovado da PT-008. Recuperação de senha
+possui contrato separado na F1-B.4.5, ainda não implementado.
 
 ### `POST /api/auth/login`
 
@@ -263,8 +263,9 @@ abstração ou dependência sem necessidade concreta.
 
 Este contrato foi implementado para `POST /api/auth/login` na F1-B.4.3 e ligado
 à fronteira HTTP pela F1-B.4.4 publicada. Ele não cria quotas para consulta de
-sessão, logout ou logout global e não encerra as partes da PT-008 relativas a
-recuperação de senha, retentativas transacionais ou processamento de e-mails.
+sessão, logout ou logout global e não rege recuperação de senha. O contrato da
+recuperação foi posteriormente aprovado na F1-B.4.5, sem declarar implementação
+ou processamento produtivo de e-mails.
 
 ### Admissão e token buckets
 
@@ -418,6 +419,138 @@ Relógio controlável e promises coordenadas substituem esperas reais. Esses
 testes não repetem provas criptográficas existentes e preservam o gate mínimo
 de 90% em lines, statements, functions e branches.
 
+## Recuperação de senha — contrato aprovado da F1-B.4.5
+
+O contrato abaixo está aprovado para implementação, mas ainda não foi
+implementado. Ele detalha AT-001, AT-003 e AT-009, resolve normativamente a
+PT-007 e o recorte de recuperação da PT-008 e preserva a PT-009 aberta.
+
+### Identidade e anti-enumeração
+
+- `account.id` UUID permanece a identidade técnica. E-mail e `email_key`
+  continuam imutáveis.
+- A entrada é normalizada com a mesma regra do login e resolvida inicialmente por
+  `email_key`. A persistência recebe somente `account_id` nullable; e-mail bruto e
+  chave normalizada não são gravados na recuperação.
+- Toda solicitação admitida cria um request `RECEIVED`. Entrada inválida ou conta
+  inexistente usa `account_id` nulo e segue resposta indistinguível.
+- Classificação posterior revalida conta ativa, e-mail verificado, ausência de
+  desativação, credencial presente, cooldown e teto de tokens ativos, levando a
+  `PENDING` ou `SUPPRESSED` sem mudar a resposta HTTP.
+- Não há promessa de tempo constante, mas testes devem excluir diferença prática
+  explorável entre entradas inválidas, inexistentes, inelegíveis, em cooldown e
+  elegíveis.
+
+### `POST /api/auth/password-recovery`
+
+- recebe objeto JSON com exatamente `email`, string;
+- exige `X-Bello-Flow-Request: 1`, origem ou `Referer` válido e
+  `application/json`, antes do caso de uso;
+- usa somente `request.ip` após a configuração de proxy confiável;
+- estrutura, campo adicional, ausência ou tipo incorreto retornam `400
+  INVALID_REQUEST`;
+- e-mail string semanticamente inválido não retorna `400` e segue a resposta
+  anti-enumeração;
+- solicitação admitida e persistida ou reconciliada retorna `202 Accepted` sem
+  corpo, inclusive para conta inexistente, inelegível, em cooldown, já pendente
+  ou com três tokens ativos;
+- limite de admissão retorna `429 RATE_LIMITED` com `Retry-After`;
+- falha operacional ou resultado ainda indeterminado retorna `503
+  SERVICE_UNAVAILABLE`.
+
+### `POST /api/auth/password-reset`
+
+- recebe objeto JSON com exatamente `token` e `newPassword`, ambos strings;
+- exige os mesmos controles mutáveis da PT-005 e não exige sessão;
+- DTO ou nova senha fora da política retorna `400 INVALID_REQUEST`;
+- token string não canônico, inexistente, expirado, consumido, invalidado,
+  associado a conta inelegível ou perdido em corrida determinada retorna o mesmo
+  `401 AUTHENTICATION_FAILED`;
+- limite retorna `429 RATE_LIMITED`; falha operacional ou indeterminação retorna
+  `503 SERVICE_UNAVAILABLE`;
+- redefinição confirmada ou reconciliada retorna `204 No Content` sem corpo;
+- o endpoint não lê, emite nem limpa cookie de sessão. O cookie presente pode
+  pertencer a outra conta. Todas as sessões da conta redefinida são revogadas no
+  PostgreSQL; eventual cookie dessa conta será posteriormente resolvido como
+  sessão inválida pelo contrato existente.
+
+Erros preservam os envelopes e mensagens invariáveis já aprovados. Token, senha,
+PHC, link e identificadores internos nunca integram respostas.
+
+### Quotas e capacidade
+
+| Endpoint e chave | Capacidade | Reposição |
+|---|---:|---:|
+| solicitação por identidade normalizada ou sentinela | 3 | 1 token a cada 10 minutos |
+| solicitação por IP confiável | 30 | 1 token por minuto |
+| reset por IP confiável | 60 | 1 token a cada 5 segundos |
+
+- A solicitação reserva simultaneamente identidade/sentinela e IP antes do banco;
+  não há débito parcial.
+- A sentinela é única, não contém nem deriva do e-mail bruto e sempre é combinada
+  ao IP.
+- Mapas aceitam até 16.000 identidades, incluindo a sentinela, e 4.000 IPs.
+  Somente buckets integralmente recuperados podem ser removidos. Saturação sem
+  entrada elegível retorna `503` localizado.
+- Cooldown persistente por conta é de 10 minutos.
+- `Retry-After` usa a maior espera aplicável. `429` não consulta PostgreSQL, não
+  executa Argon2id e não produz auditoria funcional.
+- O reset não possui bucket por token: aleatoriedade de 256 bits, IP, uso único,
+  expiração, lock da conta e capacidade Argon2id são os controles aprovados.
+- Login e reset compartilham o limite global de duas execuções Argon2id, fila FIFO
+  de quatro e espera máxima de um segundo. As quotas próprias do login não mudam.
+
+### Token, link e disponibilidade
+
+- cada tentativa gera just-in-time 32 bytes de CSPRNG e Base64URL canônica sem
+  padding;
+- a validação persiste somente 32 bytes derivados por
+  `SHA-256("bello-flow/password-reset/v1\0" || token_bytes)`;
+- token é de uso único e expira 30 minutos após a geração;
+- valor bruto e link existem somente na memória entre `PREPARED` e a chamada ao
+  provider; não são persistidos, criptografados para recuperação, registrados ou
+  reconstruídos;
+- a URL usa exclusivamente a origem pública confiável e a rota frontend
+  `/reset-password`; recomenda-se transportar o token no fragmento e removê-lo do
+  histórico após a captura;
+- adapter controlado pode validar tecnicamente o fluxo em testes, mas não
+  representa provider real nem disponibilidade produtiva;
+- a PT-009 permanece aberta. Produção exige provider, timeout, credenciais e
+  política de erros aprovados.
+
+### Entrega e `UNKNOWN`
+
+Uma solicitação possui até três tentativas e cada tentativa até um token.
+`SENDING` deve estar confirmado no PostgreSQL antes da chamada externa. Falha
+determinada pode gerar nova tentativa depois de 1 e 5 minutos. Crash em
+`PREPARED`, antes de `SENDING`, permite invalidar o token comprovadamente não
+enviado.
+
+Crash, timeout ou perda de conexão depois de `SENDING` produz `UNKNOWN`. Esse
+estado não é reenviado automaticamente, não exige recuperar o token bruto, não
+inventa aceitação ou entrega e não invalida o token potencialmente entregue. O
+token conserva sua expiração natural. Nova solicitação legítima permanece
+possível segundo quotas, cooldown, request pendente e teto de três tokens ativos.
+
+### Logs e auditoria
+
+`RECEIVED`, `SUPPRESSED`, quotas, claims, leases, saturação, falhas técnicas e
+entradas que não alcançaram avaliação funcional são metadados operacionais, logs
+ou métricas minimizados. Eles não criam auditoria funcional imutável.
+
+Os eventos funcionais são `AUTH_PASSWORD_RECOVERY_REQUESTED`, quando solicitação
+elegível chega a `PENDING`; `AUTH_PASSWORD_RECOVERY_SEND_ACCEPTED`, quando o
+provider aceita o envio; `AUTH_PASSWORD_RESET_SUCCEEDED`, no reset confirmado; e
+`AUTH_PASSWORD_RESET_REJECTED`, somente quando token resolve uma conta e alcança
+avaliação funcional determinada. Token aleatório não resolvido não cria auditoria
+imutável. Cada evento participa da mesma transação de sua mutação local.
+
+Os eventos usam somente conta conhecida, `recovery_request_id`,
+`delivery_attempt_id` ou `reset_operation_id`, resultado e contagens mínimas. Não
+contêm e-mail, IP bruto, chave de bucket, senha, PHC, token, hash, link, corpo HTTP
+ou erro completo do provider. `SENT` significa aceitação pelo provider, não
+entrega ao destinatário; não existe evento de entrega sem evidência própria.
+
 ## Fluxo de uma requisição protegida
 
 1. Validar transporte seguro e o header obrigatório; em operação mutável,
@@ -481,7 +614,9 @@ O comando, formato de autorização e mecanismo operacional da CLI serão defini
 - Redefinição bem-sucedida revoga sessões e produz auditoria sem o token.
 - Logs, feed e auditoria não registram o valor do link, cookie ou token.
 
-A representação segura do link nas solicitações de envio persistidas ainda precisa de detalhamento; ver [pendências técnicas](pendencias-tecnicas.md).
+A F1-B.4.5 detalha geração just-in-time sem persistir token ou link recuperável.
+Implementação e evidência permanecem pendentes, e o provider produtivo continua
+na [PT-009](pendencias-tecnicas.md#pendências-operacionais).
 
 ## Respostas e minimização
 

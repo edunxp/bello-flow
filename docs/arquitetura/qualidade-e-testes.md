@@ -52,6 +52,51 @@ comprovam que a sentinela ocupa uma única posição, não debita buckets indivi
 de identidades válidas, retorna `429` genérico quando esgotada e, quando admite a
 tentativa, preserva verificação negativa, `401` genérico e auditoria funcional.
 
+### Matriz obrigatória da F1-B.4.5
+
+O contrato de recuperação está aprovado, mas os testes e a implementação ainda
+estão pendentes. A entrega deve cobrir:
+
+- unitários: DTOs exatos, normalização, Base64URL canônica, hash com separação de
+  domínio, transições, leases, cooldown, quotas, três tentativas, três tokens
+  ativos e classificação `COMPLETED`, `NOT_FOUND`, `INCONSISTENT` e `UNKNOWN`;
+- HTTP de solicitação: `202` sem corpo para identidade existente, inexistente,
+  inválida, inelegível, em cooldown, já pendente ou com teto de tokens; header,
+  origem, media type, campos extras, `429`, `Retry-After`, `503` e ausência de
+  segredos;
+- HTTP de reset: `204` sem corpo; `newPassword`; token não canônico, inexistente,
+  expirado, consumido, invalidado e corrida determinada com o mesmo `401`;
+  `400`, `429`, `503` e ausência de qualquer `Set-Cookie`;
+- cookie: sessão de outra conta preservada e sessão da conta redefinida revogada
+  no PostgreSQL e posteriormente resolvida como inválida;
+- entrega: três tentativas e tokens históricos distintos, falha determinada com
+  retentativa, crash em `PREPARING` e `PREPARED`, `SENDING` confirmado antes da
+  chamada, `UNKNOWN` sem reenvio e expiração natural do token;
+- concorrência: claims simultâneos, criação de tokens sob teto, dois resets do
+  mesmo token, reset contra login, solicitação e envio, sem deadlock e com a ordem
+  única de locks;
+- transação: rollback em cada escrita obrigatória; consumo, credencial,
+  invalidações, cancelamentos, revogações e auditoria atômicos; zero, uma e várias
+  sessões;
+- reconciliação: commit indeterminado, evidência parcial, alteração posterior da
+  credencial, marcador operacional através de reinício, metadado legitimamente
+  retido ou eliminado e ausência de falso `NOT_FOUND` ou falso sucesso;
+- PostgreSQL: migration e backfill sem UUID inventado, constraints, índices,
+  grants por coluna, negação das demais operações e eventual função SQL restrita
+  caso os grants diretos não sustentem os invariantes;
+- auditoria: eventos apenas após avaliação funcional, atomicidade e ausência de
+  crescimento imutável por quotas, supressões e entradas hostis;
+- retenção: 30 dias somente após término resolvido, proteção de `UNKNOWN` e de
+  operações reconciliáveis, ordem de limpeza, lotes, interrupção e retomada;
+- operação: origem HTTPS, rota `/reset-password`, adapter controlado identificado
+  como teste e inicialização produtiva indisponível sem resolução da PT-009; e
+- regressão: login, sessão, logout, logout global, compensação pré-transmissão,
+  quotas do login, CORS desabilitado e `/health/live` preservados.
+
+Relógios e promises são controlados; crash e concorrência não usam sleeps como
+prova. Transações, locks, constraints, privilégios, backfill, reconciliação e
+limpeza exigem PostgreSQL real descartável.
+
 ## Integração com PostgreSQL real
 
 Testes críticos não devem substituir o PostgreSQL por implementação em memória. Devem validar:

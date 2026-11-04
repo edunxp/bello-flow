@@ -15,11 +15,11 @@ fonte normativa que aprovou cada resolução.
 |---|---|---|---|
 | PT-001 | versões específicas e compatibilidade de Node.js, Angular, NestJS, Prisma e PostgreSQL | todas | matriz de versões suportadas e política de atualização |
 | PT-002 | representação física das posições esparsas e critério de rebalanceamento | AT-004 | prova de concorrência, precisão, crescimento e ordenação estável |
-| PT-003 | bloqueios, ordem de aquisição, isolamento e repetição por operação | AT-003, AT-004 | catálogo por mutação crítica com comportamento de conflito |
+| PT-003 | bloqueios, ordem de aquisição, isolamento e repetição por operação; o recorte de recuperação de senha foi aprovado, mas sua implementação ainda exige prova PostgreSQL | AT-003, AT-004 | catálogo por mutação crítica com comportamento de conflito e evidência real por operação |
 | PT-004 | modelo físico, restrições e índices | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho |
 | PT-006 | protocolo de revisão, mensagens, reconexão e verificações periódicas | AT-005 | contrato de sincronização e recuperação testável |
-| PT-007 | tratamento seguro de links/tokens nas solicitações persistidas de e-mail | AT-009 | fluxo sem segredo recuperável desnecessário |
-| PT-008 | limites de tentativas para recuperação, transações e e-mail; o subconjunto de login está implementado | AT-001, AT-003, AT-009 | limites e respostas restantes aprovados com critérios de segurança |
+| PT-007 | tratamento seguro de links/tokens nas solicitações persistidas de e-mail; o contrato da recuperação foi aprovado sem persistir token ou link recuperável, com implementação pendente | AT-009 | comprovar geração just-in-time, hash de validação, estados e falhas em PostgreSQL real |
+| PT-008 | limites de tentativas para login e recuperação, transações e e-mail; contratos de login e recuperação estão aprovados em recortes distintos | AT-001, AT-003, AT-009 | implementar e validar o recorte de recuperação sem alterar as quotas publicadas do login |
 
 O subconjunto de login da PT-008 foi aprovado em 2026-11-03 para planejamento,
 sem que a aprovação, por si, declarasse implementação. A proteção foi publicada
@@ -32,9 +32,22 @@ respostas `429` e `503`, memória efêmera limitada, saturação, concorrência
 Argon2id e critérios de teste no
 [complemento de AT-001](decisoes-tecnicas.md#complemento-aprovado--proteção-do-login-da-pt-008)
 e no [contrato de segurança](seguranca-e-autorizacao.md#proteção-do-login--subconjunto-aprovado-da-pt-008).
-PT-008 permanece parcialmente aberta para recuperação de senha, retentativas
-transacionais e processamento de e-mails. As decisões D1–D5 dos contratos HTTP
-permanecem preservadas e não criam quotas genéricas para outros endpoints.
+Antes da formalização da F1-B.4.5, PT-008 permanecia sem limites aprovados para
+recuperação de senha, retentativas transacionais e processamento de e-mails. As
+decisões D1–D5 dos contratos HTTP permanecem preservadas e não criam quotas
+genéricas para outros endpoints.
+
+Em 2026-11-04, o complemento aprovado da F1-B.4.5 resolveu normativamente o
+recorte de recuperação de senha de PT-007 e PT-008 e definiu, para essa operação,
+a ordem de locks e repetição vinculada à PT-003. A implementação, a migration, os
+grants, a prova PostgreSQL, o processador e a reconciliação continuam pendentes;
+por isso PT-003 permanece aberta para outras mutações e evidências, PT-007 não é
+declarada implementada e PT-008 não é encerrada. O contrato está em
+[decisões técnicas](decisoes-tecnicas.md#complemento-aprovado--f1-b45-recuperação-de-senha),
+[segurança](seguranca-e-autorizacao.md#recuperação-de-senha--contrato-aprovado-da-f1-b45)
+e [persistência](persistencia-e-auditoria.md#recuperação-de-senha-da-f1-b45).
+PT-009 permanece integralmente aberta: adapter controlado valida apenas o fluxo
+técnico e não escolhe nem substitui provider SMTP/API produtivo.
 
 ## Pendências técnicas resolvidas
 

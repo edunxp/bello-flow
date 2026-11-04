@@ -143,14 +143,16 @@ em [segurança e autorização](seguranca-e-autorizacao.md#contratos-http-de-aut
 - **Data de aprovação:** 2026-11-03
 - **Complemento aprovado:** bucket sentinela compartilhado para e-mails não
   normalizáveis, incorporado em 2026-11-03 sem declarar implementação.
-- **Escopo:** somente `POST /api/auth/login`; recuperação de senha, retentativas
-  transacionais e processamento de e-mails permanecem pendentes na PT-008.
+- **Escopo:** somente `POST /api/auth/login`; recuperação de senha não é regida
+  por este complemento e foi posteriormente formalizada no complemento da
+  F1-B.4.5, com implementação e processamento ainda pendentes.
 - **Impacto:** detalha AT-001, AT-003, AT-005, AT-010 e os contratos HTTP D1–D5,
   sem alterar PT-005, regras funcionais, Argon2id ou auditoria de autenticações
   efetivamente avaliadas.
 - **Substituições:** nenhuma AT, DEC ou RN é substituída.
-- **PT-008/D1 — escopo:** somente o login é fechado; recuperação de senha,
-  retentativas transacionais e processamento de e-mails permanecem abertos.
+- **PT-008/D1 — escopo:** somente o login é fechado por este recorte; o contrato
+  de recuperação é fechado separadamente pela F1-B.4.5, sem declarar
+  implementação ou provider produtivo.
 - **PT-008/D2 — limites do login:** a admissão exige simultaneamente um token
   bucket por identidade normalizada,
   com capacidade 5 e reposição de um token a cada 180 segundos, e outro por IP
@@ -206,6 +208,113 @@ em [segurança e autorização](seguranca-e-autorizacao.md#contratos-http-de-aut
 
 O detalhamento, os critérios de teste e os limites de saturação estão em
 [segurança e autorização](seguranca-e-autorizacao.md#proteção-do-login--subconjunto-aprovado-da-pt-008).
+
+### Complemento aprovado — F1-B.4.5 Recuperação de Senha
+
+- **Estado:** Aprovado para implementação; implementação ainda pendente
+- **Data de aprovação:** 2026-11-04
+- **Escopo:** formaliza exclusivamente a recuperação e a redefinição de senha da
+  F1-B.4.5. Não altera os quatro endpoints publicados na F1-B.4.4, não implementa
+  verificação inicial de e-mail, administração de contas ou alteração de e-mail e
+  não declara disponibilidade produtiva.
+- **Identidade:** `account.id` UUID permanece a identidade técnica. A resolução
+  inicial usa `account.email_key`; `account.email` e `account.email_key` continuam
+  imutáveis. A estrutura de recuperação persiste somente `account_id` nullable,
+  nunca o e-mail bruto ou sua chave normalizada.
+- **HTTP:** os contratos são `POST /api/auth/password-recovery`, com DTO exato
+  `{ email }` e `202` sem corpo, e `POST /api/auth/password-reset`, com DTO exato
+  `{ token, newPassword }` e `204` sem corpo. Ambos aplicam PT-005. Respostas de
+  solicitação não distinguem existência, elegibilidade, cooldown ou limite de
+  tokens da conta; tokens determinados como inválidos usam `401
+  AUTHENTICATION_FAILED` uniforme.
+- **Abuso:** a solicitação usa buckets simultâneos por identidade normalizada ou
+  sentinela, com capacidade 3 e reposição de um token a cada 10 minutos, e por IP
+  confiável, com capacidade 30 e reposição de um token por minuto. O reset usa
+  bucket por IP confiável com capacidade 60 e reposição de um token a cada 5
+  segundos. Mapas são limitados a 16.000 identidades e 4.000 IPs; saturação sem
+  entrada removível retorna `503`. Cooldown persistente por conta é de 10 minutos.
+  `429` inclui o maior `Retry-After` aplicável e não alcança PostgreSQL ou Argon2id.
+- **Capacidade Argon2id:** login e reset compartilham o mesmo limite global de
+  duas execuções, fila FIFO de quatro e espera máxima de um segundo. Cancelamento
+  só retira espera ainda não admitida; trabalho iniciado mantém a vaga até terminar.
+  As quotas próprias do login não são modificadas.
+- **Token:** cada tentativa gera just-in-time 32 bytes de CSPRNG, codificados em
+  Base64URL canônica sem padding. A validação persiste somente
+  `SHA-256("bello-flow/password-reset/v1\0" || token_bytes)`. O token é de uso
+  único, expira em 30 minutos e seu valor bruto existe somente na memória do
+  processador entre preparação e chamada externa.
+- **Outbox:** a persistência PostgreSQL é específica de recuperação, sem outbox
+  genérica. Uma solicitação possui até três tentativas de entrega; cada tentativa
+  possui no máximo um token. Requests usam os estados `RECEIVED`, `SUPPRESSED`,
+  `PENDING`, `PREPARING`, `PREPARED`, `SENDING`, `SENT`, `FAILED`, `UNKNOWN` e
+  `CANCELLED` como estado agregado; tentativas usam o subconjunto de processamento
+  de `PREPARING` a `CANCELLED`. `SENDING` precisa de commit confirmado antes da
+  chamada externa.
+- **Falhas de entrega:** falha determinada pode criar nova tentativa após 1 e 5
+  minutos, no máximo três tentativas totais. Crash em `PREPARED`, antes de
+  `SENDING`, permite invalidar aquele token e preparar outro. Resultado externo
+  indeterminado produz `UNKNOWN`, não é reenviado automaticamente, não recupera o
+  token bruto, não inventa confirmação de entrega e preserva a expiração natural
+  do token potencialmente entregue. Nova solicitação legítima continua possível
+  conforme quotas, cooldown e teto de tokens ativos.
+- **Concorrência:** criação de token e reset reutilizam o advisory lock derivado
+  de `account.id`. A ordem é conta, credencial, requests, tentativas, tokens,
+  sessões e auditoria, com linhas da mesma classe ordenadas por UUID. Claim faz
+  seleção otimista e, dentro da transação, adquire primeiro o lock da conta.
+  Argon2id e chamadas externas nunca ocorrem dentro de transação aberta. O teto de
+  três tokens ativos por conta é verificado sob esse lock.
+- **Reset atômico:** depois do Argon2id e da aquisição dos locks, conta,
+  credencial e token são revalidados. Consumo do token, atualização da credencial,
+  invalidação dos demais tokens, cancelamento das intenções pendentes, revogação
+  das sessões com `PASSWORD_RESET` e auditoria formam uma única transação.
+  O endpoint não lê nem limpa cookie de sessão, pois um cookie presente pode
+  pertencer a outra conta; PostgreSQL permanece a autoridade da revogação.
+- **Correlação:** cada request possui `recovery_request_id`, cada tentativa possui
+  `delivery_attempt_id` e cada reset possui `reset_operation_id`.
+  `password_credential.changed_operation_id` registra explicitamente a última
+  alteração. O backfill usa somente o `operation_id` comprovado do bootstrap e
+  falha se encontrar credencial sem origem demonstrável; IDs não são inventados.
+- Um marcador operacional específico de `reset_operation_id`, conta, token e
+  correlação esperada da credencial preserva `STARTED`, `UNKNOWN` e conclusões
+  através de reinício, sem armazenar segredo e sem substituir a auditoria.
+- **Reconciliação:** `COMPLETED`, `NOT_FOUND`, `INCONSISTENT` e `UNKNOWN` exigem o
+  conjunto coerente de credencial, consumo/invalidação de tokens, cancelamentos,
+  revogações e auditoria. Alteração posterior da credencial não apaga a prova de
+  reset anterior: token consumido e auditoria transacional preservam a evidência,
+  enquanto a alteração corrente também deve possuir correlação válida. Ausência
+  de metadado eliminado legitimamente nunca é classificada como `NOT_FOUND`, e
+  auditoria histórica isolada não substitui a prova transacional completa.
+- **Auditoria:** ingressos operacionais, quotas, claims, leases, supressões e
+  falhas anteriores à avaliação funcional permanecem em metadados operacionais,
+  logs ou métricas minimizados. Somente solicitação elegível levada a `PENDING`,
+  aceitação de envio e reset funcionalmente avaliado geram eventos funcionais,
+  atômicos com sua mutação e sem e-mail, IP bruto, senha, PHC, token, hash ou link.
+- **Retenção:** metadados terminais resolvidos são mantidos inicialmente por 30
+  dias após `terminal_at`. Estados ativos, marcadores `UNKNOWN`, operações ainda
+  reconciliáveis, pais com filhos protegidos e tokens potencialmente entregues
+  ainda válidos não podem ser eliminados. Limpeza usa credencial de manutenção,
+  lotes limitados e ordem tokens, tentativas e requests. Auditoria preserva sua
+  retenção normativa de 24 meses.
+- **Privilégios:** grants por coluna seguem o menor privilégio, inclusive
+  `UPDATE(password_hash, changed_at, changed_operation_id)` sem `UPDATE` de e-mail,
+  mas não constituem garantia de atomicidade. A implementação deve possuir
+  fronteira de persistência específica, transação única e testes PostgreSQL reais.
+  Se grants diretos não protegerem os invariantes, uma função SQL restrita deve
+  ser submetida a decisão antes da implementação.
+- **Operação:** a origem confiável existente constrói a rota frontend
+  `/reset-password`. Adapter controlado é permitido somente para validação. A
+  PT-009 permanece aberta e a recuperação não pode ser declarada disponível em
+  produção sem provider real, timeout, credenciais e política de erros aprovados.
+- **Qualidade:** testes unitários, HTTP e PostgreSQL real cobrem anti-enumeração,
+  quotas, estados, leases, crash, concorrência, rollback, uso único, expiração,
+  reconciliação, grants, auditoria, retenção e regressão. Permanecem cobertura
+  mínima de 90% nas quatro métricas por aplicação e consolidado e os jobs
+  `Quality`, `API integration` e `Required`.
+- **Pendências:** resolve normativamente PT-007 e o recorte de recuperação da
+  PT-008; resolve em PT-003 apenas a ordem e a repetição desta operação. PT-003
+  permanece aberta para outras mutações e para validação da implementação;
+  PT-008 permanece aberta para evidências de implementação e processamento real;
+  PT-009 permanece integralmente aberta.
 
 ### Rastreabilidade
 
@@ -483,7 +592,9 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 - **Decisões funcionais:** DEC-020, DEC-021.
 - **Regras:** RN-069–RN-076, RN-120–RN-128.
 - **Relacionadas:** AT-001, AT-003, AT-007, AT-010.
-- **Pendência:** tratamento seguro dos links e tokens nas solicitações persistidas, sem armazenar segredo recuperável desnecessário.
+- **Evolução:** a F1-B.4.5 aprovou geração just-in-time sem persistir token ou
+  link recuperável. Implementação, evidência PostgreSQL e provider produtivo
+  permanecem pendentes; PT-009 continua aberta.
 
 ## AT-010 — Observabilidade, testes e prontidão
 
@@ -522,6 +633,7 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 
 | Data | Alteração |
 |---|---|
+| 2026-11-04 | Contrato da F1-B.4.5 aprovado para implementação, formalizando recuperação de senha, HTTP, admissão, token, outbox específica, concorrência, reconciliação, retenção, privilégios e testes, sem declarar implementação ou disponibilidade produtiva e mantendo PT-009 aberta. |
 | 2026-11-03 | Subconjunto de login da PT-008 aprovado para planejamento, com token buckets, memória limitada, saturação segura e concorrência Argon2id, sem declarar implementação; recuperação, transações e e-mail permanecem pendentes. |
 | 2026-11-03 | D1–D5 aprovadas para os contratos HTTP de autenticação da F1-B.4, sem declarar implementação e preservando PT-005 e PT-008. |
 | 2026-11-03 | PT-005 resolvida como complemento aprovado de AT-001 e AT-005, definindo topologia same-origin, cookie, origem, CORS e proteção CSRF da camada HTTP sem declarar implementação. |
