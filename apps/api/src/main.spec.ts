@@ -43,7 +43,14 @@ describe('API bootstrap', () => {
 
     expect(nestMocks.create).toHaveBeenCalledWith(AppModule, {
       bodyParser: false,
+      rawBody: true,
     });
+    expect(app.set).toHaveBeenCalledWith(
+      'bello.httpSecurityConfig',
+      expect.objectContaining({
+        publicOrigin: 'http://127.0.0.1:14200',
+      }),
+    );
     expect(app.set).toHaveBeenCalledWith('trust proxy', false);
     expect(app.useBodyParser).toHaveBeenCalledWith('json');
     expect(app.enableShutdownHooks).toHaveBeenCalledOnce();

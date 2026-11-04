@@ -1,4 +1,9 @@
-import { ArgumentsHost, Catch, type ExceptionFilter } from '@nestjs/common';
+import {
+  ArgumentsHost,
+  Catch,
+  type ExceptionFilter,
+  Logger,
+} from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 
 export const HTTP_ERROR_CODE = Object.freeze({
@@ -85,15 +90,39 @@ export class HttpContractError extends Error {
   }
 }
 
+function writeHttpError(response: Response, code: HttpErrorCode): void {
+  const definition = HTTP_ERROR_DEFINITION[code];
+  response.status(definition.status).json(buildHttpErrorResponse(code));
+}
+
 @Catch(HttpContractError)
 export class HttpContractErrorFilter implements ExceptionFilter {
   catch(exception: HttpContractError, host: ArgumentsHost): void {
-    const definition = HTTP_ERROR_DEFINITION[exception.code];
-    host
-      .switchToHttp()
-      .getResponse<Response>()
-      .status(definition.status)
-      .json(buildHttpErrorResponse(exception.code));
+    const response = host.switchToHttp().getResponse<Response>();
+    if (!response.headersSent) {
+      writeHttpError(response, exception.code);
+    }
+  }
+}
+
+@Catch()
+export class HttpBoundaryErrorFilter implements ExceptionFilter {
+  private readonly logger = new Logger(HttpBoundaryErrorFilter.name);
+
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const response = host.switchToHttp().getResponse<Response>();
+    if (response.headersSent) {
+      return;
+    }
+
+    const code =
+      exception instanceof HttpContractError
+        ? exception.code
+        : HTTP_ERROR_CODE.INTERNAL_ERROR;
+    if (!(exception instanceof HttpContractError)) {
+      this.logger.error({ event: 'HTTP_INTERNAL_ERROR' });
+    }
+    writeHttpError(response, code);
   }
 }
 
@@ -101,6 +130,8 @@ type JsonParseError = {
   readonly status?: unknown;
   readonly type?: unknown;
 };
+
+const bodyParserLogger = new Logger('HttpBodyParser');
 
 function readBodyParserError(error: unknown): JsonParseError | null {
   if (!error || typeof error !== 'object') {
@@ -111,15 +142,26 @@ function readBodyParserError(error: unknown): JsonParseError | null {
 
 export function bodyParserErrorHandler(
   error: unknown,
-  _request: Request,
+  request: Request,
   response: Response,
   next: NextFunction,
 ): void {
+  if (response.headersSent) {
+    next(error);
+    return;
+  }
+  if (request.destroyed || response.destroyed || response.writableEnded) {
+    return;
+  }
+
   const parserError = readBodyParserError(error);
-  let code: HttpErrorCode | null = null;
+  let code: HttpErrorCode;
   if (
-    parserError?.status === 400 &&
-    parserError.type === 'entity.parse.failed'
+    (parserError?.status === 400 &&
+      (parserError.type === 'entity.parse.failed' ||
+        parserError.type === 'request.size.invalid' ||
+        parserError.type === 'request.aborted')) ||
+    (parserError?.status === 413 && parserError.type === 'entity.too.large')
   ) {
     code = HTTP_ERROR_CODE.INVALID_REQUEST;
   } else if (
@@ -128,11 +170,9 @@ export function bodyParserErrorHandler(
       parserError.type === 'encoding.unsupported')
   ) {
     code = HTTP_ERROR_CODE.UNSUPPORTED_MEDIA_TYPE;
+  } else {
+    code = HTTP_ERROR_CODE.INTERNAL_ERROR;
+    bodyParserLogger.error({ event: 'HTTP_BODY_PARSER_INTERNAL_ERROR' });
   }
-  if (code === null) {
-    next(error);
-    return;
-  }
-  const definition = HTTP_ERROR_DEFINITION[code];
-  response.status(definition.status).json(buildHttpErrorResponse(code));
+  writeHttpError(response, code);
 }

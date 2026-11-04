@@ -45,8 +45,19 @@ runtime:
 Valores fora desses intervalos impedem a inicialização. Os buckets e a fila são
 locais à instância única e mantidos apenas em memória; reiniciar o processo zera
 os contadores. Aumentar os tetos depende de evidência de capacidade vinculada à
-PT-016. Esta fase protege o caso de uso de autenticação, mas ainda não cria os
-endpoints HTTP de autenticação.
+PT-016.
+
+A API expõe os contratos internos de autenticação em:
+
+- `POST /api/auth/login`;
+- `GET /api/auth/session`;
+- `POST /api/auth/logout`;
+- `POST /api/auth/logout-all`.
+
+Essas rotas usam cookie de sessão `HttpOnly`, exigem
+`X-Bello-Flow-Request: 1` e aplicam origem, conteúdo e autenticação conforme o
+perfil específico de cada endpoint. Tokens de sessão não integram respostas
+JSON.
 
 O NestJS escuta em `http://127.0.0.1:13000`. O Angular local escuta em
 `http://127.0.0.1:14200` e encaminha `/api` para a API; o frontend usa URLs

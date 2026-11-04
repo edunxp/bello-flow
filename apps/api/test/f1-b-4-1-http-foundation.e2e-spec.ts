@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
-import type { Request } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { configureHttpApplication } from '../src/http/configure-http-application.js';
@@ -32,6 +32,7 @@ describe('F1-B.4.1 HTTP foundation', () => {
 
   async function createProbeApplication(
     trustedProxies?: string,
+    beforeConfiguration?: (application: NestExpressApplication) => void,
   ): Promise<INestApplication<App>> {
     const moduleFixture = await Test.createTestingModule({
       controllers: [HttpFoundationProbeController],
@@ -40,7 +41,9 @@ describe('F1-B.4.1 HTTP foundation', () => {
     const probeApp =
       moduleFixture.createNestApplication<NestExpressApplication>({
         bodyParser: false,
+        rawBody: true,
       });
+    beforeConfiguration?.(probeApp);
     configureHttpApplication(
       probeApp,
       loadHttpSecurityConfig({
@@ -106,6 +109,44 @@ describe('F1-B.4.1 HTTP foundation', () => {
       },
     });
     expect(response.text).not.toContain('encoding');
+  });
+
+  it('maps an oversized JSON body to the approved structural error', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/__test/http-foundation/json')
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ value: 'A'.repeat(110_000) }));
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: { code: 'INVALID_REQUEST', message: 'Invalid request' },
+    });
+    expect(response.text).not.toContain('AAAA');
+    expect(response.text).not.toContain('entity.too.large');
+  });
+
+  it('maps an unexpected parser stream failure to the generic 500', async () => {
+    await app.close();
+    app = await createProbeApplication(undefined, (probeApp) => {
+      probeApp.use(
+        (requestValue: Request, _response: Response, next: NextFunction) => {
+          requestValue.setEncoding('utf8');
+          next();
+        },
+      );
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/__test/http-foundation/json')
+      .set('Content-Type', 'application/json')
+      .send('{"credential":"must not escape"}');
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({
+      error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
+    });
+    expect(response.text).not.toContain('credential');
+    expect(response.text).not.toContain('stream');
   });
 
   it('does not enable CORS or authorize an external preflight', async () => {

@@ -13,8 +13,6 @@ import {
 } from './authentication.service.js';
 import { DEFAULT_LOGIN_ADMISSION_CONFIG } from './login-admission.config.js';
 import {
-  LOGIN_ADMISSION_ERROR_CODE,
-  LoginAdmissionError,
   LoginAdmissionService,
   SYSTEM_LOGIN_ADMISSION_TIME,
 } from './login-admission.service.js';
@@ -199,8 +197,8 @@ describe('AuthenticationService', () => {
         password,
       }),
     ).rejects.toMatchObject({
-      code: LOGIN_ADMISSION_ERROR_CODE.SERVICE_UNAVAILABLE,
-    } satisfies Partial<LoginAdmissionError>);
+      code: AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE,
+    } satisfies Partial<AuthenticationError>);
     expect(findUnique).not.toHaveBeenCalled();
     expect(verifyPassword).not.toHaveBeenCalled();
     expect(performNegativeVerification).not.toHaveBeenCalled();
@@ -232,9 +230,9 @@ describe('AuthenticationService', () => {
     await expect(
       authenticate({ email: 'limited@example.com', password }),
     ).rejects.toMatchObject({
-      code: LOGIN_ADMISSION_ERROR_CODE.RATE_LIMITED,
+      code: AUTHENTICATION_ERROR_CODE.RATE_LIMITED,
       retryAfterSeconds: 180,
-    } satisfies Partial<LoginAdmissionError>);
+    } satisfies Partial<AuthenticationError>);
     expect(findUnique).toHaveBeenCalledTimes(5);
     expect(verifyPassword).toHaveBeenCalledTimes(5);
     expect(recordFailedLogin).toHaveBeenCalledTimes(5);

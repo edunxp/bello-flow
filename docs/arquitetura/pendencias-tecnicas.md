@@ -19,12 +19,15 @@ fonte normativa que aprovou cada resolução.
 | PT-004 | modelo físico, restrições e índices | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho |
 | PT-006 | protocolo de revisão, mensagens, reconexão e verificações periódicas | AT-005 | contrato de sincronização e recuperação testável |
 | PT-007 | tratamento seguro de links/tokens nas solicitações persistidas de e-mail | AT-009 | fluxo sem segredo recuperável desnecessário |
-| PT-008 | limites de tentativas para recuperação, transações e e-mail; o subconjunto de login está aprovado para planejamento | AT-001, AT-003, AT-009 | limites e respostas restantes aprovados com critérios de segurança |
+| PT-008 | limites de tentativas para recuperação, transações e e-mail; o subconjunto de login está implementado | AT-001, AT-003, AT-009 | limites e respostas restantes aprovados com critérios de segurança |
 
 O subconjunto de login da PT-008 foi aprovado em 2026-11-03 para planejamento,
-sem declarar implementação. Ele define os token buckets de identidade ou
-sentinela compartilhada e de IP confiável, respostas `429` e `503`, memória
-efêmera limitada, saturação, concorrência Argon2id e critérios de teste no
+sem que a aprovação, por si, declarasse implementação. A proteção foi publicada
+na F1-B.4.3 pelo commit `289a580842d812382bcb27070a4ab13a27864f45` e ligada
+localmente ao endpoint de login na F1-B.4.4. O contrato define os token buckets
+de identidade ou sentinela compartilhada e de IP confiável, respostas `429` e
+`503`, memória efêmera limitada, saturação, concorrência Argon2id e critérios de
+teste no
 [complemento de AT-001](decisoes-tecnicas.md#complemento-aprovado--proteção-do-login-da-pt-008)
 e no [contrato de segurança](seguranca-e-autorizacao.md#proteção-do-login--subconjunto-aprovado-da-pt-008).
 PT-008 permanece parcialmente aberta para recuperação de senha, retentativas

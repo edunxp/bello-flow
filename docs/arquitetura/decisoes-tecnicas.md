@@ -87,7 +87,7 @@ O contrato detalhado e seus limites operacionais estão em
 
 ### Complemento aprovado — contratos HTTP D1–D5 da F1-B.4
 
-- **Estado:** Aprovado; parcialmente implementado
+- **Estado:** Aprovado; implementado localmente, com publicação pendente
 - **Data de aprovação:** 2026-11-03
 - **Justificativa:** definir a fronteira HTTP mínima de autenticação sobre os
   serviços e a persistência já existentes, sem expor contratos internos.
@@ -97,9 +97,10 @@ O contrato detalhado e seus limites operacionais estão em
 - **Implementação:** a F1-B.4.1 implementou a fundação e as primitivas HTTP no
   commit `6bdf62be85ba5c7eb91f6ffd41b872b2e3b5ebcc`; a F1-B.4.2 implementou os casos
   públicos de sessão e o encapsulamento de D5 no commit
-  `9bb29a427cb74a712f008695712b8a4b77eacae4`. Controllers e endpoints de
-  autenticação, a ligação das políticas HTTP e a admissão protegida do login
-  permanecem ausentes.
+  `9bb29a427cb74a712f008695712b8a4b77eacae4`; a F1-B.4.3 implementou a admissão
+  protegida do login no commit `289a580842d812382bcb27070a4ab13a27864f45`.
+  A F1-B.4.4 liga localmente os quatro endpoints, as políticas HTTP e os cookies;
+  o incremento ainda não possui commit, publicação nem CI remoto próprios.
 - **D1 — endpoints e erros:** a API de autenticação possui os contratos
   `POST /api/auth/login`, `GET /api/auth/session`,
   `POST /api/auth/logout` e `POST /api/auth/logout-all`, com identidade externa
@@ -124,7 +125,7 @@ em [segurança e autorização](seguranca-e-autorizacao.md#contratos-http-de-aut
 
 ### Complemento aprovado — proteção do login da PT-008
 
-- **Estado:** Aprovado para planejamento; não implementado
+- **Estado:** Aprovado e implementado para o login; PT-008 permanece parcial
 - **Data de aprovação:** 2026-11-03
 - **Complemento aprovado:** bucket sentinela compartilhado para e-mails não
   normalizáveis, incorporado em 2026-11-03 sem declarar implementação.

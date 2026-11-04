@@ -4,6 +4,7 @@ import { AppModule } from '../app.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuthSessionModule } from './auth-session.module.js';
 import { AuthSessionPersistence } from './auth-session.persistence.js';
+import { AuthController } from './auth.controller.js';
 import { AuthenticationService } from './authentication.service.js';
 import { LoginAdmissionConfigurationError } from './login-admission.config.js';
 import { LoginAdmissionService } from './login-admission.service.js';
@@ -130,6 +131,9 @@ describe('AuthSessionModule', () => {
         .select(AuthSessionModule)
         .get(LoginAdmissionService, { strict: true }),
     ).toBeInstanceOf(LoginAdmissionService);
+    expect(
+      context.select(AuthSessionModule).get(AuthController, { strict: true }),
+    ).toBeInstanceOf(AuthController);
 
     await context.close();
     expect(onModuleDestroy).toHaveBeenCalledOnce();

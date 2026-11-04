@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PasswordCredentialService } from '../credentials/password-credential.service.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { AuthSessionPersistence } from './auth-session.persistence.js';
+import { AuthController } from './auth.controller.js';
 import { AuthenticationService } from './authentication.service.js';
 import {
   LOGIN_ADMISSION_CONFIG,
@@ -15,6 +16,7 @@ import {
 
 @Module({
   imports: [PrismaModule],
+  controllers: [AuthController],
   providers: [
     AuthSessionPersistence,
     AuthenticationService,

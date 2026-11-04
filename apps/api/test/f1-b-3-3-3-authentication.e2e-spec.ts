@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import type { INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { Test } from '@nestjs/testing';
 import { Client } from 'pg';
+import request from 'supertest';
+import type { App } from 'supertest/types.js';
+import { AuthController } from '../src/auth/auth.controller.js';
 import { AuthSessionPersistence } from '../src/auth/auth-session.persistence.js';
 import {
   AUTHENTICATION_ERROR_CODE,
@@ -14,6 +20,8 @@ import {
 } from '../src/auth/login-admission.service.js';
 import { hashSessionToken } from '../src/auth/session-primitives.js';
 import { PasswordCredentialService } from '../src/credentials/password-credential.service.js';
+import { configureHttpApplication } from '../src/http/configure-http-application.js';
+import { loadHttpSecurityConfig } from '../src/http/http-security.config.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 
 function requiredUrl(name: string): string {
@@ -200,6 +208,75 @@ describe('F1-B.3.3.3 password authentication (PostgreSQL)', () => {
       },
     ]);
     expect(JSON.stringify(evidence.rows)).not.toContain(result.token);
+  });
+
+  it('crosses HTTP, authentication, PostgreSQL, audit, session resolution, and logout', async () => {
+    const accountId = await createAccount();
+    const moduleFixture = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [{ provide: AuthenticationService, useValue: service }],
+    }).compile();
+    const app: INestApplication<App> =
+      moduleFixture.createNestApplication<NestExpressApplication>({
+        bodyParser: false,
+        rawBody: true,
+      });
+    const origin = 'http://127.0.0.1:14200';
+    configureHttpApplication(
+      app as NestExpressApplication,
+      loadHttpSecurityConfig({
+        NODE_ENV: 'test',
+        BELLO_PUBLIC_ORIGIN: origin,
+      }),
+    );
+    await app.init();
+
+    try {
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .set('X-Bello-Flow-Request', '1')
+        .set('Origin', origin)
+        .set('Content-Type', 'application/json')
+        .send({ email, password });
+      expect(login.status).toBe(200);
+      expect(login.body).toEqual({ account: { id: accountId } });
+      const cookie = login.headers['set-cookie']![0]!.split(';', 1)[0]!;
+      expect(cookie).toMatch(/^bello_flow_session=/);
+      expect(login.text).not.toContain(cookie.split('=', 2)[1]!);
+
+      const resolved = await request(app.getHttpServer())
+        .get('/api/auth/session')
+        .set('X-Bello-Flow-Request', '1')
+        .set('Cookie', cookie);
+      expect(resolved.status).toBe(200);
+      expect(resolved.body).toEqual({ account: { id: accountId } });
+
+      const logout = await request(app.getHttpServer())
+        .post('/api/auth/logout')
+        .set('X-Bello-Flow-Request', '1')
+        .set('Origin', origin)
+        .set('Cookie', cookie)
+        .send();
+      expect(logout.status).toBe(204);
+      expect(logout.headers['set-cookie']![0]).toContain('Max-Age=0');
+
+      const revoked = await request(app.getHttpServer())
+        .get('/api/auth/session')
+        .set('X-Bello-Flow-Request', '1')
+        .set('Cookie', cookie);
+      expect(revoked.status).toBe(401);
+      expect(revoked.body.error.code).toBe('UNAUTHENTICATED');
+
+      const events = await migrator.query<{ operation: string }>(
+        'SELECT operation FROM public.audit_event ORDER BY occurred_at, id',
+      );
+      expect(events.rows).toEqual([
+        { operation: 'AUTH_LOGIN_SUCCEEDED' },
+        { operation: 'AUTH_SESSION_LOGOUT' },
+      ]);
+    } finally {
+      await app.close();
+    }
   });
 
   it('classifies malformed email and password as invalid input after auditing', async () => {

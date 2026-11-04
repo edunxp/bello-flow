@@ -21,6 +21,7 @@ describe('AppController (e2e)', () => {
 
     app = moduleFixture.createNestApplication<NestExpressApplication>({
       bodyParser: false,
+      rawBody: true,
     });
     configureHttpApplication(
       app as unknown as NestExpressApplication,
@@ -39,8 +40,10 @@ describe('AppController (e2e)', () => {
       .expect({ status: 'ok' });
   });
 
-  it('does not expose authentication routes', () => {
-    return request(app.getHttpServer()).post('/api/auth/login').expect(404);
+  it('protects the authentication routes', async () => {
+    const response = await request(app.getHttpServer()).post('/api/auth/login');
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('REQUEST_FORBIDDEN');
   });
 
   afterEach(async () => {

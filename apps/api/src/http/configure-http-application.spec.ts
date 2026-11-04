@@ -1,5 +1,9 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { configureHttpApplication } from './configure-http-application.js';
+import {
+  HTTP_SECURITY_CONFIG_SETTING,
+  configureHttpApplication,
+  readParsedJsonBodyByteLength,
+} from './configure-http-application.js';
 import { loadHttpSecurityConfig } from './http-security.config.js';
 
 describe('configureHttpApplication', () => {
@@ -24,11 +28,34 @@ describe('configureHttpApplication', () => {
     configureHttpApplication(app as unknown as NestExpressApplication, config);
 
     expect(app.set).toHaveBeenCalledWith('trust proxy', false);
+    expect(app.set).toHaveBeenCalledWith(HTTP_SECURITY_CONFIG_SETTING, config);
     expect(app.useBodyParser).toHaveBeenCalledWith('json');
-    expect(app.use).toHaveBeenCalledOnce();
+    expect(app.use).toHaveBeenCalledTimes(2);
     expect(app.useGlobalFilters).toHaveBeenCalledOnce();
     expect(app.enableCors).not.toHaveBeenCalled();
     expect(app.setGlobalPrefix).not.toHaveBeenCalled();
+  });
+
+  it('retains only the parsed JSON byte length and discards the raw buffer', () => {
+    const app = applicationMock();
+    const config = loadHttpSecurityConfig({
+      NODE_ENV: 'test',
+      BELLO_PUBLIC_ORIGIN: 'http://127.0.0.1:14200',
+    });
+    configureHttpApplication(app as unknown as NestExpressApplication, config);
+    const middleware = app.use.mock.calls[0]![0] as (
+      request: { rawBody?: Buffer },
+      response: unknown,
+      next: () => void,
+    ) => void;
+    const request = { rawBody: Buffer.from('{}') };
+    const next = vi.fn();
+
+    middleware(request, {}, next);
+
+    expect(readParsedJsonBodyByteLength(request as never)).toBe(2);
+    expect(request.rawBody).toBeUndefined();
+    expect(next).toHaveBeenCalledOnce();
   });
 
   it('passes only the validated proxy list to Express', () => {

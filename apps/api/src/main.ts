@@ -8,6 +8,7 @@ async function bootstrap() {
   const httpSecurity = loadHttpSecurityConfig(process.env);
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
+    rawBody: true,
   });
   configureHttpApplication(app, httpSecurity);
   app.enableShutdownHooks();

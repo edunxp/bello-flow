@@ -17,6 +17,8 @@ import {
   type SessionId,
 } from './session-primitives.js';
 import {
+  LOGIN_ADMISSION_ERROR_CODE,
+  LoginAdmissionError,
   LoginAdmissionService,
   type LoginAdmissionCompletion,
 } from './login-admission.service.js';
@@ -24,6 +26,7 @@ import {
 export const AUTHENTICATION_ERROR_CODE = Object.freeze({
   INVALID_INPUT: 'INVALID_INPUT',
   AUTHENTICATION_REJECTED: 'AUTHENTICATION_REJECTED',
+  RATE_LIMITED: 'RATE_LIMITED',
   OPERATIONAL_FAILURE: 'OPERATIONAL_FAILURE',
   OPERATION_INDETERMINATE: 'OPERATION_INDETERMINATE',
 } as const);
@@ -36,6 +39,7 @@ export class AuthenticationError extends Error {
     public readonly code: AuthenticationErrorCode,
     public readonly operationId: OperationId,
     public readonly sessionId?: SessionId,
+    public readonly retryAfterSeconds?: number,
   ) {
     super(code);
     this.name = 'AuthenticationError';
@@ -103,12 +107,36 @@ export class AuthenticationService {
     input: AuthenticateWithPasswordInput,
     context: PasswordAuthenticationContext,
   ): Promise<AuthenticatedPasswordSession> {
-    return this.admission.executeProtected({
-      email: input?.email,
-      trustedIp: context?.trustedIp,
-      signal: context?.signal,
-      operation: () => this.executeAuthentication(input),
-    });
+    try {
+      return await this.admission.executeProtected({
+        email: input?.email,
+        trustedIp: context?.trustedIp,
+        signal: context?.signal,
+        operation: () => this.executeAuthentication(input),
+      });
+    } catch (error) {
+      if (!(error instanceof LoginAdmissionError)) {
+        throw error;
+      }
+      const operationId = generateOperationId();
+      if (
+        error.code === LOGIN_ADMISSION_ERROR_CODE.RATE_LIMITED &&
+        Number.isSafeInteger(error.retryAfterSeconds) &&
+        error.retryAfterSeconds !== undefined &&
+        error.retryAfterSeconds > 0
+      ) {
+        throw new AuthenticationError(
+          AUTHENTICATION_ERROR_CODE.RATE_LIMITED,
+          operationId,
+          undefined,
+          error.retryAfterSeconds,
+        );
+      }
+      throw new AuthenticationError(
+        AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE,
+        operationId,
+      );
+    }
   }
 
   private async executeAuthentication(
