@@ -22,9 +22,10 @@ fonte normativa que aprovou cada resolução.
 | PT-008 | limites de tentativas para recuperação, transações e e-mail; o subconjunto de login está aprovado para planejamento | AT-001, AT-003, AT-009 | limites e respostas restantes aprovados com critérios de segurança |
 
 O subconjunto de login da PT-008 foi aprovado em 2026-11-03 para planejamento,
-sem declarar implementação. Ele define os dois token buckets, respostas `429` e
-`503`, memória efêmera limitada, saturação, concorrência Argon2id e critérios de
-teste no [complemento de AT-001](decisoes-tecnicas.md#complemento-aprovado--proteção-do-login-da-pt-008)
+sem declarar implementação. Ele define os token buckets de identidade ou
+sentinela compartilhada e de IP confiável, respostas `429` e `503`, memória
+efêmera limitada, saturação, concorrência Argon2id e critérios de teste no
+[complemento de AT-001](decisoes-tecnicas.md#complemento-aprovado--proteção-do-login-da-pt-008)
 e no [contrato de segurança](seguranca-e-autorizacao.md#proteção-do-login--subconjunto-aprovado-da-pt-008).
 PT-008 permanece parcialmente aberta para recuperação de senha, retentativas
 transacionais e processamento de e-mails. As decisões D1–D5 dos contratos HTTP
@@ -53,6 +54,12 @@ indicados; o registro de encerramento não declara implementação.
 | PT-015 | ferramentas e desenho do pipeline de testes/CI | AT-010 | execução reproduzível dos gates aprovados |
 | PT-016 | capacidade, desempenho e limites operacionais | AT-003–AT-007, AT-009 | metas e testes baseados em carga esperada |
 
+PT-015 possui evidência executável no workflow versionado de CI, com os jobs
+`Quality`, `API integration` e `Required`, além do gate local reproduzível. A
+pendência permanece aberta até revisão e aprovação específicas que confirmem se
+essas evidências encerram integralmente ferramentas e desenho do pipeline.
+Ferramentas e limiares operacionais de observabilidade continuam em PT-014.
+
 ## Pendências de bootstrap e migrations
 
 | ID técnico | Pendência | AT relacionada | Resultado esperado |
@@ -61,6 +68,17 @@ indicados; o registro de encerramento não declara implementação.
 | PT-018 | procedimento de recuperação administrativa emergencial | AT-008 | fluxo offline, restrito, auditado e priorizando conta existente |
 | PT-019 | credenciais e fluxo operacional de migrations | AT-006–AT-008 | separação comprovada entre aplicação, migration e manutenção |
 | PT-020 | política de compatibilidade e recuperação de migrations | AT-007, AT-008 | validação prévia e resposta documentada a falha |
+
+PT-017 possui evidências implementadas de interface, autorização, execução única,
+concorrência e reconciliação da CLI no procedimento de bootstrap e em testes
+PostgreSQL. Permanece aberta até revisão e aprovação documental específicas;
+recuperação administrativa emergencial continua separada em PT-018.
+
+PT-019 possui evidências locais e no CI da separação entre credenciais de
+aplicação, migration, shadow, bootstrap e manutenção, incluindo migrations em
+etapa administrativa. Permanece aberta porque o fluxo produtivo, a integração
+com o mecanismo definitivo de secrets e os procedimentos de compatibilidade e
+recuperação ainda não foram aprovados; estes últimos também permanecem em PT-020.
 
 ## Pendências técnicas herdadas da especificação funcional
 

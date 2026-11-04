@@ -43,6 +43,12 @@ de cookie definido em
 
 ## Ambientes e configuração
 
+- `NODE_ENV` seleciona `development`, `test` ou `production`; ausência ou valor
+  diferente impede a inicialização.
+- `BELLO_PUBLIC_ORIGIN` define a origem pública canônica. Desenvolvimento local
+  pode usar `http://127.0.0.1:14200`; produção exige HTTPS.
+- `BELLO_TRUSTED_PROXIES` aceita somente IPs ou CIDRs explícitos. É opcional no
+  perfil local sem proxy confiável e obrigatório em produção.
 - Produção possui configuração própria e imagens versionadas.
 - Código da aplicação não é montado de forma mutável em produção.
 - Segredos não entram em código, imagem ou versionamento.
@@ -58,6 +64,10 @@ sem Redis ou persistência adicional. Os limites configuráveis não podem exced
 16.000 buckets de identidade, 4.000 buckets de IP, duas autenticações protegidas
 simultâneas, quatro posições FIFO ou um segundo de espera. Configuração fora dos
 intervalos aprovados impede a inicialização.
+
+A chave sentinela compartilhada por e-mails não normalizáveis, quando criada,
+consome uma das 16.000 posições de identidade. Ela não armazena o e-mail bruto,
+não substitui o bucket do IP confiável e não altera o teto total do mapa.
 
 Reinicialização zera os contadores. Esse limite é aceito para a topologia inicial
 e não constitui garantia para múltiplas instâncias. Aumento futuro dos limites

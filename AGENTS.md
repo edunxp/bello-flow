@@ -60,6 +60,23 @@ divergência. Interrompa somente a parte afetada quando houver impacto material
 nas decisões aprovadas, integridade, segurança ou comportamento solicitado. Não
 bloqueie atividades independentes sem justificativa.
 
+## Manutenção documental e marcos
+
+- A documentação deve acompanhar o estado real da implementação sem confundir
+  decisão aprovada, alteração local, commit local, publicação e validação do CI.
+- Depois da publicação e da aprovação do CI de um marco relevante, atualize
+  `docs/estado-do-projeto.md` quando houver mudança de etapa ou objetivo.
+- Mudanças de comportamento devem revisar os documentos técnicos e as pendências
+  afetadas, sem encerrar ou reclassificar uma pendência sem aprovação explícita.
+- Registre nos documentos de estado os commits e as evidências de teste
+  relevantes, preservando a rastreabilidade até as decisões aplicáveis.
+- Não declare um incremento concluído e publicado antes das confirmações
+  correspondentes. Uma implementação apenas local deve ser descrita como tal.
+- Alteração, commit e push continuam exigindo os escopos e as autorizações
+  independentes definidos para cada atividade.
+- Faça atualizações documentais proporcionais ao incremento, evitando duplicação,
+  antecipação de fases e documentação sem necessidade concreta.
+
 ## Organização e arquitetura
 
 O repositório é um monorepo npm:

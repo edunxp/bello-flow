@@ -127,11 +127,21 @@ with_bello_dev_database() (
 )
 ```
 
-Defina a função a partir da raiz do repositório e inicie a API:
+Defina a função a partir da raiz do repositório e inicie a API com o perfil HTTP
+local explícito:
 
 ```bash
-with_bello_dev_database npm run dev:api
+with_bello_dev_database env \
+  NODE_ENV=development \
+  BELLO_PUBLIC_ORIGIN=http://127.0.0.1:14200 \
+  npm run dev:api
 ```
+
+O NestJS escuta em `127.0.0.1:13000`; o Angular escuta em `127.0.0.1:14200` e
+encaminha `/api` para o backend. O frontend usa URLs relativas. Nesse perfil sem
+proxy confiável, `BELLO_TRUSTED_PROXIES` pode permanecer ausente. HTTP é aceito
+somente em origem literal de loopback; produção exige HTTPS e uma lista explícita
+de IPs ou CIDRs em `BELLO_TRUSTED_PROXIES`.
 
 O `PrismaService` conecta durante a inicialização. Se a conexão falhar, o
 servidor HTTP não começa a escutar. `Ctrl+C` aciona os hooks de shutdown do

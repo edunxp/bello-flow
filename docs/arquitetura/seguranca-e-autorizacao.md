@@ -104,9 +104,10 @@ conjunta e não substituem autorização do recurso.
 
 ## Contratos HTTP de autenticação — D1–D5
 
-As decisões D1–D5 abaixo estão aprovadas para o planejamento da F1-B.4. Elas
-definem contratos normativos para a implementação futura, mas não declaram que
-controllers, validações, cookies ou filtros HTTP já existam.
+As decisões D1–D5 abaixo permanecem normativas para a F1-B.4. A fundação e as
+primitivas HTTP foram implementadas na F1-B.4.1, e os casos públicos de sessão e
+o encapsulamento de D5 foram implementados na F1-B.4.2. Controllers, endpoints
+de autenticação e a ligação dessas políticas à fronteira HTTP ainda não existem.
 
 ### Representação externa comum
 
@@ -247,10 +248,10 @@ A camada HTTP utiliza exclusivamente o contrato público de
 - `logoutAllSessions`; e
 - `revokeUndeliveredSession`, restrito à compensação necessária.
 
-As assinaturas definitivas são validadas durante o planejamento técnico da
-implementação. `AuthSessionPersistence` permanece interno ao módulo, e
-controllers não o acessam diretamente. Essa fronteira não autoriza repositório
-genérico, nova abstração ou dependência sem necessidade concreta.
+As assinaturas públicas foram implementadas na F1-B.4.2.
+`AuthSessionPersistence` permanece interno ao módulo, e controllers não o
+acessam diretamente. Essa fronteira não autoriza repositório genérico, nova
+abstração ou dependência sem necessidade concreta.
 
 ## Proteção do login — subconjunto aprovado da PT-008
 
@@ -273,6 +274,25 @@ bucket é criado da mesma forma para identidades existentes ou inexistentes, sem
 consulta ao PostgreSQL para decidir a limitação. O IP é derivado exclusivamente
 da cadeia de proxy confiável da PT-005; `X-Forwarded-For` fornecido diretamente
 pelo cliente não é fonte confiável.
+
+Quando o e-mail não puder ser normalizado, a admissão usa uma única chave
+técnica sentinela compartilhada por todas essas entradas. A chave não contém nem
+deriva do e-mail bruto, não consulta a existência da conta e sempre participa
+junto com o bucket do IP confiável; a sentinela nunca substitui a proteção por
+IP. Ela segue a mesma capacidade e reposição de uma identidade: 5 tokens e 1
+token a cada 180 segundos.
+
+A sentinela ocupa exatamente uma posição do mapa limitado a 16.000 identidades.
+Identidades normalizadas válidas continuam com buckets individuais e não debitam
+o orçamento da sentinela; inversamente, tentativas pela sentinela não consomem o
+saldo individual dessas identidades. O esgotamento compartilhado retorna o mesmo
+`429 RATE_LIMITED` genérico, combinado com o estado do bucket de IP e sem revelar
+qual proteção limitou a requisição.
+
+Uma entrada não normalizável admitida segue até a verificação Argon2id negativa.
+Se funcionalmente avaliada, preserva a auditoria aprovada; rejeição determinada
+usa o mesmo `401 AUTHENTICATION_FAILED` genérico. Rejeição `429` anterior à
+avaliação continua sendo apenas técnica e não cria `AUTH_LOGIN_FAILED`.
 
 Depois dos controles de origem, CSRF, conteúdo e estrutura da requisição, a
 camada de admissão aplica reposição e reserva os dois tokens em uma única seção
@@ -313,8 +333,9 @@ API não consulta o banco nem executa Argon2id.
 ### Memória, remoção e saturação
 
 O estado é local e efêmero na única instância do backend. Os mapas possuem
-capacidades independentes de até 16.000 identidades e 4.000 IPs, totalizando no
-máximo 20.000 entradas. Reinicialização da instância zera os contadores.
+capacidades independentes de até 16.000 identidades, incluindo a única posição
+da sentinela quando criada, e 4.000 IPs, totalizando no máximo 20.000 entradas.
+Reinicialização da instância zera os contadores.
 
 Um bucket somente pode ser removido quando, após aplicar sua reposição, estiver
 integralmente recuperado, sem reserva aberta e sem outra obrigação ou restrição
@@ -368,6 +389,12 @@ Os testes futuros devem comprovar:
 - capacidade, reposição, teto e reset distintos dos dois buckets;
 - normalização idêntica para variações da mesma identidade e tratamento
   indistinguível de conta existente ou inexistente;
+- chave sentinela única para todas as entradas não normalizáveis, sem e-mail
+  bruto, sempre combinada com IP e ocupando uma única posição do mapa;
+- capacidade 5, reposição de 180 segundos e esgotamento compartilhado com `429`
+  genérico, sem consumo do saldo individual de identidades normalizadas;
+- tentativa não normalizável admitida executando verificação negativa e mantendo
+  o `401` e a auditoria funcional aplicáveis, sem auditoria funcional no `429`;
 - reserva conjunta sem débito parcial, restituição idempotente e ausência de
   saldo acima da capacidade sob concorrência;
 - `429`, `Retry-After`, ausência de banco/Argon2id e ausência de auditoria

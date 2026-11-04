@@ -21,6 +21,9 @@ A cobertura global mínima é 90% e precisa gerar relatório. Esse número não 
 - login, expiração, logout, revogação global e redefinição de senha;
 - limitação do login por identidade e IP confiável, incluindo reposição,
   normalização, reserva atômica, `429`, `Retry-After` e ausência de enumeração;
+- sentinela compartilhada para e-mails não normalizáveis, sempre combinada com
+  IP confiável, sem armazenamento do e-mail bruto, com teto, reposição e
+  esgotamento compartilhado comprovados;
 - concorrência Argon2id, fila FIFO, timeout, cancelamento, restituição e liberação
   únicas, saturação e recuperação dos mapas sem expulsão de buckets ativos;
 - negação por padrão e segregação entre papéis global, Workspace e quadro;
@@ -44,7 +47,10 @@ A cobertura global mínima é 90% e precisa gerar relatório. Esse número não 
 Os testes da proteção de login usam relógio controlável e promises coordenadas,
 sem sleeps. Eles comprovam os tetos de memória e concorrência, `503` localizado,
 reinicialização do estado efêmero, configuração inválida e resistência a headers
-de proxy forjados, sem repetir provas criptográficas já cobertas.
+de proxy forjados, sem repetir provas criptográficas já cobertas. Também
+comprovam que a sentinela ocupa uma única posição, não debita buckets individuais
+de identidades válidas, retorna `429` genérico quando esgotada e, quando admite a
+tentativa, preserva verificação negativa, `401` genérico e auditoria funcional.
 
 ## Integração com PostgreSQL real
 

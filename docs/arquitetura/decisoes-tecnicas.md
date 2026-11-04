@@ -87,13 +87,19 @@ O contrato detalhado e seus limites operacionais estão em
 
 ### Complemento aprovado — contratos HTTP D1–D5 da F1-B.4
 
-- **Estado:** Aprovado para planejamento; não implementado
+- **Estado:** Aprovado; parcialmente implementado
 - **Data de aprovação:** 2026-11-03
 - **Justificativa:** definir a fronteira HTTP mínima de autenticação sobre os
   serviços e a persistência já existentes, sem expor contratos internos.
 - **Impacto:** detalha AT-001, AT-003 e a PT-005; não altera regras funcionais,
   prazos de sessão, política de auditoria ou escopos de autorização.
 - **Substituições:** nenhuma AT, DEC ou RN é substituída.
+- **Implementação:** a F1-B.4.1 implementou a fundação e as primitivas HTTP no
+  commit `6bdf62be85ba5c7eb91f6ffd41b872b2e3b5ebcc`; a F1-B.4.2 implementou os casos
+  públicos de sessão e o encapsulamento de D5 no commit
+  `9bb29a427cb74a712f008695712b8a4b77eacae4`. Controllers e endpoints de
+  autenticação, a ligação das políticas HTTP e a admissão protegida do login
+  permanecem ausentes.
 - **D1 — endpoints e erros:** a API de autenticação possui os contratos
   `POST /api/auth/login`, `GET /api/auth/session`,
   `POST /api/auth/logout` e `POST /api/auth/logout-all`, com identidade externa
@@ -120,6 +126,8 @@ em [segurança e autorização](seguranca-e-autorizacao.md#contratos-http-de-aut
 
 - **Estado:** Aprovado para planejamento; não implementado
 - **Data de aprovação:** 2026-11-03
+- **Complemento aprovado:** bucket sentinela compartilhado para e-mails não
+  normalizáveis, incorporado em 2026-11-03 sem declarar implementação.
 - **Escopo:** somente `POST /api/auth/login`; recuperação de senha, retentativas
   transacionais e processamento de e-mails permanecem pendentes na PT-008.
 - **Impacto:** detalha AT-001, AT-003, AT-005, AT-010 e os contratos HTTP D1–D5,
@@ -135,6 +143,16 @@ em [segurança e autorização](seguranca-e-autorizacao.md#contratos-http-de-aut
 - A normalização de e-mail é a mesma da autenticação existente. O bucket independe
   da existência da conta e não exige consulta ao PostgreSQL. Sucesso confirmado
   remove o bucket da identidade; o bucket do IP não é resetado.
+- E-mails que não possam ser normalizados usam uma única chave técnica sentinela
+  compartilhada, sempre combinada com o bucket do IP confiável. A sentinela tem
+  capacidade de 5 tokens e repõe 1 token a cada 180 segundos, como uma identidade,
+  ocupa uma única posição do mapa limitado a 16.000 identidades e não armazena o
+  e-mail bruto nem consulta a existência da conta. Ela não consome o orçamento
+  individual reservado às chaves normalizadas válidas.
+- Esgotamento da sentinela retorna o mesmo `429 RATE_LIMITED` genérico. Quando a
+  tentativa for admitida, a entrada não normalizável preserva a verificação
+  Argon2id negativa e a auditoria funcional aplicável; rejeição determinada
+  continua retornando o `401 AUTHENTICATION_FAILED` genérico.
 - A reserva dos dois tokens é síncrona, atômica, identificada e anterior a
   PostgreSQL e Argon2id. Rejeição por limite não debita parcialmente, não desloca
   a reposição nem inicia autenticação.
