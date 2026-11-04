@@ -15,11 +15,11 @@ fonte normativa que aprovou cada resolução.
 |---|---|---|---|
 | PT-001 | versões específicas e compatibilidade de Node.js, Angular, NestJS, Prisma e PostgreSQL | todas | matriz de versões suportadas e política de atualização |
 | PT-002 | representação física das posições esparsas e critério de rebalanceamento | AT-004 | prova de concorrência, precisão, crescimento e ordenação estável |
-| PT-003 | bloqueios, ordem de aquisição, isolamento e repetição por operação; o recorte de recuperação de senha foi aprovado, mas sua implementação ainda exige prova PostgreSQL | AT-003, AT-004 | catálogo por mutação crítica com comportamento de conflito e evidência real por operação |
+| PT-003 | bloqueios, ordem de aquisição, isolamento e repetição por operação; os contratos da recuperação e da F1-B.4.5.2 foram aprovados, mas as operações ainda exigem implementação e prova PostgreSQL | AT-003, AT-004 | catálogo por mutação crítica com comportamento de conflito e evidência real por operação |
 | PT-004 | modelo físico, restrições e índices | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho |
 | PT-006 | protocolo de revisão, mensagens, reconexão e verificações periódicas | AT-005 | contrato de sincronização e recuperação testável |
-| PT-007 | tratamento seguro de links/tokens nas solicitações persistidas de e-mail; o contrato da recuperação foi aprovado sem persistir token ou link recuperável, com implementação pendente | AT-009 | comprovar geração just-in-time, hash de validação, estados e falhas em PostgreSQL real |
-| PT-008 | limites de tentativas para login e recuperação, transações e e-mail; contratos de login e recuperação estão aprovados em recortes distintos | AT-001, AT-003, AT-009 | implementar e validar o recorte de recuperação sem alterar as quotas publicadas do login |
+| PT-007 | tratamento seguro de links/tokens nas solicitações persistidas de e-mail; a fundação física foi publicada e o contrato não persiste token ou link recuperável, mas geração e processamento continuam pendentes | AT-009 | comprovar geração just-in-time, hash de validação, estados e falhas em PostgreSQL real |
+| PT-008 | limites de tentativas para login e recuperação, transações e e-mail; login está implementado, fundação da recuperação publicada e operações F1-B.4.5.2 apenas aprovadas | AT-001, AT-003, AT-009 | implementar e validar operações, processamento e limites da recuperação sem alterar as quotas publicadas do login |
 
 O subconjunto de login da PT-008 foi aprovado em 2026-11-03 para planejamento,
 sem que a aprovação, por si, declarasse implementação. A proteção foi publicada
@@ -39,15 +39,34 @@ genéricas para outros endpoints.
 
 Em 2026-11-04, o complemento aprovado da F1-B.4.5 resolveu normativamente o
 recorte de recuperação de senha de PT-007 e PT-008 e definiu, para essa operação,
-a ordem de locks e repetição vinculada à PT-003. A implementação, a migration, os
-grants, a prova PostgreSQL, o processador e a reconciliação continuam pendentes;
-por isso PT-003 permanece aberta para outras mutações e evidências, PT-007 não é
-declarada implementada e PT-008 não é encerrada. O contrato está em
+a ordem de locks e repetição vinculada à PT-003. A fundação PostgreSQL da
+F1-B.4.5.1 foi publicada no commit
+`e8d464c56561df5dad50751ba3335b0b898c2752`, com relações, constraints, índices,
+backfill, correlação da credencial, negação inicial de privilégios e testes reais.
+Isso não implementa geração, processamento ou operações transacionais.
+
+O contrato aprovado da F1-B.4.5.2 formaliza intenção, conclusão, reconciliação,
+advisory lock compartilhado, grants e testes, inclusive `REJECTED` e correlação
+de cancelamento das tentativas. Migration, funções, grants e evidências desse
+recorte ainda não existem. Por isso PT-003 permanece aberta para implementação,
+provas e outras mutações, PT-007 não é declarada encerrada e PT-008 continua
+aberta para operações, processamento e limites reais. Os contratos estão em
 [decisões técnicas](decisoes-tecnicas.md#complemento-aprovado--f1-b45-recuperação-de-senha),
 [segurança](seguranca-e-autorizacao.md#recuperação-de-senha--contrato-aprovado-da-f1-b45)
-e [persistência](persistencia-e-auditoria.md#recuperação-de-senha-da-f1-b45).
+e [persistência](persistencia-e-auditoria.md#recuperação-de-senha-da-f1-b45), com
+o recorte F1-B.4.5.2 detalhado em
+[operações transacionais](persistencia-e-auditoria.md#operações-transacionais-da-f1-b452).
 PT-009 permanece integralmente aberta: adapter controlado valida apenas o fluxo
 técnico e não escolhe nem substitui provider SMTP/API produtivo.
+
+A reconciliação da F1-B.4.5.2 é exclusivamente observacional e não produz nova
+terminalização `NOT_FOUND`. O protocolo autorizado para encerrar intenções
+abandonadas, inclusive autoridade e coordenação persistente entre executores,
+permanece pendência operacional para incremento futuro antes da disponibilização
+produtiva completa. Não se aprovam nesta etapa função de fechamento, nova role,
+credencial, ownership, lease, heartbeat ou fencing. Essa postergação preserva
+PT-003, PT-007, PT-008 e PT-009 abertas e não declara a recuperação funcional
+concluída.
 
 ## Pendências técnicas resolvidas
 

@@ -211,7 +211,8 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 
 ### Complemento aprovado — F1-B.4.5 Recuperação de Senha
 
-- **Estado:** Aprovado para implementação; implementação ainda pendente
+- **Estado:** Aprovado; fundação PostgreSQL F1-B.4.5.1 publicada e demais
+  incrementos ainda pendentes
 - **Data de aprovação:** 2026-11-04
 - **Escopo:** formaliza exclusivamente a recuperação e a redefinição de senha da
   F1-B.4.5. Não altera os quatro endpoints publicados na F1-B.4.4, não implementa
@@ -258,11 +259,12 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
   do token potencialmente entregue. Nova solicitação legítima continua possível
   conforme quotas, cooldown e teto de tokens ativos.
 - **Concorrência:** criação de token e reset reutilizam o advisory lock derivado
-  de `account.id`. A ordem é conta, credencial, requests, tentativas, tokens,
-  sessões e auditoria, com linhas da mesma classe ordenadas por UUID. Claim faz
-  seleção otimista e, dentro da transação, adquire primeiro o lock da conta.
-  Argon2id e chamadas externas nunca ocorrem dentro de transação aberta. O teto de
-  três tokens ativos por conta é verificado sob esse lock.
+  de `account.id`. A ordem é conta, credencial, marcador de reset existente
+  quando aplicável, requests, tentativas, tokens, sessões e auditoria, com linhas
+  da mesma classe ordenadas por UUID. Claim faz seleção otimista e, dentro da
+  transação, adquire primeiro o lock da conta. Argon2id e chamadas externas nunca
+  ocorrem dentro de transação aberta. O teto de três tokens ativos por conta é
+  verificado sob esse lock.
 - **Reset atômico:** depois do Argon2id e da aquisição dos locks, conta,
   credencial e token são revalidados. Consumo do token, atualização da credencial,
   invalidação dos demais tokens, cancelamento das intenções pendentes, revogação
@@ -276,14 +278,16 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
   falha se encontrar credencial sem origem demonstrável; IDs não são inventados.
 - Um marcador operacional específico de `reset_operation_id`, conta, token e
   correlação esperada da credencial preserva `STARTED`, `UNKNOWN` e conclusões
-  através de reinício, sem armazenar segredo e sem substituir a auditoria.
-- **Reconciliação:** `COMPLETED`, `NOT_FOUND`, `INCONSISTENT` e `UNKNOWN` exigem o
-  conjunto coerente de credencial, consumo/invalidação de tokens, cancelamentos,
-  revogações e auditoria. Alteração posterior da credencial não apaga a prova de
-  reset anterior: token consumido e auditoria transacional preservam a evidência,
-  enquanto a alteração corrente também deve possuir correlação válida. Ausência
-  de metadado eliminado legitimamente nunca é classificada como `NOT_FOUND`, e
-  auditoria histórica isolada não substitui a prova transacional completa.
+  através de reinício, sem armazenar segredo e sem substituir a auditoria. A
+  F1-B.4.5.2 acrescenta `REJECTED` como conclusão terminal.
+- **Reconciliação:** `COMPLETED`, `REJECTED`, `NOT_FOUND`, `INCONSISTENT` e
+  `UNKNOWN` exigem o conjunto coerente de credencial, consumo/invalidação de
+  tokens, cancelamentos, revogações e auditoria. Alteração posterior da credencial
+  não apaga a prova de reset anterior: token consumido e auditoria transacional
+  preservam a evidência, enquanto a alteração corrente também deve possuir
+  correlação válida. Ausência de metadado eliminado legitimamente nunca é
+  classificada como `NOT_FOUND`, e auditoria histórica isolada não substitui a
+  prova transacional completa.
 - **Auditoria:** ingressos operacionais, quotas, claims, leases, supressões e
   falhas anteriores à avaliação funcional permanecem em metadados operacionais,
   logs ou métricas minimizados. Somente solicitação elegível levada a `PENDING`,
@@ -295,12 +299,10 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
   ainda válidos não podem ser eliminados. Limpeza usa credencial de manutenção,
   lotes limitados e ordem tokens, tentativas e requests. Auditoria preserva sua
   retenção normativa de 24 meses.
-- **Privilégios:** grants por coluna seguem o menor privilégio, inclusive
-  `UPDATE(password_hash, changed_at, changed_operation_id)` sem `UPDATE` de e-mail,
-  mas não constituem garantia de atomicidade. A implementação deve possuir
-  fronteira de persistência específica, transação única e testes PostgreSQL reais.
-  Se grants diretos não protegerem os invariantes, uma função SQL restrita deve
-  ser submetida a decisão antes da implementação.
+- **Privilégios:** grants por coluna isolados não constituem garantia de
+  atomicidade. A fundação F1-B.4.5.1 preserva negação do runtime nas novas tabelas,
+  e a F1-B.4.5.2 aprova funções SQL restritas, transação única, grants mínimos e
+  testes PostgreSQL reais, sem novo DML sensível direto do runtime.
 - **Operação:** a origem confiável existente constrói a rota frontend
   `/reset-password`. Adapter controlado é permitido somente para validação. A
   PT-009 permanece aberta e a recuperação não pode ser declarada disponível em
@@ -322,6 +324,83 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 - **Decisões funcionais:** DEC-010, DEC-020.
 - **Regras:** RN-069–RN-072, RN-120–RN-129.
 - **Relacionadas:** AT-002, AT-003, AT-005, AT-009.
+
+### Complemento aprovado — F1-B.4.5.2 Operações Transacionais e Reconciliação
+
+- **Estado:** Aprovado para implementação; implementação e evidências ainda
+  pendentes.
+- **Data de aprovação:** 2026-11-04.
+- **Escopo:** restringe a F1-B.4.5.2 às operações PostgreSQL de intenção,
+  conclusão e reconciliação do reset, à adequação do advisory lock usado pelo
+  login, aos grants e aos testes PostgreSQL reais. Endpoint HTTP, quotas,
+  geração e entrega produtiva de token, processamento de e-mail, provider e
+  frontend permanecem em incrementos posteriores. Fixtures inseridas pelo
+  migrator comprovam somente a fronteira PostgreSQL.
+- **Fronteira protegida:** ficam aprovadas as interfaces conceituais
+  `auth_account_advisory_lock_key(account_id uuid)`,
+  `acquire_auth_account_advisory_xact_lock(account_id uuid)`,
+  `start_password_reset_operation(...)`,
+  `complete_password_reset_operation(...)` e
+  `reconcile_password_reset_operation(reset_operation_id uuid)`. A chave é
+  auxiliar interna; o runtime recebe `EXECUTE` somente nas operações necessárias.
+  O migrator atual pode ser owner das funções `SECURITY DEFINER`; não se cria nova
+  role.
+- **Hardening:** funções protegidas validam argumentos estritamente, qualificam
+  objetos, fixam `search_path = pg_catalog, public, pg_temp`, não usam SQL
+  dinâmico e revogam execução de `PUBLIC`, bootstrap e manutenção. Não são
+  concedidos novos DML sensíveis diretos ao runtime nem removidos os acessos já
+  exigidos pelo login.
+- **Lock compartilhado:** PostgreSQL reproduz exatamente o algoritmo existente:
+  UUID v4 canônico em minúsculas, domínio UTF-8 `bello:auth:account:`, SHA-256,
+  primeiros oito bytes e interpretação `bigint` signed big-endian. Caller não
+  fornece a chave como autoridade. Código antigo e novo devem obter a mesma
+  chave, comprovada inclusive pelos vetores
+  `00000000-0000-4000-8000-000000000000` → `5305774703633831484` e
+  `00000000-0000-4000-8000-000000000003` → `-9219222644233059831`, além de
+  concorrência cruzada antes da troca do login.
+- **Reset:** a intenção é persistida antes do Argon2id. O hash é calculado fora
+  da transação e, quando integrado ao serviço, usa a capacidade global
+  compartilhada. A conclusão adquire primeiro o advisory lock, revalida as
+  precondições, bloqueia linhas na ordem normativa e grava atomicamente consumo,
+  credencial, invalidações, cancelamentos, revogações, auditoria e terminalização.
+  `STARTED` admite conclusão; `COMPLETED` e `REJECTED` admitem somente retorno
+  idempotente comprovado; `NOT_FOUND`, `INCONSISTENT` e `UNKNOWN` recusam mutação
+  de sucesso e exigem reconciliação.
+- **Rejeição:** `REJECTED` fica aprovado como estado terminal do marcador e
+  resultado explícito da reconciliação. Rejeição funcional determinada depois
+  de resolver a conta produz auditoria e nenhum efeito de reset bem-sucedido.
+  Token não resolvido não cria marcador nem auditoria vinculada à conta.
+- **Cancelamento:** tentativa de entrega passa a possuir
+  `cancelled_operation_id`; sua nulidade acompanha `CANCELLED`. Correlações
+  terminais anteriores nunca são sobrescritas.
+- **Reconciliação:** os resultados são `COMPLETED`, `REJECTED`, `NOT_FOUND`,
+  `INCONSISTENT` e `UNKNOWN`. Estado terminal ou auditoria isolados nunca bastam.
+  A operação é exclusivamente observacional e não altera marcador, auditoria nem
+  efeitos de negócio. `STARTED` ou `UNKNOWN` sem evidência conclusiva retorna
+  `UNKNOWN`; idade, timeout, reinício, lock livre e ausência de efeitos não provam
+  abandono. `NOT_FOUND` somente é reconhecido quando o marcador já estiver
+  terminal nesse estado e as evidências forem coerentes; nenhuma nova
+  terminalização `NOT_FOUND` é produzida pelo runtime neste incremento. Commit
+  indeterminado não é repetido antes de classificação conclusiva.
+- **Concorrência:** `READ COMMITTED` é o padrão condicionado à prova dos locks e
+  revalidações. `40001`, `40P01` e `55P03` exclusivamente por `lock_timeout` nos
+  locks aprovados admitem até duas novas tentativas completas. Erros de conexão,
+  `57014`, falhas não identificadas e qualquer commit possivelmente enviado não
+  são repetidos antes da reconciliação. Na intenção, a linha do token é bloqueada
+  antes do `INSERT` do marcador por causa da FK imediata; o advisory lock da conta
+  preserva compatibilidade com a ordem global da conclusão.
+- **Limites:** esta aprovação não declara a F1-B.4.5.2 implementada, não encerra
+  PT-003, PT-007 ou PT-008 e não altera a situação integralmente aberta da
+  PT-009. O protocolo autorizado para encerrar intenções abandonadas permanece
+  pendente para incremento futuro, antes da disponibilização produtiva completa;
+  esta etapa não aprova função de fechamento, nova role, credencial, ownership,
+  lease, heartbeat ou fencing.
+
+O contrato físico, os predicados de aplicabilidade, a matriz de evidências e os
+campos de auditoria estão em
+[persistência e auditoria](persistencia-e-auditoria.md#operações-transacionais-da-f1-b452),
+e os limites de segurança estão em
+[segurança e autorização](seguranca-e-autorizacao.md#fronteira-postgresql-da-f1-b452).
 
 ## AT-002 — Autorização centralizada
 
@@ -633,6 +712,7 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 
 | Data | Alteração |
 |---|---|
+| 2026-11-04 | Contrato da F1-B.4.5.2 aprovado para implementação, restringindo o incremento a intenção, conclusão, reconciliação observacional, advisory lock compartilhado, grants e testes PostgreSQL; fechamento autorizado de intenções abandonadas permanece futuro, sem declarar implementação e preservando PT-003, PT-007, PT-008 e PT-009 abertas. |
 | 2026-11-04 | Contrato da F1-B.4.5 aprovado para implementação, formalizando recuperação de senha, HTTP, admissão, token, outbox específica, concorrência, reconciliação, retenção, privilégios e testes, sem declarar implementação ou disponibilidade produtiva e mantendo PT-009 aberta. |
 | 2026-11-03 | Subconjunto de login da PT-008 aprovado para planejamento, com token buckets, memória limitada, saturação segura e concorrência Argon2id, sem declarar implementação; recuperação, transações e e-mail permanecem pendentes. |
 | 2026-11-03 | D1–D5 aprovadas para os contratos HTTP de autenticação da F1-B.4, sem declarar implementação e preservando PT-005 e PT-008. |

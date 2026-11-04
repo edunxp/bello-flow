@@ -54,12 +54,14 @@ tentativa, preserva verificação negativa, `401` genérico e auditoria funciona
 
 ### Matriz obrigatória da F1-B.4.5
 
-O contrato de recuperação está aprovado, mas os testes e a implementação ainda
-estão pendentes. A entrega deve cobrir:
+O contrato de recuperação está aprovado e a fundação PostgreSQL da F1-B.4.5.1 foi
+publicada. Casos de uso, operações da F1-B.4.5.2, processamento, HTTP e demais
+testes continuam pendentes. A entrega completa deve cobrir:
 
 - unitários: DTOs exatos, normalização, Base64URL canônica, hash com separação de
   domínio, transições, leases, cooldown, quotas, três tentativas, três tokens
-  ativos e classificação `COMPLETED`, `NOT_FOUND`, `INCONSISTENT` e `UNKNOWN`;
+  ativos e classificação `COMPLETED`, `REJECTED`, `NOT_FOUND`, `INCONSISTENT` e
+  `UNKNOWN`;
 - HTTP de solicitação: `202` sem corpo para identidade existente, inexistente,
   inválida, inelegível, em cooldown, já pendente ou com teto de tokens; header,
   origem, media type, campos extras, `429`, `Retry-After`, `503` e ausência de
@@ -96,6 +98,72 @@ estão pendentes. A entrega deve cobrir:
 Relógios e promises são controlados; crash e concorrência não usam sleeps como
 prova. Transações, locks, constraints, privilégios, backfill, reconciliação e
 limpeza exigem PostgreSQL real descartável.
+
+#### Critérios específicos da F1-B.4.5.2
+
+A F1-B.4.5.2 é aceita somente com PostgreSQL `18.6` real em banco
+comprovadamente descartável e deve validar:
+
+- equivalência byte a byte entre os vetores TypeScript e SQL do advisory lock,
+  incluindo chave positiva e negativa, UUID canônico, concorrência entre aquisição
+  antiga/nova, timeout e liberação após rollback;
+- owner, `SECURITY DEFINER`, `search_path`, qualificação, ausência de SQL dinâmico,
+  negação de shadowing por `pg_temp`, `REVOKE` de `PUBLIC`, bootstrap e manutenção
+  e `EXECUTE` mínimo do runtime;
+- ausência de novo `SELECT` ou DML direto do runtime em hash de recuperação,
+  credencial e tabelas de recuperação, preservando somente acessos anteriores do
+  login;
+- intenção confirmada antes do Argon2id e nenhuma transação aberta durante o
+  cálculo; reconciliação durante esse intervalo retorna `UNKNOWN` sem
+  terminalizar; fixture com PHC sintético comprova apenas a fronteira PostgreSQL;
+- ordem física da intenção com descoberta otimista, advisory lock, conta,
+  credencial, token explícito e somente então `INSERT` do marcador, incluindo os
+  locks implícitos das FKs, concorrência contra writers antigos e novos e
+  interação com limpeza por `SKIP LOCKED`;
+- rollback integral por falha controlada em consumo, credencial, invalidação,
+  cancelamento de request, cancelamento de tentativa, revogação de sessão,
+  auditoria e terminalização;
+- consumo único sob dois resets concorrentes, reset contra login e operações em
+  contas independentes, sem deadlock e com row locks ordenados por UUID;
+- zero, uma e várias sessões, contagens auditadas inclusive zero, preservação de
+  sessões previamente revogadas e não atribuição de sessões posteriores ao reset;
+- `REJECTED` para token conhecido expirado, previamente consumido ou invalidado,
+  corrida perdida, inelegibilidade e divergência da credencial; token não
+  resolvido sem marcador/auditoria; falha operacional sem falsa rejeição;
+- matriz de conclusão por estado: mutação a partir de `STARTED`, retorno
+  idempotente comprovado para `COMPLETED`/`REJECTED` e falha operacional
+  `RECONCILIATION_REQUIRED`, sem efeito, para
+  `NOT_FOUND`/`INCONSISTENT`/`UNKNOWN`;
+- correlação direta de cancelamento de request e tentativa, preservação de
+  `SENDING` e estados terminais, não sobrescrita de correlações anteriores e
+  preenchimento/limpeza de todos os campos exigidos pelas constraints de
+  `CANCELLED`;
+- matriz completa de `COMPLETED`, `REJECTED`, `NOT_FOUND`, `INCONSISTENT` e
+  `UNKNOWN`, auditoria isolada insuficiente, evidência parcial, retenção e
+  alteração posterior da credencial por cadeia válida;
+- assinatura observacional de
+  `reconcile_password_reset_operation(reset_operation_id uuid)`, ausência de
+  função de fechamento e de overload com modo mutável, e
+  negação de `EXECUTE` runtime em qualquer função capaz de terminalizar intenção
+  sem efeitos;
+- reconciliação de `STARTED` e `UNKNOWN` sem qualquer alteração do marcador ou das
+  evidências; idade, timeout, reinício, lock livre, ausência de efeitos e Argon2id
+  ainda em andamento permanecem `UNKNOWN` e nunca geram `NOT_FOUND`;
+- reconhecimento de fixture terminal `NOT_FOUND` preparada pelo migrator somente
+  quando a ausência de efeitos for coerente, sem tratar a fixture como fluxo
+  funcional ou conceder ao runtime capacidade de produzi-la;
+- retries apenas para `40001`, `40P01` e `55P03` de `lock_timeout` comprovado,
+  no máximo duas novas tentativas completas, e nenhuma repetição de conexão ou
+  commit indeterminado antes da reconciliação; e
+- regressão de bootstrap, criação/resolução de sessão, login, falha de login,
+  logout, logout global e reconciliação já publicada.
+
+Fixtures montadas pelo migrator não contam como evidência de request, claim,
+geração de token, entrega ou provider. O gate preserva mínimo de 90% em lines,
+statements, functions e branches por aplicação e consolidado e os jobs
+obrigatórios `Quality`, `API integration` e `Required`. Testes automatizados não
+acessam banco persistente e a limpeza é restrita aos recursos comprovadamente
+criados pela própria execução.
 
 ## Integração com PostgreSQL real
 

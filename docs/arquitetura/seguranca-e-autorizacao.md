@@ -421,9 +421,11 @@ de 90% em lines, statements, functions e branches.
 
 ## Recuperação de senha — contrato aprovado da F1-B.4.5
 
-O contrato abaixo está aprovado para implementação, mas ainda não foi
-implementado. Ele detalha AT-001, AT-003 e AT-009, resolve normativamente a
-PT-007 e o recorte de recuperação da PT-008 e preserva a PT-009 aberta.
+O contrato abaixo está aprovado para implementação. A fundação PostgreSQL da
+F1-B.4.5.1 foi publicada, mas casos de uso, processamento, HTTP e disponibilidade
+produtiva ainda não foram implementados. Ele detalha AT-001, AT-003 e AT-009,
+resolve normativamente a PT-007 e o recorte de recuperação da PT-008 e preserva
+a PT-009 aberta.
 
 ### Identidade e anti-enumeração
 
@@ -550,6 +552,85 @@ Os eventos usam somente conta conhecida, `recovery_request_id`,
 contêm e-mail, IP bruto, chave de bucket, senha, PHC, token, hash, link, corpo HTTP
 ou erro completo do provider. `SENT` significa aceitação pelo provider, não
 entrega ao destinatário; não existe evento de entrega sem evidência própria.
+
+### Fronteira PostgreSQL da F1-B.4.5.2
+
+Este recorte aprovado ainda não está implementado. Ele contém somente intenção,
+conclusão, reconciliação, grants, testes PostgreSQL e a adequação do advisory lock
+do login. Não publica endpoint, não processa e-mail, não gera nem entrega token e
+não resolve a PT-009. Fixtures inseridas pelo migrator são preparação técnica de
+teste e não representam fluxo produtivo.
+
+O runtime acessa as operações protegidas por funções `SECURITY DEFINER` estritas.
+O migrator atual pode ser owner; `search_path` é fixado em `pg_catalog, public,
+pg_temp`, objetos são qualificados, argumentos são validados e não há SQL
+dinâmico. A função auxiliar que deriva a chave não integra a superfície do
+runtime. O runtime recebe apenas `EXECUTE` na aquisição do lock e nas operações de
+intenção, conclusão e reconciliação exclusivamente observacional. `PUBLIC`,
+bootstrap e manutenção não recebem `EXECUTE`, e não se concede novo DML sensível
+direto ao runtime. Não existe função de fechamento, overload de reconciliação com
+modo mutável ou superfície runtime para terminalização irreversível sem efeitos
+nesta fase.
+
+O lock é derivado internamente a partir de UUID v4 canônico em minúsculas, domínio
+UTF-8 `bello:auth:account:`, SHA-256, primeiros oito bytes e `bigint` signed
+big-endian. Caller não fornece a chave de serialização. Login antigo e funções
+novas precisam produzir a mesma chave antes de o login migrar para a aquisição
+SQL.
+
+Na intenção, a descoberta inicial do token não bloqueia linha. Depois dela, a
+função adquire o advisory lock da conta, bloqueia e revalida conta e credencial,
+resolve e bloqueia explicitamente o token e somente então insere o marcador. Isso
+faz com que os locks implícitos das FKs imediatas para conta e token alcancem
+linhas já protegidas. A conclusão conserva a ordem global com marcador existente;
+a exceção de criação é segura somente porque todo writer do token usa antes a
+mesma chave advisory da conta e tokens não são compartilhados entre contas.
+
+Token não canônico ou aleatório que não resolva linha/conta não cria marcador nem
+auditoria funcional. Token conhecido já expirado, consumido ou invalidado,
+corrida perdida depois da intenção, inelegibilidade da conta e divergência da
+correlação da credencial são rejeições funcionais determinadas: terminalizam o
+marcador em `REJECTED`, geram exatamente um `AUTH_PASSWORD_RESET_REJECTED` e não
+consomem, invalidam, cancelam, revogam ou alteram credencial. Falha operacional
+não é rejeição e retorna ao caso de uso como indeterminação ou indisponibilidade,
+sem auditoria funcional inventada.
+
+Cada reset resolvido possui exatamente um evento terminal na sequência `1`. Em
+sucesso, usa `AUTH_PASSWORD_RESET_SUCCEEDED`/`SUCCESS`; em rejeição,
+`AUTH_PASSWORD_RESET_REJECTED`/`DENIED`. `operation_id` e `correlation_id` são o
+`reset_operation_id`; ator e entidade são a conta resolvida; o contexto contém
+somente `reason = PASSWORD_RESET` e as contagens de sessões revogadas, tokens
+invalidados, requests cancelados e tentativas canceladas, inclusive quando zero.
+Rejeição possui as quatro contagens em zero. `before_data` e `after_data` são
+nulos. Nenhum campo contém senha, PHC, token, hash, e-mail, IP ou link.
+
+`COMPLETED` é o único resultado que autoriza sucesso de redefinição. `REJECTED`
+autoriza somente a negativa funcional uniforme. `NOT_FOUND` exige ausência
+comprovada de todos os efeitos e da auditoria; não pode ocultar rejeição nem
+operação concorrente. Evidência parcial ou contraditória é `INCONSISTENT`; falha
+de consulta, retenção, evidência insuficiente ou resultado ainda incerto é
+`UNKNOWN`. Nenhum resultado indeterminado é repetido automaticamente.
+
+Conclusão aceita mutação somente a partir de `STARTED`. `COMPLETED` e `REJECTED`
+admitem retorno idempotente apenas com suas evidências completas. `NOT_FOUND`,
+`INCONSISTENT` e `UNKNOWN` produzem `RECONCILIATION_REQUIRED`, falha operacional
+sem efeito e sem nova rejeição funcional; chamada tardia nunca reabre marcador
+terminal. Depois de possível envio de `COMMIT`, o caller não repete conclusão e
+usa reconciliação.
+
+A reconciliação nunca converte `STARTED` ou `UNKNOWN` sem efeitos em `NOT_FOUND`:
+Argon2id em andamento, idade, timeout, reinício, advisory lock disponível e
+ausência de efeitos não provam abandono. Ela não altera marcador, auditoria nem
+efeitos de negócio. `NOT_FOUND` somente é reconhecido a partir de marcador já
+terminal e evidências coerentes; o runtime não produz nova terminalização desse
+estado na F1-B.4.5.2. Crash ou intenção aparentemente abandonada permanece
+`STARTED` ou `UNKNOWN`, sem recuperação automática. Um protocolo autorizado de
+fechamento depende de decisão futura anterior à disponibilização produtiva
+completa.
+
+Os predicados físicos, contagens, cadeia de alterações posteriores e política de
+retry estão em
+[persistência e auditoria](persistencia-e-auditoria.md#operações-transacionais-da-f1-b452).
 
 ## Fluxo de uma requisição protegida
 

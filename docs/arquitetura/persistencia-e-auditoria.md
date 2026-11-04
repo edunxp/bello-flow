@@ -46,8 +46,10 @@ por suposição.
 
 ### Recuperação de senha da F1-B.4.5
 
-O contrato está aprovado para implementação, ainda pendente. A persistência é
-específica do domínio de recuperação e não antecipa outbox genérica.
+O contrato está aprovado. A fundação física da F1-B.4.5.1 foi publicada; as
+operações da F1-B.4.5.2 e os demais casos de uso continuam pendentes. A
+persistência é específica do domínio de recuperação e não antecipa outbox
+genérica.
 
 #### Relações e estados
 
@@ -60,6 +62,9 @@ Não persiste e-mail ou `email_key`.
 muitos. Possui `delivery_attempt_id`, ordinal entre 1 e 3, estado, agenda, lease,
 instantes de confirmação de `SENDING`, aceitação e término e classe fechada de
 falha. `UNIQUE(recovery_request_id, attempt_number)` impede repetição do ordinal.
+Na F1-B.4.5.2, passa a possuir também `cancelled_operation_id UUID`: ele é
+obrigatório somente em `CANCELLED` e nulo em todos os demais estados. Essa
+adequação está aprovada, mas ainda não foi implementada.
 
 `password_reset_token` pertence a uma única tentativa, e cada tentativa possui no
 máximo um token. Possui hash único de 32 bytes, conta, criação, expiração, consumo
@@ -72,7 +77,9 @@ estado de reconciliação, início, atualização e término. Ele é criado some
 depois de um token resolver uma conta e antes do Argon2id; não contém token, hash,
 senha ou e-mail. A transação do reset leva o marcador a `COMPLETED`. Falha de
 conexão permite registrar ou preservar `UNKNOWN`, protegendo as evidências contra
-limpeza e reinício do processo.
+limpeza e reinício do processo. A F1-B.4.5.2 aprova ainda `REJECTED` como estado
+terminal para rejeição funcional determinada após a resolução da conta; a
+fundação publicada ainda não contém esse estado.
 
 Requests admitem `RECEIVED`, `SUPPRESSED`, `PENDING`, `PREPARING`, `PREPARED`,
 `SENDING`, `SENT`, `FAILED`, `UNKNOWN` e `CANCELLED` como estado agregado.
@@ -109,11 +116,12 @@ Operações com conta conhecida adquirem:
 1. advisory lock derivado de `account.id`;
 2. conta;
 3. credencial;
-4. requests por UUID;
-5. tentativas por UUID;
-6. tokens por UUID;
-7. sessões por UUID; e
-8. auditoria.
+4. marcador de reset existente por UUID, quando aplicável;
+5. requests por UUID;
+6. tentativas por UUID;
+7. tokens por UUID;
+8. sessões por UUID; e
+9. auditoria.
 
 Login, criação de token, claim, conclusão de envio e reset compartilham essa
 ordem. Conflito recuperável admite no máximo duas novas tentativas completas,
@@ -155,13 +163,17 @@ Zero, uma ou várias sessões são reconciliadas pela contagem auditada e pelas
 linhas revogadas com o operation ID. Sessões já revogadas não são reatribuídas;
 sessões legitimamente criadas depois da mudança não tornam o reset inconsistente.
 
-`NOT_FOUND` exige marcador de operação conhecido e ausência simultânea de efeitos
-em token, auditoria, credencial, requests, tentativas e sessões. O próprio
-marcador de intenção não é efeito de negócio. Ausência decorrente de retenção e
-limpeza legítimas não é `NOT_FOUND`; fora da janela probatória ou sem marca
-conclusiva, o resultado é `UNKNOWN`. Qualquer evidência parcial ou divergente é
-`INCONSISTENT`. Falha de consulta é `UNKNOWN`. Somente `COMPLETED` autoriza
-sucesso; nenhum dos demais resultados é repetido por suposição.
+`REJECTED` exige marcador terminal e exatamente uma auditoria de rejeição
+coerente, sem qualquer efeito de reset bem-sucedido atribuído à operação.
+`NOT_FOUND` exige marcador conhecido já terminal nesse estado e ausência
+simultânea de efeitos em token, auditoria, credencial, requests, tentativas e
+sessões. A reconciliação da F1-B.4.5.2 não produz essa terminalização. O próprio
+marcador de intenção não é efeito de negócio, mas ausência de efeitos isolada
+nunca prova abandono. Ausência decorrente de retenção e limpeza legítimas não é
+`NOT_FOUND`; fora da janela probatória ou sem marca conclusiva, o resultado é
+`UNKNOWN`. Qualquer evidência parcial ou divergente é `INCONSISTENT`. Falha de
+consulta é `UNKNOWN`. Somente `COMPLETED` autoriza sucesso; `REJECTED` autoriza
+apenas a negativa funcional uniforme e nenhum resultado é repetido por suposição.
 
 Operações ainda reconciliáveis carregam proteção explícita contra limpeza. A
 marca só é removida depois de reconciliação conclusiva e do início da janela de
@@ -169,17 +181,305 @@ retenção terminal.
 
 #### Privilégios e fronteira de persistência
 
-`bello_runtime` recebe somente as colunas necessárias, incluindo `SELECT` e
-`UPDATE(password_hash, changed_at, changed_operation_id)` da credencial, sem
-`INSERT`, `DELETE` ou atualização de e-mail. Requests, tentativas, tokens,
-sessões e auditoria recebem grants mínimos para suas operações.
-
 Grants por coluna não garantem atomicidade, ordem de locks, contagens ou conjunto
-de evidências. Uma fronteira de persistência específica deve executar SQL
-parametrizado e a única transação do reset, coberta por PostgreSQL real. Se grants
-diretos permitirem violar invariantes ou não forem suficientes para a operação
-atômica, uma função SQL restrita deve ser proposta e aprovada antes da
-implementação; este contrato não a presume.
+de evidências. A F1-B.4.5.2 aprova funções SQL restritas como fronteira de
+persistência: o runtime não recebe novo DML sensível direto em credencial,
+requests, tentativas, tokens ou operações de reset. Os acessos existentes
+necessários ao login não são removidos neste incremento. SQL parametrizado,
+transação única e testes PostgreSQL reais permanecem obrigatórios.
+
+#### Operações transacionais da F1-B.4.5.2
+
+##### Escopo e interfaces
+
+Este recorte contém somente intenção, conclusão, reconciliação, advisory lock,
+grants e testes PostgreSQL. Não contém endpoint HTTP, quotas, geração ou entrega
+produtiva de token, processamento de e-mail, provider ou frontend. Fixtures
+criadas pelo migrator servem apenas para preparar o grafo relacional dos testes e
+não demonstram o fluxo funcional que as produzirá.
+
+As interfaces conceituais aprovadas são:
+
+- `auth_account_advisory_lock_key(account_id uuid) RETURNS bigint` deriva a
+  chave, não bloqueia e é auxiliar interna sem `EXECUTE` do runtime;
+- `acquire_auth_account_advisory_xact_lock(account_id uuid) RETURNS void` adquire
+  o lock transacional e integra a superfície mínima usada pelo runtime no login e
+  nas operações protegidas;
+- `start_password_reset_operation(reset_operation_id uuid, audit_event_id uuid,
+  presented_token_hash bytea)` recebe IDs UUID v4 previamente reservados e o hash
+  apresentado de 32 bytes, resolve o token sem expor o hash persistido, adquire o
+  lock e repete as validações. Retorna `account_id` e estado quando houver conta:
+  token não resolvido retorna zero linhas, sem marcador ou auditoria; token
+  resolvido e elegível persiste e retorna `STARTED`; token resolvido já expirado,
+  consumido, invalidado ou cuja inelegibilidade da conta seja determinada
+  persiste `REJECTED` e a auditoria correspondente. Esses retornos não criam
+  novos estados físicos;
+- `complete_password_reset_operation(reset_operation_id uuid, audit_event_id
+  uuid, new_password_hash text)` recebe somente a operação iniciada, o novo PHC
+  Argon2id no perfil aprovado e o ID reservado do evento, revalida todo o estado
+  pelo marcador e retorna `COMPLETED` ou `REJECTED`, além das quatro contagens,
+  quando houver conclusão funcional determinada; e
+- `reconcile_password_reset_operation(reset_operation_id uuid)` retorna
+  `COMPLETED`, `REJECTED`, `NOT_FOUND`, `INCONSISTENT` ou `UNKNOWN` sem alterar o
+  marcador nem qualquer evidência ou efeito de negócio.
+
+As assinaturas físicas podem usar `RETURNS TABLE` para os identificadores e
+contagens não secretos necessários, mas não retornam PHC, hash ou token. IDs
+nulos, UUID que não seja v4, hash com tamanho diferente de 32 bytes, PHC fora do
+perfil aprovado, marcador divergente ou combinação de argumentos inconsistente
+são rejeitados antes de qualquer efeito. Instantes são obtidos do PostgreSQL, não
+do caller. A repetição da intenção com o mesmo `reset_operation_id` e token
+retorna o estado já comprovado sem novo efeito; divergência de vínculo persistido
+é erro e, se já houver auditoria, o `audit_event_id` também deve coincidir.
+Em `STARTED`, a conclusão pode processar depois dos locks e revalidações. Em
+`COMPLETED` ou `REJECTED`, retorna idempotentemente o resultado funcional já
+terminal somente depois de comprovar internamente as evidências correspondentes e
+sem novo efeito. Marcador ausente ou em `NOT_FOUND`, `INCONSISTENT` ou `UNKNOWN`
+não permite alteração nem retorna linha funcional: sinaliza a falha operacional
+estável `RECONCILIATION_REQUIRED`, que não é estado persistente nem rejeição de
+token e exige reconciliação. Nenhuma chamada tardia reabre marcador terminal. Commit
+indeterminado também exige reconciliação antes de qualquer nova conclusão.
+
+##### Advisory lock e ordem global
+
+A derivação PostgreSQL reproduz byte a byte o algoritmo existente: UUID v4 em
+representação canônica minúscula, domínio UTF-8 `bello:auth:account:`, SHA-256,
+primeiros oito bytes e interpretação `bigint` signed big-endian. Chave fornecida
+pelo caller nunca é autoridade de serialização. A função SQL e o TypeScript antigo
+devem produzir a mesma chave, permitindo que transações em andamento durante a
+mudança continuem mutuamente exclusivas sem dual-lock. Os vetores normativos
+existentes são:
+
+- `00000000-0000-4000-8000-000000000000` → `5305774703633831484`; e
+- `00000000-0000-4000-8000-000000000003` → `-9219222644233059831`.
+
+Uma consulta otimista pode localizar o hash do token para descobrir a conta, mas
+não adquire row lock. Conclusão, reconciliação e operações sobre marcador já
+existente seguem:
+
+1. advisory lock da conta;
+2. conta;
+3. credencial;
+4. marcadores por `reset_operation_id`;
+5. requests por `recovery_request_id`;
+6. tentativas por `delivery_attempt_id`;
+7. tokens por `password_reset_token_id`;
+8. sessões por `id`; e
+9. auditoria.
+
+Linhas da mesma classe são bloqueadas por UUID crescente. Após o advisory lock, a
+operação repete resolução, pertencimento, estado, prazo e precondições; nenhuma
+decisão usa apenas a consulta otimista.
+
+A intenção possui ordem física específica porque a FK imediata do marcador
+referencia o token. Ela executa, na mesma transação:
+
+1. descoberta otimista do token, sem row lock, apenas para obter a conta candidata;
+2. advisory lock da conta;
+3. lock e revalidação da conta e da credencial;
+4. nova resolução e lock explícito do token por `password_reset_token_id`;
+5. validação de pertencimento, prazo, estado e
+   `expected_changed_operation_id`; e
+6. `INSERT` de `password_reset_operation`.
+
+O `INSERT` ocorre somente depois do lock explícito do token, portanto os locks
+implícitos das FKs para conta e token recaem sobre linhas já bloqueadas pela
+transação. Essa exceção não inverte a conclusão: operações da mesma conta são
+serializadas antes por uma única chave advisory, tokens não são compartilhados
+entre contas e todo writer que cria, consome ou invalida token deve adquirir essa
+mesma chave. Dentro de cada conjunto, UUIDs permanecem crescentes. A intenção não
+bloqueia requests ou tentativas porque não os modifica; qualquer inconsistência
+entre token, tentativa e request faz a operação falhar sem inserir o marcador.
+Manutenção continua usando `SKIP LOCKED`: se remover legitimamente o token antes
+da revalidação, a intenção não insere marcador; se a intenção bloquear primeiro,
+a limpeza pula a linha e respeita a proteção do marcador reconciliável.
+
+Na conclusão, as atualizações não alteram chaves das FKs de requests, tentativas,
+tokens, credencial ou sessões. A inserção de auditoria referencia a conta já
+bloqueada; `cancelled_operation_id` e os demais operation IDs são correlações UUID
+sem FK. Portanto, nenhum lock implícito conhecido exige antecipar uma classe
+posterior da ordem global; essa hipótese permanece critério obrigatório de teste
+contra o PostgreSQL real.
+
+##### Intenção, aplicabilidade e conclusão
+
+A intenção `STARTED` contém conta, token e
+`expected_changed_operation_id` observada sob lock e é confirmada antes do
+Argon2id. Argon2id ocorre sem transação aberta; sua futura ligação ao serviço deve
+usar a capacidade global compartilhada com o login. A conclusão usa o mesmo
+`reset_operation_id` em todas as tentativas transacionais.
+
+No instante único da transação de conclusão:
+
+- a conta é elegível somente com `status = ACTIVE`, `email_verified_at` não nulo,
+  `deactivated_at` nulo e uma credencial presente;
+- o token apresentado é aplicável somente se pertence à conta e ao marcador, não
+  expirou e não possui consumo ou invalidação;
+- outros tokens são aplicáveis somente quando pertencem à conta, diferem do token
+  apresentado, ainda não expiraram e não possuem consumo ou invalidação;
+- requests são canceláveis quando pertencem à conta, não são o ancestral do token
+  apresentado e estão em `RECEIVED`, `PENDING`, `PREPARING` ou `PREPARED`;
+- tentativas são canceláveis quando pertencem a request cancelável e estão em
+  `PREPARING` ou `PREPARED`;
+- requests e tentativas em `SENDING`, estados terminais ou já correlacionados a
+  outra operação são preservados; `SENDING` mantém a evidência da chamada externa
+  já iniciada e termina posteriormente como `SENT`, `FAILED` ou `UNKNOWN`; e
+- sessões são aplicáveis quando pertencem à conta e `revoked_at IS NULL`, mesmo
+  que seu prazo de autenticação já tenha expirado. Sessões já revogadas e sessões
+  legitimamente criadas depois da transação são preservadas.
+
+O reset nunca sobrescreve `consumed_operation_id`,
+`invalidated_operation_id`, `cancelled_operation_id` ou
+`revoked_operation_id` existente. Em uma transação, ele consome o token
+apresentado, atualiza `password_hash`, `changed_at` e `changed_operation_id`,
+invalida os demais tokens aplicáveis, cancela requests e tentativas aplicáveis,
+revoga sessões aplicáveis com `PASSWORD_RESET`, grava a auditoria e terminaliza o
+marcador. Qualquer falha provoca rollback integral.
+
+Ao levar request aplicável de `RECEIVED`, `PENDING`, `PREPARING` ou `PREPARED` a
+`CANCELLED`, a mesma atualização preenche `updated_at`, `terminal_at` e
+`cancelled_operation_id` com o instante PostgreSQL e a operação do reset,
+preservando `account_id`, `received_at` e `current_attempt_number`. Ao levar
+tentativa de `PREPARING` ou `PREPARED` a `CANCELLED`, preenche `terminal_at` e o
+novo `cancelled_operation_id`, limpa `lease_id` e `lease_expires_at` e preserva
+`scheduled_at`; `sending_confirmed_at`, `accepted_at` e `failure_class` devem
+permanecer nulos. O instante terminal precisa ser igual ou posterior a
+`received_at` no request e a `scheduled_at` na tentativa. Qualquer linha que não
+satisfaça mais o predicado de estado após o lock é preservada; linha que ainda
+esteja em estado aplicável, mas viole as demais precondições, aborta a transação
+como inconsistente. Nenhuma é forçada a atravessar as constraints.
+
+Token conhecido já expirado, consumido ou invalidado antes de uma intenção
+viável, token que perde corrida depois de `STARTED`, conta que se torna inelegível
+ou divergência de `changed_operation_id` produzem `REJECTED`, auditoria de
+negativa e zero efeitos de sucesso. Falha operacional não é rejeição funcional;
+preserva `STARTED` ou `UNKNOWN` e não cria auditoria funcional por suposição.
+
+##### Auditoria da operação
+
+Cada `reset_operation_id` possui exatamente um evento funcional terminal na
+sequência `1`:
+
+- sucesso: `operation = AUTH_PASSWORD_RESET_SUCCEEDED`, `result = SUCCESS`;
+- rejeição: `operation = AUTH_PASSWORD_RESET_REJECTED`, `result = DENIED`.
+
+Nos dois casos, `operation_id` e `correlation_id` são o
+`reset_operation_id`; `actor_account_id` e `entity_id` são o `account_id`
+resolvido; `entity_type = ACCOUNT`; `origin = HTTP_API`; `scope = SECURITY`; e o
+contexto contém exatamente `reason = PASSWORD_RESET`,
+`revoked_session_count`, `invalidated_token_count`,
+`cancelled_request_count` e `cancelled_attempt_count`. As quatro contagens são
+inteiros não negativos e permanecem presentes quando zero. Em rejeição todas são
+zero. `before_data` e `after_data` são nulos. Senha, PHC, token, hash, e-mail, IP,
+link e corpo HTTP não são persistidos.
+
+Assim, os campos conceituais exigidos são `operation_id`, `correlation_id`,
+`account_id`, `operation`, `result`, `reason`, `revoked_session_count`,
+`invalidated_token_count`, `cancelled_request_count` e
+`cancelled_attempt_count`. No schema publicado, `account_id` é representado pela
+igualdade de `actor_account_id` e `entity_id`, e `reason` e as quatro contagens
+ficam no `context`; não se aprova coluna duplicada para esses valores.
+
+##### Matriz de reconciliação
+
+- `COMPLETED` exige marcador terminal coerente, exatamente um token consumido
+  pela operação, exatamente um evento de sucesso, credencial direta ou cadeia
+  posterior válida e igualdade entre as quatro contagens auditadas e as linhas
+  correlacionadas. Não pode existir evento de rejeição da mesma operação.
+- `REJECTED` exige marcador terminal e exatamente um evento de rejeição, com as
+  quatro contagens zero e ausência de consumo, mudança de credencial,
+  invalidação, cancelamento ou revogação atribuídos à operação.
+- `NOT_FOUND` exige marcador conhecido já terminal nesse estado, janela probatória
+  vigente e ausência comprovada de qualquer efeito ou auditoria. O marcador de
+  intenção não é efeito, mas sua mera idade, ausência de efeitos ou aquisição do
+  advisory lock nunca prova abandono. A F1-B.4.5.2 reconhece esse estado físico,
+  mas não produz nova terminalização `NOT_FOUND` pelo runtime.
+- `INCONSISTENT` exige evidência positiva parcial ou contraditória: marcador e
+  efeitos divergentes, conta/token incompatíveis, auditoria sem conjunto
+  transacional, contagem diferente das linhas, correlação sobrescrita ou sucesso
+  e rejeição simultâneos.
+- `UNKNOWN` cobre falha ou timeout da consulta, operação ainda concorrente,
+  ausência do marcador exigido, evidência insuficiente, metadado removido por
+  retenção ou cadeia histórica que já não possa ser comprovada.
+
+A reconciliação localiza o marcador sem lock apenas para descobrir a conta; se ele
+não existir, retorna `UNKNOWN`. Com conta conhecida, adquire o mesmo advisory lock,
+bloqueia conta, credencial, marcador e demais linhas na ordem global, revalida o
+vínculo do marcador e só então lê o conjunto lógico consistente de evidências.
+Assim, nenhuma transação que cumpra o protocolo pode confirmar commit concorrente
+durante a classificação. Ela não transforma ausência de visibilidade em ausência
+de efeito. Estado terminal e auditoria histórica isolados nunca comprovam sucesso.
+Nenhuma classificação indeterminada autoriza repetição.
+
+A reconciliação é exclusivamente observacional: não altera marcador, auditoria,
+token, credencial, requests, tentativas ou sessões. Marcador `STARTED` ou `UNKNOWN`
+sem evidência conclusiva permanece `UNKNOWN`, inclusive enquanto o Argon2id estiver
+em andamento fora de transação. Idade, timeout, reinício do processo, advisory
+lock disponível ou ausência de linhas correlacionadas não autorizam `NOT_FOUND`.
+Evidência positiva parcial ou contraditória continua `INCONSISTENT`; marcador
+terminal só retorna sua classificação depois da prova completa correspondente.
+
+Não existe função PostgreSQL de fechamento nem overload de reconciliação com modo
+mutável na F1-B.4.5.2. O estado físico `NOT_FOUND` é preservado e pode ser
+reconhecido somente quando o marcador já estiver terminal nesse estado e sua
+ausência de efeitos for coerente. O protocolo autorizado que poderá produzir essa
+terminalização fica adiado para incremento futuro anterior à disponibilização
+produtiva completa e deverá definir sua própria autoridade e coordenação
+persistente antes de receber grants. Até lá, crash ou abandono aparente preserva
+`STARTED` ou `UNKNOWN` e não possui recuperação automática.
+
+Após commit indeterminado da conclusão, não há fechamento nem retry automático: a
+reconciliação espera o advisory lock e procura o conjunto completo de evidências.
+Se o resultado continuar incerto, retorna `UNKNOWN`.
+
+Se a credencial ainda aponta para a operação consultada, a correlação é direta.
+Se aponta para reset posterior, a prova começa na operação consultada e localiza,
+sem ciclos, exatamente um próximo marcador `COMPLETED` cujo
+`expected_changed_operation_id` seja o elo corrente. A cadeia avança em ordem
+temporal estritamente crescente até o `changed_operation_id` atual. Cada elo exige
+token consumido e auditoria de sucesso coerentes; zero ou mais de um sucessor
+dentro da janela probatória é contraditório. Elo ausente por retenção produz
+`UNKNOWN`; elo ausente sem retenção ou elo presente e divergente produz
+`INCONSISTENT`. A operação de bootstrap é origem válida apenas quando comprovada
+pelo singleton concluído e não pode aparecer como alteração posterior a um reset.
+Outra origem futura de mudança de credencial precisa de contrato próprio antes de
+integrar essa cadeia.
+
+##### Isolamento e retry
+
+`READ COMMITTED` é o padrão da operação, condicionado à prova do advisory lock,
+dos row locks, das revalidações e da ausência de phantoms relevantes. São
+elegíveis a retry automático somente:
+
+- `40001` (`serialization_failure`);
+- `40P01` (`deadlock_detected`); e
+- `55P03` (`lock_not_available`) quando comprovadamente originado por
+  `lock_timeout` ao adquirir um dos locks aprovados, depois de rollback
+  confirmado.
+
+Cada retry reutiliza `reset_operation_id` e identificadores reservados, repete a
+transação inteira e todas as precondições e admite no máximo duas novas tentativas
+além da primeira. Violação de constraint, `57014` por statement timeout ou
+cancelamento, erro não classificado e falha operacional não são retry automático.
+Erro de conexão, classe `08`, encerramento administrativo ou qualquer falha depois
+do possível envio de `COMMIT` é commit indeterminado e exige reconciliação
+conclusiva antes de nova tentativa.
+
+##### Privilégios
+
+O migrator atual pode ser owner das cinco funções; nenhuma nova role é criada. As
+cinco funções usam `SECURITY DEFINER`,
+`SET search_path = pg_catalog, public, pg_temp`, nomes qualificados, validação
+estrita e nenhum SQL dinâmico. `PUBLIC`, bootstrap e manutenção não recebem
+`EXECUTE`. O runtime recebe somente `EXECUTE` em aquisição, intenção, conclusão e
+reconciliação observacional; a função que apenas deriva a chave permanece interna
+ao owner. Não existe função de fechamento, overload com modo mutável ou grant
+runtime capaz de terminalizar intenção sem efeitos.
+
+As novas tabelas e colunas sensíveis não recebem DML direto do runtime neste
+incremento. A função de intenção não retorna o hash persistido, e conclusão e
+reconciliação não retornam PHC ou hash. Os acessos diretos preexistentes exigidos
+pelo login não são ampliados nem removidos pela F1-B.4.5.2.
 
 #### Retenção operacional
 
@@ -189,7 +489,8 @@ mais recente entre expiração, consumo, invalidação e término resolvido do p
 Não são elegíveis estados ativos, `UNKNOWN`, operações ainda reconciliáveis, pai
 com filho protegido ou token potencialmente entregue ainda válido.
 
-Depois de classificação conclusiva de `UNKNOWN`, inicia-se a janela de 30 dias.
+Depois que uma operação antes `UNKNOWN` alcança classificação terminal conclusiva,
+inicia-se a janela de 30 dias.
 Limpeza usa credencial de manutenção, lotes limitados, `SKIP LOCKED` e ordem
 operações resolvidas, tokens, tentativas e requests, respeitando as referências.
 Cada lote registra período, quantidades e resultado sem PII. Falha é retomável e
@@ -204,7 +505,9 @@ não remove registros sem confirmação. Auditoria funcional permanece sujeita a
 - Conflitos recuperáveis admitem quantidade limitada de novas tentativas.
 - Cada nova tentativa repete autorização e pré-condições, não apenas as instruções SQL.
 - Erros não recuperáveis ou repetição esgotada retornam resultado explícito, sem sucesso aparente.
-- O limite de tentativas e os casos recuperáveis permanecem pendentes.
+- Fora dos recortes que possuem contrato específico, o limite de tentativas e os
+  casos recuperáveis permanecem pendentes; a F1-B.4.5.2 usa a política definida
+  acima sem encerrar integralmente a PT-003.
 
 ## Ordenação de listas e cartões
 
@@ -246,8 +549,8 @@ e sem segredos nesta etapa. Elas não criam nova classificação funcional de
 auditoria. Permanecem obrigatórios os eventos aprovados de login, falha de login,
 logout, revogação global e negativas funcionais de autorização. O subconjunto de
 admissão abusiva do login está aprovado na PT-008; a recuperação possui contrato
-aprovado separado na F1-B.4.5, ainda sem implementação, e as evidências e demais
-escopos remanescentes da pendência continuam abertos.
+aprovado separado na F1-B.4.5 e fundação PostgreSQL publicada na F1-B.4.5.1;
+operações, casos de uso e demais evidências da pendência continuam abertos.
 
 No subconjunto aprovado de proteção do login, uma requisição rejeitada com `429`
 antes de alcançar `AuthenticationService` é rejeição técnica de admissão e não

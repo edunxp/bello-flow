@@ -7,19 +7,23 @@ aprovado ou um marco relevante for publicado.
 
 ## Fase atual
 
-- **Última entrega publicada:** F1-B.4.4 — Endpoints HTTP de Autenticação, commit
-  `d2343340a75ca6b15700e47738c8c34cbadc4202`.
+- **Última entrega publicada:** F1-B.4.5.1 — Fundação PostgreSQL da Recuperação de
+  Senha, commit `e8d464c56561df5dad50751ba3335b0b898c2752`.
 - **Publicação e CI:** branch `main` sincronizada após a publicação; execução
-  [CI 41831592216](https://github.com/edunxp/bello-flow/actions/runs/41831592216)
+  [CI 41904162348](https://github.com/edunxp/bello-flow/actions/runs/41904162348)
   aprovada nos jobs `Quality`, `API integration` e `Required`.
-- **Estado da F1-B.4:** fundação HTTP, casos públicos de sessão, admissão do login
-  e integração dos quatro endpoints implementados e publicados.
-- **Decisão técnica:** PT-005 resolvida; D1–D5 materializadas e publicadas sem
-  alteração dos contratos aprovados.
-- **PT-008:** o subconjunto do login está implementado; o contrato normativo de
-  recuperação da F1-B.4.5 foi aprovado e está sendo formalizado documentalmente,
-  mas implementação, migration, processamento e validação permanecem pendentes.
-  PT-009 continua aberta e não há disponibilidade produtiva de recuperação.
+- **Estado da F1-B.4.5:** contrato geral aprovado e fundação PostgreSQL publicada,
+  com relações, constraints, índices, backfill, correlação explícita da credencial,
+  negação inicial de privilégios e testes reais. Casos de uso, operações,
+  processamento e HTTP ainda não estão implementados.
+- **Próximo objetivo:** F1-B.4.5.2 — Operações Transacionais e Reconciliação. O
+  contrato técnico está aprovado e formalizado localmente, mas funções, migration,
+  grants e evidências ainda não foram implementados. A reconciliação aprovada é
+  exclusivamente observacional; encerramento autorizado de intenções abandonadas
+  permanece futuro.
+- **Pendências:** PT-003, PT-007 e PT-008 permanecem abertas para implementação e
+  evidências; PT-009 continua integralmente aberta e não há disponibilidade
+  produtiva de recuperação.
 
 ## Etapas concluídas
 
@@ -36,6 +40,7 @@ aprovado ou um marco relevante for publicado.
 | F1-B.4.2 — Casos de Uso Públicos de Sessão | resolução, logout individual, logout global e compensação expostos por `AuthenticationService`; persistência preservada internamente | [`AuthenticationService`](../apps/api/src/auth/authentication.service.ts); [testes unitários](../apps/api/src/auth/authentication.service.spec.ts); commit `9bb29a427cb74a712f008695712b8a4b77eacae4` |
 | F1-B.4.3 — Proteção de Admissão do Login | token buckets, sentinela, memória limitada, saturação segura e capacidade Argon2id integrados ao caso de uso | [`LoginAdmissionService`](../apps/api/src/auth/login-admission.service.ts); [testes unitários](../apps/api/src/auth/login-admission.service.spec.ts); commit `289a580842d812382bcb27070a4ab13a27864f45` |
 | F1-B.4.4 — Endpoints HTTP de Autenticação | implementação concluída e publicada, com CI remoto aprovado | [`AuthController`](../apps/api/src/auth/auth.controller.ts); [teste E2E HTTP](../apps/api/test/f1-b-4-4-auth-http.e2e-spec.ts); [integração PostgreSQL](../apps/api/test/f1-b-3-3-3-authentication.e2e-spec.ts); commit `d2343340a75ca6b15700e47738c8c34cbadc4202`; [CI 41831592216](https://github.com/edunxp/bello-flow/actions/runs/41831592216) |
+| F1-B.4.5.1 — Fundação PostgreSQL da Recuperação de Senha | fundação física publicada; não implementa operações, processamento ou HTTP | [migration](../apps/api/prisma/migrations/20261104000000_f1_b_4_5_1_password_recovery_foundation/migration.sql); [teste PostgreSQL](../apps/api/test/f1-b-4-5-1-password-recovery-foundation.e2e-spec.ts); commit `e8d464c56561df5dad50751ba3335b0b898c2752` |
 
 Os agrupamentos resumidos organizam evidências já existentes; não criam fases
 normativas nem alteram o estado de decisões ou pendências.
@@ -80,27 +85,46 @@ normativas nem alteram o estado de decisões ou pendências.
 - O gate local de cobertura permanece acima de 90% em todas as métricas para web,
   API e consolidado.
 
+### F1-B.4.5.1 — Fundação PostgreSQL da Recuperação de Senha
+
+- **SHA:** `e8d464c56561df5dad50751ba3335b0b898c2752`.
+- **Publicação:** confirmada na branch `main`, sincronizada com a referência local
+  `origin/main` no início do planejamento da F1-B.4.5.2.
+- **CI:** execução
+  [41904162348](https://github.com/edunxp/bello-flow/actions/runs/41904162348)
+  concluída com sucesso nos jobs `Quality`, `API integration` e `Required`.
+- **Escopo entregue:** `changed_operation_id` comprovável na credencial; relações
+  de request, tentativa, token e operação; constraints e índices; backfill sem UUID
+  inventado; função de bootstrap compatível; negação inicial de privilégios; e
+  teste PostgreSQL real em banco descartável.
+- **Limite:** não há funções transacionais de reset, grants runtime, casos de uso,
+  processamento, endpoint ou disponibilidade produtiva.
+
 ## Próximo incremento
 
-- **F1-B.4.5 — Recuperação de Senha:** contrato normativo aprovado e formalizado
-  localmente; implementação ainda não iniciada. Esta alteração documental ainda
-  depende de commit, publicação e validação do CI.
-- **Objetivo:** expor solicitação e redefinição anti-enumeração sobre outbox
-  PostgreSQL específica, token de uso único e reset transacional com revogação de
-  sessões e auditoria.
-- **Escopo:** `POST /api/auth/password-recovery` e
-  `POST /api/auth/password-reset`; admissão, cooldown, token, até três tentativas,
-  estados e leases, reconciliação, retenção, privilégios e adapter controlado de
-  teste.
-- **Exclusões:** provider SMTP/API produtivo, alteração de e-mail, verificação
-  inicial de e-mail, administração de contas, outbox genérica e qualquer outro
-  incremento. A PT-009 permanece aberta.
-- **Critérios de aceite:** contratos HTTP e respostas uniformes; nenhum segredo
-  persistido ou exposto; `SENDING` confirmado antes do provider; `UNKNOWN` sem
-  reenvio; no máximo três tokens ativos; reset e auditoria atômicos; reconciliação
-  sem falso sucesso; PostgreSQL real para locks, backfill, grants e rollback;
-  regressão dos endpoints existentes; cobertura mínima de 90% e jobs `Quality`,
-  `API integration` e `Required` aprovados.
+- **F1-B.4.5.2 — Operações Transacionais e Reconciliação:** contrato normativo
+  aprovado e formalizado localmente; implementação ainda não iniciada. Esta
+  alteração documental depende de commit, publicação e validação do CI.
+- **Objetivo:** implementar a fronteira PostgreSQL de intenção, conclusão e
+  reconciliação observacional do reset, com advisory lock compartilhado pelo
+  login, menor privilégio e evidência real de atomicidade.
+- **Escopo:** funções `SECURITY DEFINER`, derivação SQL idêntica do advisory lock,
+  adequação da aquisição no login, estado `REJECTED`, correlação de cancelamento
+  das tentativas, grants e testes PostgreSQL reais.
+- **Exclusões:** endpoint HTTP, quotas, geração e entrega produtiva de token,
+  processamento de e-mail, provider, frontend, alteração de e-mail, verificação
+  inicial e administração de contas. Fixtures via migrator não equivalem a fluxo
+  funcional. Função de fechamento e protocolo para terminalizar intenções
+  abandonadas permanecem futuros, sem nova role, credencial ou coordenação
+  persistente neste incremento. PT-009 permanece aberta.
+- **Critérios de aceite:** mesma chave entre código antigo/novo; ordens de locks
+  compatíveis com as FKs; consumo, credencial, invalidações, cancelamentos,
+  revogações, auditoria e marcador atômicos; `COMPLETED`, `REJECTED`, `NOT_FOUND`,
+  `INCONSISTENT` e `UNKNOWN` sem falso sucesso nem nova terminalização `NOT_FOUND`
+  pelo runtime; `STARTED`/`UNKNOWN` preservados pela reconciliação; rollback e
+  commit indeterminado em PostgreSQL 18.6 descartável; menor privilégio; regressão
+  de autenticação, bootstrap e sessões; cobertura mínima de 90% e jobs `Quality`,
+  `API integration` e `Required`.
 
 Qualquer operação de versionamento, publicação ou próximo incremento exige
 autorização específica. As rotas, formatos de resposta e decisões D1–D5
@@ -141,8 +165,9 @@ Permanece com o estado registrado no documento canônico de
 [pendências técnicas](arquitetura/pendencias-tecnicas.md):
 
 - **PT-008:** o subconjunto de proteção do login está implementado e publicado na
-  F1-B.4.3. O recorte normativo da recuperação foi aprovado para a F1-B.4.5, mas
-  sua implementação, evidências PostgreSQL, processamento e validação permanecem
+  F1-B.4.3. A fundação PostgreSQL da recuperação foi publicada na F1-B.4.5.1 e o
+  contrato de operações foi aprovado para a F1-B.4.5.2, mas funções, grants,
+  evidências das operações, processamento e limites da recuperação permanecem
   pendentes; a pendência não está integralmente encerrada.
 
 Para o login HTTP, foram aprovados token buckets independentes por identidade ou
@@ -156,4 +181,5 @@ publicada.
 Aumentos de capacidade continuam dependendo de evidências relacionadas à PT-016.
 
 Esta referência não encerra integralmente a PT-003, PT-007 ou PT-008, não resolve
-a PT-009 e não declara a F1-B.4.5 implementada ou disponível em produção.
+a PT-009 e não declara a F1-B.4.5.2 implementada nem a recuperação disponível em
+produção.
