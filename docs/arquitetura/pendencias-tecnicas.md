@@ -23,11 +23,13 @@ fonte normativa que aprovou cada resolução.
 
 O subconjunto de login da PT-008 foi aprovado em 2026-11-03 para planejamento,
 sem que a aprovação, por si, declarasse implementação. A proteção foi publicada
-na F1-B.4.3 pelo commit `289a580842d812382bcb27070a4ab13a27864f45` e ligada
-localmente ao endpoint de login na F1-B.4.4. O contrato define os token buckets
-de identidade ou sentinela compartilhada e de IP confiável, respostas `429` e
-`503`, memória efêmera limitada, saturação, concorrência Argon2id e critérios de
-teste no
+na F1-B.4.3 pelo commit `289a580842d812382bcb27070a4ab13a27864f45` e ligada ao
+endpoint de login pela F1-B.4.4 publicada no commit
+`d2343340a75ca6b15700e47738c8c34cbadc4202`, cuja execução CI `41831592216` foi
+aprovada nos jobs `Quality`, `API integration` e `Required`. O contrato define
+os token buckets de identidade ou sentinela compartilhada e de IP confiável,
+respostas `429` e `503`, memória efêmera limitada, saturação, concorrência
+Argon2id e critérios de teste no
 [complemento de AT-001](decisoes-tecnicas.md#complemento-aprovado--proteção-do-login-da-pt-008)
 e no [contrato de segurança](seguranca-e-autorizacao.md#proteção-do-login--subconjunto-aprovado-da-pt-008).
 PT-008 permanece parcialmente aberta para recuperação de senha, retentativas

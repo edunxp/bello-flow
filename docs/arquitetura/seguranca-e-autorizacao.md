@@ -108,8 +108,9 @@ As decisões D1–D5 abaixo permanecem normativas para a F1-B.4. A fundação e 
 primitivas HTTP foram implementadas na F1-B.4.1, e os casos públicos de sessão e
 o encapsulamento de D5 foram implementados na F1-B.4.2. A admissão protegida foi
 publicada na F1-B.4.3. Controllers, endpoints de autenticação e a ligação das
-políticas à fronteira HTTP estão implementados localmente na F1-B.4.4, ainda sem
-commit, publicação ou validação de CI remoto próprios.
+políticas à fronteira HTTP foram publicados na F1-B.4.4 pelo commit
+`d2343340a75ca6b15700e47738c8c34cbadc4202`, com a execução CI `41831592216`
+aprovada nos jobs `Quality`, `API integration` e `Required`.
 
 ### Representação externa comum
 
@@ -258,7 +259,7 @@ abstração ou dependência sem necessidade concreta.
 ## Proteção do login — subconjunto aprovado da PT-008
 
 Este contrato foi implementado para `POST /api/auth/login` na F1-B.4.3 e ligado
-localmente à fronteira HTTP na F1-B.4.4. Ele não cria quotas para consulta de
+à fronteira HTTP pela F1-B.4.4 publicada. Ele não cria quotas para consulta de
 sessão, logout ou logout global e não encerra as partes da PT-008 relativas a
 recuperação de senha, retentativas transacionais ou processamento de e-mails.
 

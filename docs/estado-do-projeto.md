@@ -7,14 +7,14 @@ aprovado ou um marco relevante for publicado.
 
 ## Fase atual
 
-- **Última entrega publicada:** F1-B.4.3 — Proteção de Admissão do Login, commit
-  `289a580842d812382bcb27070a4ab13a27864f45`.
-- **Implementação local atual:** F1-B.4.4 — Endpoints HTTP de Autenticação,
-  implementada e validada localmente; commit, publicação e CI remoto permanecem
-  pendentes.
+- **Última entrega publicada:** F1-B.4.4 — Endpoints HTTP de Autenticação, commit
+  `d2343340a75ca6b15700e47738c8c34cbadc4202`.
+- **Publicação e CI:** branch `main` sincronizada após a publicação; execução
+  [CI 41831592216](https://github.com/edunxp/bello-flow/actions/runs/41831592216)
+  aprovada nos jobs `Quality`, `API integration` e `Required`.
 - **Estado da F1-B.4:** fundação HTTP, casos públicos de sessão, admissão do login
-  e integração dos quatro endpoints implementados.
-- **Decisão técnica:** PT-005 resolvida; D1–D5 materializadas localmente sem
+  e integração dos quatro endpoints implementados e publicados.
+- **Decisão técnica:** PT-005 resolvida; D1–D5 materializadas e publicadas sem
   alteração dos contratos aprovados.
 - **PT-008:** o subconjunto do login está implementado; recuperação de senha,
   retentativas transacionais e processamento de e-mails permanecem abertos.
@@ -33,7 +33,7 @@ aprovado ou um marco relevante for publicado.
 | F1-B.4.1 — Fundação HTTP Segura | configuração fail-fast, origem canônica, proxy confiável, cookies, validações de requisição, parser, erros e proxy Angular; políticas preparadas, ainda sem ligação aos endpoints | [configuração HTTP](../apps/api/src/http/http-security.config.ts); [teste E2E](../apps/api/test/f1-b-4-1-http-foundation.e2e-spec.ts); commit `6bdf62be85ba5c7eb91f6ffd41b872b2e3b5ebcc` |
 | F1-B.4.2 — Casos de Uso Públicos de Sessão | resolução, logout individual, logout global e compensação expostos por `AuthenticationService`; persistência preservada internamente | [`AuthenticationService`](../apps/api/src/auth/authentication.service.ts); [testes unitários](../apps/api/src/auth/authentication.service.spec.ts); commit `9bb29a427cb74a712f008695712b8a4b77eacae4` |
 | F1-B.4.3 — Proteção de Admissão do Login | token buckets, sentinela, memória limitada, saturação segura e capacidade Argon2id integrados ao caso de uso | [`LoginAdmissionService`](../apps/api/src/auth/login-admission.service.ts); [testes unitários](../apps/api/src/auth/login-admission.service.spec.ts); commit `289a580842d812382bcb27070a4ab13a27864f45` |
-| F1-B.4.4 — Endpoints HTTP de Autenticação | implementação local validada; commit, publicação e CI remoto pendentes | [`AuthController`](../apps/api/src/auth/auth.controller.ts); [teste E2E HTTP](../apps/api/test/f1-b-4-4-auth-http.e2e-spec.ts); [integração PostgreSQL](../apps/api/test/f1-b-3-3-3-authentication.e2e-spec.ts) |
+| F1-B.4.4 — Endpoints HTTP de Autenticação | implementação concluída e publicada, com CI remoto aprovado | [`AuthController`](../apps/api/src/auth/auth.controller.ts); [teste E2E HTTP](../apps/api/test/f1-b-4-4-auth-http.e2e-spec.ts); [integração PostgreSQL](../apps/api/test/f1-b-3-3-3-authentication.e2e-spec.ts); commit `d2343340a75ca6b15700e47738c8c34cbadc4202`; [CI 41831592216](https://github.com/edunxp/bello-flow/actions/runs/41831592216) |
 
 Os agrupamentos resumidos organizam evidências já existentes; não criam fases
 normativas nem alteram o estado de decisões ou pendências.
@@ -64,20 +64,24 @@ normativas nem alteram o estado de decisões ou pendências.
 - **Escopo entregue:** token buckets por identidade/sentinela e IP, limites de
   memória, saturação localizada, concorrência e fila Argon2id.
 
-## Estado local da F1-B.4.4
+### F1-B.4.4 — Endpoints HTTP de Autenticação
 
+- **SHA:** `d2343340a75ca6b15700e47738c8c34cbadc4202`.
+- **Publicação:** confirmada na branch `main`.
+- **CI:** execução
+  [41831592216](https://github.com/edunxp/bello-flow/actions/runs/41831592216)
+  concluída com sucesso nos jobs `Quality`, `API integration` e `Required`.
 - Os quatro endpoints `/api/auth/*`, os controles PT-005, cookies e a matriz de
   erros estão ligados ao contrato público de `AuthenticationService`.
 - Testes unitários, E2E HTTP e integração HTTP com PostgreSQL descartável foram
   executados localmente, incluindo login, resolução e logout auditado.
 - O gate local de cobertura permanece acima de 90% em todas as métricas para web,
   API e consolidado.
-- Não existe commit da F1-B.4.4; publicação e CI remoto não foram executados.
 
-## Etapas pendentes da F1-B.4
+## Próximo incremento
 
-- **F1-B.4.4:** revisão, commit, publicação e CI remoto pendentes.
-- **F1-B.4.5:** não implementada.
+- **F1-B.4.5:** não implementada; seu escopo ainda não foi definido
+  normativamente.
 
 Qualquer operação de versionamento, publicação ou próximo incremento exige
 autorização específica. As rotas, formatos de resposta e decisões D1–D5
@@ -93,8 +97,9 @@ CSRF. O contrato está em
 [decisões técnicas](arquitetura/decisoes-tecnicas.md#complemento-aprovado--resolução-da-pt-005)
 e [segurança e autorização](arquitetura/seguranca-e-autorizacao.md#transporte-http-cookie-origem-cors-e-csrf).
 
-O contrato foi materializado pela fundação HTTP da F1-B.4.1 e ligado localmente
-aos endpoints na F1-B.4.4. A publicação desse último incremento está pendente.
+O contrato foi materializado pela fundação HTTP da F1-B.4.1 e ligado aos
+endpoints na F1-B.4.4, publicada no commit
+`d2343340a75ca6b15700e47738c8c34cbadc4202`.
 
 ## Contratos HTTP aprovados
 
@@ -106,8 +111,10 @@ encapsulamento por `AuthenticationService`.
 
 F1-B.4.1 implementou a fundação e as primitivas HTTP; F1-B.4.2 implementou os
 casos públicos de sessão e o encapsulamento previsto por D5; F1-B.4.3 publicou a
-admissão protegida. A F1-B.4.4 implementa localmente os endpoints, controllers,
-cookies, validações e erros externos, ainda sem commit ou publicação.
+admissão protegida. A F1-B.4.4 publicou os endpoints, controllers, cookies,
+validações e erros externos no commit
+`d2343340a75ca6b15700e47738c8c34cbadc4202`, validado pela execução CI
+`41831592216`.
 
 ## Pendência relevante
 
@@ -124,7 +131,8 @@ reserva atômica, `429` com `Retry-After`, memória efêmera limitada, saturaç�
 localizada, duas execuções Argon2id e fila limitada. Os contratos estão
 em [decisões técnicas](arquitetura/decisoes-tecnicas.md#complemento-aprovado--proteção-do-login-da-pt-008)
 e [segurança e autorização](arquitetura/seguranca-e-autorizacao.md#proteção-do-login--subconjunto-aprovado-da-pt-008).
-A admissão foi publicada na F1-B.4.3 e ligada localmente ao endpoint na F1-B.4.4.
+A admissão foi publicada na F1-B.4.3 e ligada ao endpoint pela F1-B.4.4
+publicada.
 Aumentos de capacidade continuam dependendo de evidências relacionadas à PT-016.
 
 Esta referência não encerra integralmente a PT-008 nem reclassifica suas partes

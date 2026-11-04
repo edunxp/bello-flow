@@ -87,7 +87,7 @@ O contrato detalhado e seus limites operacionais estão em
 
 ### Complemento aprovado — contratos HTTP D1–D5 da F1-B.4
 
-- **Estado:** Aprovado; implementado localmente, com publicação pendente
+- **Estado:** Aprovado, implementado e publicado
 - **Data de aprovação:** 2026-11-03
 - **Justificativa:** definir a fronteira HTTP mínima de autenticação sobre os
   serviços e a persistência já existentes, sem expor contratos internos.
@@ -99,8 +99,9 @@ O contrato detalhado e seus limites operacionais estão em
   públicos de sessão e o encapsulamento de D5 no commit
   `9bb29a427cb74a712f008695712b8a4b77eacae4`; a F1-B.4.3 implementou a admissão
   protegida do login no commit `289a580842d812382bcb27070a4ab13a27864f45`.
-  A F1-B.4.4 liga localmente os quatro endpoints, as políticas HTTP e os cookies;
-  o incremento ainda não possui commit, publicação nem CI remoto próprios.
+  A F1-B.4.4 publicou a ligação dos quatro endpoints, das políticas HTTP e dos
+  cookies no commit `d2343340a75ca6b15700e47738c8c34cbadc4202`; a execução CI
+  `41831592216` foi aprovada nos jobs `Quality`, `API integration` e `Required`.
 - **D1 — endpoints e erros:** a API de autenticação possui os contratos
   `POST /api/auth/login`, `GET /api/auth/session`,
   `POST /api/auth/logout` e `POST /api/auth/logout-all`, com identidade externa
