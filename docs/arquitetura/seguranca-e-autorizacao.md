@@ -8,7 +8,10 @@ Este documento detalha as responsabilidades decorrentes de [AT-001](decisoes-tec
 
 - Contas são criadas somente pela Administração Global ou, para a primeira conta, pelo bootstrap controlado.
 - Não existe cadastro público.
-- A identidade interna imutável é distinta do e-mail mutável.
+- `account.id` UUID é o identificador técnico interno imutável; `account.email` e sua representação normalizada `account.email_key` são atributos distintos, únicos e igualmente imutáveis após a criação da conta no MVP.
+- `email_verified_at` permanece estado separado do endereço, e a verificação inicial continua obrigatória antes do acesso protegido.
+- A aplicação não oferece operação de alteração ou substituição de e-mail, e a credencial runtime do PostgreSQL não recebe `UPDATE` sobre `account.email` ou `account.email_key`.
+- Desativação não libera nem transfere o endereço; eventual alteração ou substituição de e-mail permanece fora do MVP, sem procedimento excepcional definido nesta etapa.
 - Senhas utilizam Argon2id e não podem ser recuperadas por administradores.
 - Tentativas sem credencial real utilizam um PHC Argon2id sintético constante,
   gerado uma única vez de candidato aleatório descartado e com o mesmo perfil

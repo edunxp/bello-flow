@@ -29,7 +29,7 @@
 | DEC-017 | **Aprovada** | Visibilidade privada por padrão e descoberta controlada | Evitar acesso implícito ao conteúdo, permitindo descoberta administrativa ou do Workspace sem participação automática | BEL-001, BEL-002, BEL-026–BEL-029, BEL-032, BEL-034, BEL-036 | 2026-10-30 — criada como pendente; 2026-10-30 — aprovada pelo responsável pelo produto |
 | DEC-018 | **Aprovada** | Movimento de cartões entre quadros do mesmo Workspace | Preservar identidade e conteúdo do cartão, com autorização nos dois quadros, confirmação de responsáveis incompatíveis e histórico protegido por evento | BEL-008, BEL-011, BEL-020–BEL-024, BEL-026–BEL-028, BEL-031, BEL-032, BEL-036 | 2026-10-30 — criada como pendente; 2026-10-30 — aprovada pelo responsável pelo produto |
 | DEC-019 | **Aprovada** | Governança de integrações externas e entregas posteriores | Fixar autorização, identidade, auditoria e proteção de segredos, mantendo API externa, webhooks, conectores e automações fora do MVP | BEL-031–BEL-033, BEL-036 | 2026-10-30 — criada como pendente; 2026-10-30 — aprovada pelo responsável pelo produto |
-| DEC-020 | **Aprovada** | Identidade administrada do usuário | Definir criação restrita de contas, login, verificação, recuperação e preservação histórica da identidade sem cadastro público | BEL-021, BEL-023, BEL-026–BEL-028, BEL-031, BEL-032, BEL-034–BEL-036, BEL-038 | 2026-10-30 — aprovada pelo responsável pelo produto |
+| DEC-020 | **Aprovada** | Identidade administrada do usuário | Definir criação restrita de contas, login, verificação, recuperação e preservação histórica da identidade sem cadastro público | BEL-021, BEL-023, BEL-026–BEL-028, BEL-031, BEL-032, BEL-034–BEL-036, BEL-038 | 2026-10-30 — aprovada pelo responsável pelo produto; 2026-11-04 — formalizada a imutabilidade do e-mail no MVP |
 | DEC-021 | **Aprovada** | Inclusão direta e acompanhamento de convites/vínculos | Exigir conta verificada, separar inclusão direta de convite pendente e tornar concessões de participação rastreáveis | BEL-026, BEL-031, BEL-032, BEL-035, BEL-036, BEL-038 | 2026-10-30 — aprovada pelo responsável pelo produto |
 
 ## Detalhamento das decisões aprovadas
@@ -250,11 +250,13 @@ Nota de evolução: os textos de DEC-002 e DEC-004 acima foram preservados como 
 - **Estado:** Aprovada
 - **Data de aprovação:** 2026-10-30
 - **Decisão:** somente a administração autorizada do Bello cria contas; não existe cadastro público; login usa e-mail e senha; e-mail é obrigatório, único e deve ser verificado antes do acesso protegido; recuperação de senha ocorre por e-mail.
-- **Identidade:** cada usuário possui identificador técnico interno único e imutável, independente do e-mail; alteração de e-mail exige verificação do novo endereço.
-- **Ciclo de vida:** desativação preserva identidade, autoria, comentários e histórico; exclusão definitiva depende de política posterior; auditoria preserva a identidade histórica dos autores.
+- **Identidade:** cada usuário possui `account.id` UUID como identificador técnico interno único e imutável, independente do e-mail; `account.email` e sua representação normalizada `account.email_key` são imutáveis após a criação da conta no MVP.
+- **Verificação:** `email_verified_at` representa separadamente o estado de verificação do endereço e a verificação inicial continua obrigatória antes do acesso protegido; ela não autoriza substituir o e-mail da conta.
+- **Ciclo de vida:** desativação preserva identidade, autoria, comentários e histórico e não libera nem transfere o endereço; exclusão definitiva depende de política posterior; auditoria preserva a identidade histórica dos autores.
+- **Limite:** alteração ou substituição do e-mail de uma conta criada não integra o MVP e nenhum procedimento excepcional para isso é definido por esta decisão.
 - **Justificativa:** tornar participantes, autoria, autorização, recuperação e auditoria funcionalmente executáveis sem abrir cadastro público nem escolher solução técnica.
 - **Requisitos impactados:** BEL-021, BEL-023, BEL-026–BEL-028, BEL-031, BEL-032, BEL-034–BEL-036, BEL-038.
-- **Histórico:** 2026-10-30 — aprovada pelo responsável pelo produto.
+- **Histórico:** 2026-10-30 — aprovada pelo responsável pelo produto; 2026-11-04 — formalizada a imutabilidade de `account.email` e `account.email_key` após a criação no MVP.
 - **Evolução:** PEN-035 posteriormente definiu a inicialização controlada do primeiro Administrador Global; PEN-036 definiu administração global de contas, continuidade administrativa e independência de papéis/conteúdo.
 
 ### DEC-021 — Inclusão direta e acompanhamento de convites/vínculos

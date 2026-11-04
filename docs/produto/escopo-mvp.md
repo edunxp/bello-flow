@@ -20,9 +20,11 @@ O MVP contém 28 requisitos essenciais:
 | rastreabilidade | BEL-031, BEL-032 | feed de cartão/quadro e auditoria formal independente com retenção de 24 meses |
 | Workspaces | BEL-034–BEL-036 | criação e edição, participantes, administrador mínimo e governança sem acesso automático ao conteúdo |
 | visibilidade | BEL-029 | privado por padrão; descoberta controlada sem acesso implícito ao conteúdo |
-| identidade | BEL-038 | contas administradas, login, verificação, recuperação, desativação e preservação histórica |
+| identidade | BEL-038 | contas administradas, e-mail imutável após criação, login, verificação, recuperação, desativação e preservação histórica |
 
 BEL-035, BEL-036 e BEL-038 são essenciais. Inicialização da primeira conta, Administração Global, criação de quadros, papéis do Workspace, fronteira governança/conteúdo e matriz mínima de auditoria estão aprovados. Permanece aberta apenas a aplicabilidade futura de convites pendentes em PEN-034; a inclusão direta do MVP está definida.
+
+Alteração ou substituição do e-mail de uma conta criada não integra o MVP; esta exclusão não define procedimento excepcional nem altera a verificação inicial, a recuperação de senha ou a preservação da identidade histórica.
 
 ## Candidatos ao MVP
 
@@ -85,8 +87,8 @@ Os critérios abaixo decorrem de decisões aprovadas:
 - primeira conta Administrador Global é criada por inicialização controlada, autorizada, não repetível e rastreável;
 - somente Administradores Globais criam, desativam, reativam contas e gerem a atribuição global;
 - sempre existe ao menos um Administrador Global ativo e apto;
-- login usa e-mail/senha; e-mail é único e verificado; recuperação ocorre por e-mail;
-- conta possui identificador interno imutável e desativação preserva autoria/histórico;
+- login usa e-mail/senha; e-mail e sua representação normalizada são únicos e imutáveis após a criação, a verificação inicial permanece obrigatória e a recuperação ocorre por esse endereço;
+- conta possui `account.id` UUID como identificador técnico interno imutável; desativação preserva autoria/histórico e não libera nem transfere o e-mail;
 - desativação é bloqueada quando o usuário for último Administrador ativo de Workspace/quadro sem sucessor;
 - papel global não concede participação, conteúdo ou auditoria de conteúdo em Workspace/quadro;
 - qualquer usuário autenticado, ativo e verificado pode criar Workspace e torna-se administrador inicial;
@@ -133,7 +135,7 @@ Os critérios abaixo decorrem de decisões aprovadas:
 - Administrador de Workspace sem participação consulta apenas eventos administrativos, não conteúdo privado;
 - auditoria é preservada por 24 meses, consultável com filtros/navegação progressiva, não é editável/exportável no MVP e correções geram novos eventos;
 - valores auditados seguem matriz mínima por entidade/operação/campo/sensibilidade; apresentação reavalia acesso e redige/omite campos protegidos;
-- login, falha de login, recuperação de senha e alteração de e-mail são auditados sem segredos recuperáveis;
+- login, falha de login e recuperação de senha são auditados sem segredos recuperáveis;
 - títulos, descrições e comentários preservam versões anteriores/novas somente na auditoria de conteúdo autorizada;
 - movimentos/reordenações auditam item, origem, destino e posição relativa, sem snapshot completo da ordem do quadro;
 - auditoria não armazena senhas, tokens, credenciais ou outros segredos;

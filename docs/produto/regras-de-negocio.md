@@ -510,14 +510,15 @@ Somente regras da seção “Regras aprovadas” podem ser tratadas como comport
 ### RN-070 — E-mail, verificação e recuperação
 
 - **Estado:** Aprovada
-- **Regra:** e-mail é obrigatório e único; verificação é obrigatória; recuperação de senha ocorre por e-mail; alterar o endereço exige verificar o novo e-mail antes de sua efetivação para acesso.
+- **Regra:** e-mail é obrigatório e único; o endereço e sua representação normalizada são imutáveis após a criação da conta no MVP; a verificação inicial é obrigatória e permanece separada do endereço; recuperação de senha ocorre por esse e-mail.
 - **Origem:** DEC-020.
 - **Requisitos:** BEL-038.
+- **Limite:** alteração ou substituição do e-mail de uma conta criada não integra o MVP.
 
 ### RN-071 — Identidade interna e desativação
 
 - **Estado:** Aprovada
-- **Regra:** usuário possui identificador técnico interno único e imutável, independente do e-mail; desativação preserva identidade, autoria, comentários e histórico e impede acesso protegido enquanto perdurar.
+- **Regra:** usuário possui `account.id` UUID como identificador técnico interno único e imutável, independente do e-mail; desativação preserva identidade, autoria, comentários e histórico, impede acesso protegido enquanto perdurar e não libera nem transfere o endereço.
 - **Origem:** DEC-020.
 - **Requisitos:** BEL-023, BEL-031, BEL-032, BEL-038.
 
@@ -920,7 +921,7 @@ Somente regras da seção “Regras aprovadas” podem ser tratadas como comport
 ### RN-128 — Autenticação auditada sem segredos
 
 - **Estado:** Aprovada
-- **Regra:** logins bem-sucedidos/malsucedidos, recuperação de senha e alterações de e-mail são auditados; senhas, tokens, códigos de recuperação e credenciais nunca são preservados em formato recuperável.
+- **Regra:** logins bem-sucedidos/malsucedidos e recuperação de senha são auditados; senhas, tokens, códigos de recuperação e credenciais nunca são preservados em formato recuperável.
 - **Origem:** resolução de PEN-037, DEC-010 e DEC-020.
 - **Requisitos:** BEL-032, BEL-038.
 
@@ -945,7 +946,6 @@ A matriz abaixo integra RN-126 a RN-130. Armazenar um valor não concede permiss
 | Entidade / operação | Valores auditados | Escopo de acesso |
 |---|---|---|
 | Conta — criação, desativação, reativação | identificador e transição de estado | administração global |
-| Conta — alteração de e-mail | identidade e e-mail anterior/novo protegidos | administração global protegida |
 | Conta — concessão/revogação de Administrador Global | identidade e atribuição global anterior/nova | administração global protegida |
 | Autenticação — login e falha | identidade conhecida, tipo, resultado e momento | segurança |
 | Recuperação de senha | tipo, resultado, instante e contexto mínimo, sem segredos | segurança |

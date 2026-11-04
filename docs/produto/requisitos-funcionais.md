@@ -26,7 +26,7 @@ RN-010 aplica-se a todo o catálogo: pendências não constituem regras aprovada
 
 | ID | Descrição funcional | Classificação | Dependências | Regras | Origem e decisões | Pendências | Critérios de aceite disponíveis |
 |---|---|---|---|---|---|---|---|
-| BEL-038 | Administrar identidade, autenticação, verificação, recuperação e desativação de contas | **Essencial para o MVP** | Administrador Global ou inicialização controlada | RN-069–RN-072, RN-096, RN-116–RN-129 | DEC-020; resoluções de PEN-035–PEN-037 | nenhuma quanto ao núcleo funcional aprovado | primeira administração por inicialização controlada; depois só Administradores Globais gerem contas; sem cadastro público; continuidade global/recursos protegida; autenticação e mudanças de conta auditadas sem segredos |
+| BEL-038 | Administrar identidade, autenticação, verificação, recuperação e desativação de contas | **Essencial para o MVP** | Administrador Global ou inicialização controlada | RN-069–RN-072, RN-096, RN-116–RN-129 | DEC-020; resoluções de PEN-035–PEN-037 | nenhuma quanto ao núcleo funcional aprovado | `account.id` UUID preserva a identidade interna; e-mail e representação normalizada são únicos e imutáveis após criação; primeira administração por inicialização controlada; depois só Administradores Globais gerem contas; sem cadastro público; verificação inicial, recuperação, continuidade global/recursos e auditoria sem segredos preservadas |
 
 ## Estrutura e Workspaces
 

@@ -33,6 +33,19 @@
 - múltiplos dispositivos permitidos;
 - encerramento global de sessões disponível.
 
+### Complemento aprovado — imutabilidade do e-mail no MVP
+
+- **Estado:** Aprovada
+- **Data de aprovação:** 2026-11-04
+- **Justificativa:** manter um localizador de autenticação e recuperação estável sem substituir o UUID técnico interno nem introduzir fluxo de alteração de identidade no MVP.
+- **Identidade:** `account.id` UUID permanece o identificador técnico interno; `account.email` e `account.email_key` são únicos e imutáveis após a criação da conta.
+- **Verificação:** `email_verified_at` permanece estado separado, e a verificação inicial continua obrigatória antes do acesso protegido.
+- **Aplicação:** não existe operação de alteração ou substituição de e-mail no MVP.
+- **PostgreSQL:** a credencial runtime não recebe `UPDATE` sobre `account.email` ou `account.email_key`; concessões futuras para ciclo de vida ou verificação da conta devem continuar excluindo essas colunas.
+- **Ciclo de vida:** desativação não libera nem transfere o endereço.
+- **Limite:** não são definidos trigger, migration adicional ou procedimento excepcional de alteração; mudanças futuras desse contrato exigem nova decisão aprovada.
+- **Rastreabilidade:** complementa DEC-020, RN-069–RN-072, RN-120–RN-125 e RN-128 sem resolver ou reclassificar PT-003, PT-007, PT-008 ou PT-009.
+
 ### Complemento aprovado — resolução da PT-005
 
 - **Estado:** Aprovada
