@@ -16,6 +16,10 @@ import {
   type OperationId,
   type SessionId,
 } from './session-primitives.js';
+import {
+  LoginAdmissionService,
+  type LoginAdmissionCompletion,
+} from './login-admission.service.js';
 
 export const AUTHENTICATION_ERROR_CODE = Object.freeze({
   INVALID_INPUT: 'INVALID_INPUT',
@@ -41,6 +45,11 @@ export class AuthenticationError extends Error {
 export interface AuthenticateWithPasswordInput {
   readonly email: unknown;
   readonly password: unknown;
+}
+
+export interface PasswordAuthenticationContext {
+  readonly trustedIp: string | undefined;
+  readonly signal?: AbortSignal;
 }
 
 export interface AuthenticatedPasswordSession extends CreatedAuthSession {
@@ -87,23 +96,56 @@ export class AuthenticationService {
     private readonly prisma: PrismaService,
     private readonly credentials: PasswordCredentialService,
     private readonly sessions: AuthSessionPersistence,
+    private readonly admission: LoginAdmissionService,
   ) {}
 
   async authenticateWithPassword(
     input: AuthenticateWithPasswordInput,
+    context: PasswordAuthenticationContext,
   ): Promise<AuthenticatedPasswordSession> {
-    const operationId = generateOperationId();
+    return this.admission.executeProtected({
+      email: input?.email,
+      trustedIp: context?.trustedIp,
+      signal: context?.signal,
+      operation: () => this.executeAuthentication(input),
+    });
+  }
 
+  private async executeAuthentication(
+    input: AuthenticateWithPasswordInput,
+  ): Promise<LoginAdmissionCompletion<AuthenticatedPasswordSession>> {
+    const operationId = generateOperationId();
     try {
-      return await this.authenticate(input, operationId);
+      return {
+        status: 'AUTHENTICATED',
+        value: await this.authenticate(input, operationId),
+      };
     } catch (error) {
-      if (error instanceof AuthenticationError) {
-        throw error;
+      const authenticationError =
+        error instanceof AuthenticationError
+          ? error
+          : new AuthenticationError(
+              AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE,
+              operationId,
+            );
+      if (
+        authenticationError.code === AUTHENTICATION_ERROR_CODE.INVALID_INPUT ||
+        authenticationError.code ===
+          AUTHENTICATION_ERROR_CODE.AUTHENTICATION_REJECTED
+      ) {
+        return {
+          status: 'DETERMINED_REJECTION',
+          error: authenticationError,
+        };
       }
-      throw new AuthenticationError(
-        AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE,
-        operationId,
-      );
+      return {
+        status:
+          authenticationError.code ===
+          AUTHENTICATION_ERROR_CODE.OPERATION_INDETERMINATE
+            ? 'INDETERMINATE'
+            : 'OPERATIONAL_FAILURE',
+        error: authenticationError,
+      };
     }
   }
 

@@ -11,6 +11,13 @@ import {
   AuthenticationService,
   type AuthenticateWithPasswordInput,
 } from './authentication.service.js';
+import { DEFAULT_LOGIN_ADMISSION_CONFIG } from './login-admission.config.js';
+import {
+  LOGIN_ADMISSION_ERROR_CODE,
+  LoginAdmissionError,
+  LoginAdmissionService,
+  SYSTEM_LOGIN_ADMISSION_TIME,
+} from './login-admission.service.js';
 import {
   AUTH_SESSION_AUDIT_OPERATION,
   generateOperationId,
@@ -25,6 +32,7 @@ describe('AuthenticationService', () => {
   const accountId = 'aeffae80-df85-4daa-9d42-dfb74abb1bf1';
   const passwordHash = '$argon2id$approved';
   const password = 'Correct horse battery staple! 42';
+  const authenticationContext = { trustedIp: '192.0.2.10' } as const;
   const findUnique = vi.fn();
   const verifyPassword = vi.fn();
   const performNegativeVerification = vi.fn();
@@ -52,12 +60,16 @@ describe('AuthenticationService', () => {
     input: AuthenticateWithPasswordInput,
   ): Promise<AuthenticationError> {
     try {
-      await service.authenticateWithPassword(input);
+      await authenticate(input);
       throw new Error('Expected authentication to fail');
     } catch (error) {
       expect(error).toBeInstanceOf(AuthenticationError);
       return error as AuthenticationError;
     }
+  }
+
+  function authenticate(input: AuthenticateWithPasswordInput) {
+    return service.authenticateWithPassword(input, authenticationContext);
   }
 
   async function serviceFailure(
@@ -137,11 +149,15 @@ describe('AuthenticationService', () => {
         revokeUndeliveredSession,
         reconcileOperation,
       } as unknown as AuthSessionPersistence,
+      new LoginAdmissionService(
+        DEFAULT_LOGIN_ADMISSION_CONFIG,
+        SYSTEM_LOGIN_ADMISSION_TIME,
+      ),
     );
   });
 
   it('normalizes the identity and returns the committed session contract', async () => {
-    const result = await service.authenticateWithPassword({
+    const result = await authenticate({
       email: '  USER@Example.COM  ',
       password,
     });
@@ -170,6 +186,28 @@ describe('AuthenticationService', () => {
     expect(recordFailedLogin).not.toHaveBeenCalled();
   });
 
+  it('fails safely without a runtime context before authentication work', async () => {
+    const runtimeConsumer = service as unknown as {
+      authenticateWithPassword(
+        input: AuthenticateWithPasswordInput,
+      ): Promise<unknown>;
+    };
+
+    await expect(
+      runtimeConsumer.authenticateWithPassword({
+        email: 'user@example.com',
+        password,
+      }),
+    ).rejects.toMatchObject({
+      code: LOGIN_ADMISSION_ERROR_CODE.SERVICE_UNAVAILABLE,
+    } satisfies Partial<LoginAdmissionError>);
+    expect(findUnique).not.toHaveBeenCalled();
+    expect(verifyPassword).not.toHaveBeenCalled();
+    expect(performNegativeVerification).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+    expect(recordFailedLogin).not.toHaveBeenCalled();
+  });
+
   it('classifies invalid email after negative work and records a null identity', async () => {
     const error = await failure({ email: 'inválido@example.com', password });
 
@@ -180,6 +218,27 @@ describe('AuthenticationService', () => {
       accountId: null,
       operationId: error.operationId,
     });
+  });
+
+  it('blocks before database, Argon2id, and audit after consuming identity budget', async () => {
+    verifyPassword.mockResolvedValue({ status: 'NO_MATCH' });
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const error = await failure({ email: 'limited@example.com', password });
+      expect(error.code).toBe(
+        AUTHENTICATION_ERROR_CODE.AUTHENTICATION_REJECTED,
+      );
+    }
+
+    await expect(
+      authenticate({ email: 'limited@example.com', password }),
+    ).rejects.toMatchObject({
+      code: LOGIN_ADMISSION_ERROR_CODE.RATE_LIMITED,
+      retryAfterSeconds: 180,
+    } satisfies Partial<LoginAdmissionError>);
+    expect(findUnique).toHaveBeenCalledTimes(5);
+    expect(verifyPassword).toHaveBeenCalledTimes(5);
+    expect(recordFailedLogin).toHaveBeenCalledTimes(5);
+    expect(createSession).not.toHaveBeenCalled();
   });
 
   it.each([

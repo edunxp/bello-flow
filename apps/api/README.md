@@ -31,6 +31,23 @@ with_bello_dev_database env \
 por vírgula; pode ficar ausente no desenvolvimento local sem proxy confiável e é
 obrigatória em produção.
 
+A proteção de admissão do login possui os seguintes limites opcionais de
+runtime:
+
+| Variável                             | Padrão | Intervalo válido |
+| ------------------------------------ | -----: | ---------------: |
+| `BELLO_LOGIN_IDENTITY_BUCKETS_MAX`   |  16000 |          1–16000 |
+| `BELLO_LOGIN_IP_BUCKETS_MAX`         |   4000 |           1–4000 |
+| `BELLO_LOGIN_ARGON2_CONCURRENCY`     |      2 |              1–2 |
+| `BELLO_LOGIN_ARGON2_QUEUE_MAX`       |      4 |              0–4 |
+| `BELLO_LOGIN_ARGON2_WAIT_TIMEOUT_MS` |   1000 |        1–1000 ms |
+
+Valores fora desses intervalos impedem a inicialização. Os buckets e a fila são
+locais à instância única e mantidos apenas em memória; reiniciar o processo zera
+os contadores. Aumentar os tetos depende de evidência de capacidade vinculada à
+PT-016. Esta fase protege o caso de uso de autenticação, mas ainda não cria os
+endpoints HTTP de autenticação.
+
 O NestJS escuta em `http://127.0.0.1:13000`. O Angular local escuta em
 `http://127.0.0.1:14200` e encaminha `/api` para a API; o frontend usa URLs
 relativas. HTTP é permitido somente em loopback no perfil local. Produção exige

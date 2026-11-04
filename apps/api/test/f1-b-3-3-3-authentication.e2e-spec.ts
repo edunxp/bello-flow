@@ -7,6 +7,11 @@ import {
   AuthenticationService,
   type AuthenticateWithPasswordInput,
 } from '../src/auth/authentication.service.js';
+import { DEFAULT_LOGIN_ADMISSION_CONFIG } from '../src/auth/login-admission.config.js';
+import {
+  LoginAdmissionService,
+  SYSTEM_LOGIN_ADMISSION_TIME,
+} from '../src/auth/login-admission.service.js';
 import { hashSessionToken } from '../src/auth/session-primitives.js';
 import { PasswordCredentialService } from '../src/credentials/password-credential.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
@@ -27,7 +32,8 @@ describe('F1-B.3.3.3 password authentication (PostgreSQL)', () => {
   const prisma = new PrismaService();
   const credentials = new PasswordCredentialService();
   const sessions = new AuthSessionPersistence(prisma);
-  const service = new AuthenticationService(prisma, credentials, sessions);
+  const authenticationContext = { trustedIp: '192.0.2.20' } as const;
+  let service: AuthenticationService;
   let passwordHash: string;
   let replacementHash: string;
 
@@ -105,7 +111,7 @@ describe('F1-B.3.3.3 password authentication (PostgreSQL)', () => {
     input: AuthenticateWithPasswordInput,
   ): Promise<AuthenticationError> {
     try {
-      await service.authenticateWithPassword(input);
+      await service.authenticateWithPassword(input, authenticationContext);
       throw new Error('Expected authentication to fail');
     } catch (error) {
       expect(error).toBeInstanceOf(AuthenticationError);
@@ -129,7 +135,18 @@ describe('F1-B.3.3.3 password authentication (PostgreSQL)', () => {
     await prisma.onModuleInit();
   });
 
-  beforeEach(resetData);
+  beforeEach(async () => {
+    await resetData();
+    service = new AuthenticationService(
+      prisma,
+      credentials,
+      sessions,
+      new LoginAdmissionService(
+        DEFAULT_LOGIN_ADMISSION_CONFIG,
+        SYSTEM_LOGIN_ADMISSION_TIME,
+      ),
+    );
+  });
 
   afterEach(() => vi.restoreAllMocks());
 
@@ -147,10 +164,13 @@ describe('F1-B.3.3.3 password authentication (PostgreSQL)', () => {
   it('authenticates a normalized identity and persists only the token hash', async () => {
     const accountId = await createAccount();
 
-    const result = await service.authenticateWithPassword({
-      email: '  USER@Example.COM  ',
-      password,
-    });
+    const result = await service.authenticateWithPassword(
+      {
+        email: '  USER@Example.COM  ',
+        password,
+      },
+      authenticationContext,
+    );
     const evidence = await migrator.query<{
       token_hash: Buffer;
       operation: string;

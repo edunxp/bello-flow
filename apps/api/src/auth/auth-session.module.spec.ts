@@ -5,6 +5,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { AuthSessionModule } from './auth-session.module.js';
 import { AuthSessionPersistence } from './auth-session.persistence.js';
 import { AuthenticationService } from './authentication.service.js';
+import { LoginAdmissionConfigurationError } from './login-admission.config.js';
+import { LoginAdmissionService } from './login-admission.service.js';
 
 @Injectable()
 class ConsumerProbe {
@@ -27,6 +29,17 @@ class AuthenticationConsumerProbe {
   providers: [AuthenticationConsumerProbe],
 })
 class AuthenticationConsumerModule {}
+
+@Injectable()
+class AdmissionConsumerProbe {
+  constructor(readonly admission: LoginAdmissionService) {}
+}
+
+@Module({
+  imports: [AuthSessionModule],
+  providers: [AdmissionConsumerProbe],
+})
+class AdmissionConsumerModule {}
 
 describe('AuthSessionModule', () => {
   it('keeps the persistence component resolvable inside the module', async () => {
@@ -67,6 +80,34 @@ describe('AuthSessionModule', () => {
     await context.close();
   });
 
+  it('keeps login admission internal to the authentication module', async () => {
+    await expect(
+      Test.createTestingModule({ imports: [AdmissionConsumerModule] })
+        .overrideProvider(PrismaService)
+        .useValue({})
+        .compile(),
+    ).rejects.toThrow(/AdmissionConsumerProbe/);
+  });
+
+  it('rejects invalid admission configuration during module startup', async () => {
+    const original = process.env.BELLO_LOGIN_IDENTITY_BUCKETS_MAX;
+    process.env.BELLO_LOGIN_IDENTITY_BUCKETS_MAX = '0';
+    try {
+      await expect(
+        Test.createTestingModule({ imports: [AuthSessionModule] })
+          .overrideProvider(PrismaService)
+          .useValue({})
+          .compile(),
+      ).rejects.toThrow(LoginAdmissionConfigurationError);
+    } finally {
+      if (original === undefined) {
+        delete process.env.BELLO_LOGIN_IDENTITY_BUCKETS_MAX;
+      } else {
+        process.env.BELLO_LOGIN_IDENTITY_BUCKETS_MAX = original;
+      }
+    }
+  });
+
   it('initializes AppModule with one Prisma lifecycle', async () => {
     const onModuleInit = vi.fn();
     const onModuleDestroy = vi.fn();
@@ -84,6 +125,11 @@ describe('AuthSessionModule', () => {
       .get(AuthSessionPersistence, { strict: true });
     expect(internalPersistence).toBeInstanceOf(AuthSessionPersistence);
     expect(context.get(AuthSessionPersistence)).toBe(internalPersistence);
+    expect(
+      context
+        .select(AuthSessionModule)
+        .get(LoginAdmissionService, { strict: true }),
+    ).toBeInstanceOf(LoginAdmissionService);
 
     await context.close();
     expect(onModuleDestroy).toHaveBeenCalledOnce();
