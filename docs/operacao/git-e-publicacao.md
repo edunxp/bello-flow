@@ -7,9 +7,30 @@ publicação no GitHub e a verificação do CI do Bello Flow. Ele complementa as
 regras permanentes de segurança e autorização do
 [AGENTS.md](../../AGENTS.md).
 
-Commit e push são autorizações distintas. Nenhuma etapa deste documento concede
-autorização por si só. Não execute merge, rebase, reset, force push ou reescrita
-de histórico automaticamente.
+Nenhuma etapa deste documento concede autorização por si só. A atividade precisa
+selecionar explicitamente uma das modalidades abaixo. Não execute merge, rebase,
+pull, reset, force push ou reescrita de histórico automaticamente.
+
+## Modalidades de autorização
+
+| Modalidade | Alterações e validações | Commit local | Push normal |
+|---|---|---|---|
+| **Implementação** | autorizado no escopo | não autorizado | não autorizado |
+| **Implementação com commit** | autorizado no escopo | autorizado no escopo | não autorizado |
+| **Implementação com publicação** | autorizado no escopo | autorizado no escopo | autorizado no escopo |
+
+A modalidade **Implementação com publicação** somente se aplica quando o pedido
+da atividade autorizar explicitamente publicação ou push. Nesse caso, commit e
+push normal podem ocorrer em sequência, sem uma segunda autorização entre eles,
+desde que todas as verificações deste procedimento sejam bem-sucedidas. Uma
+autorização apenas para commit permanece na segunda modalidade e não permite
+push. Expressões ambíguas como “vamos em frente”, “continue” ou equivalentes não
+selecionam a modalidade com publicação.
+
+Qualquer falha de escopo, validação, staging, divergência, autenticação,
+publicação ou CI interrompe o fluxo e deve ser reportada. A autorização original
+não permite corrigir automaticamente a falha, criar commits adicionais nem
+ampliar o escopo.
 
 ## Preparação
 
@@ -22,6 +43,10 @@ Antes de preparar um commit:
    git rev-parse HEAD
    git status --short --branch
    ```
+
+   Quando a atividade definir branch ou `HEAD` esperados, exija correspondência
+   exata antes de modificar, preparar ou publicar qualquer arquivo. Divergência
+   interrompe a parte afetada e deve ser reportada.
 
 2. Identifique separadamente arquivos modificados, staged e novos:
 
@@ -36,9 +61,11 @@ Antes de preparar um commit:
 4. Verifique se há credenciais, secrets, URLs com credenciais, chaves privadas,
    dados pessoais ou hashes ligados a senhas reais. Não imprima valores
    sensíveis durante a inspeção.
-5. Exclua do conjunto pretendido artefatos gerados ou temporários, como `dist`,
+5. Execute as validações e os testes previstos pela atividade e confirme
+   `git diff --check` antes do staging.
+6. Exclua do conjunto pretendido artefatos gerados ou temporários, como `dist`,
    `coverage`, logs, caches e arquivos de editor.
-6. Para arquivos novos, valide também o conteúdo que ainda não aparece no
+7. Para arquivos novos, valide também o conteúdo que ainda não aparece no
    `git diff` convencional.
 
 Se a árvore contiver alterações inesperadas, não as descarte. Isole os arquivos
@@ -47,7 +74,8 @@ relate a divergência.
 
 ## Commit
 
-Execute esta seção somente após autorização específica para commit.
+Execute esta seção somente nas modalidades **Implementação com commit** ou
+**Implementação com publicação**.
 
 1. Confirme os caminhos autorizados e adicione-os explicitamente. Evite
    `git add .`, `git add -A` ou outro staging amplo quando houver qualquer risco
@@ -57,7 +85,7 @@ Execute esta seção somente após autorização específica para commit.
    git add <caminho-autorizado> [<outro-caminho-autorizado>...]
    ```
 
-2. Revise integralmente o staging:
+2. Revise integralmente o staging e confirme a ausência de segredos:
 
    ```bash
    git diff --cached --stat
@@ -93,8 +121,10 @@ o caminho. Não remova alterações do usuário para ajustar o staging.
 
 ## Publicação
 
-Execute esta seção somente após autorização específica para publicar um commit
-identificado.
+Execute esta seção somente na modalidade **Implementação com publicação**, depois
+de criar e identificar o commit autorizado. Se todas as condições abaixo forem
+satisfeitas, prossiga do commit para o push sem solicitar autorização
+intermediária.
 
 1. Confirme a branch, o commit autorizado e a árvore limpa:
 
@@ -121,7 +151,9 @@ identificado.
    O hash autorizado precisa estar no conjunto a publicar, e nenhum commit não
    autorizado pode acompanhá-lo. Se a branch remota tiver avançado, se houver
    divergência ou se o conjunto diferir do autorizado, interrompa sem executar
-   merge, rebase ou push.
+   merge, rebase, pull ou push. Para um único commit novo criado sobre `main`
+   previamente sincronizada, a divergência obrigatória antes do push é exatamente
+   `0 behind / 1 ahead`.
 
 4. Publique sem force push e somente para a branch autorizada:
 
@@ -144,8 +176,8 @@ identificado.
    tree deve permanecer limpo. Se qualquer evidência divergir, não inicie a
    verificação de CI como se a publicação estivesse confirmada.
 
-Nunca use `--force` ou `--force-with-lease` como recuperação automática de uma
-publicação rejeitada.
+Nunca use `--force` ou `--force-with-lease`. Push rejeitado ou divergência
+inesperada deve ser reportado sem merge, rebase, pull ou novo commit automático.
 
 ## GitHub Actions
 

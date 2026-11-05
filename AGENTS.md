@@ -72,8 +72,8 @@ bloqueie atividades independentes sem justificativa.
   relevantes, preservando a rastreabilidade até as decisões aplicáveis.
 - Não declare um incremento concluído e publicado antes das confirmações
   correspondentes. Uma implementação apenas local deve ser descrita como tal.
-- Alteração, commit e push continuam exigindo os escopos e as autorizações
-  independentes definidos para cada atividade.
+- Alteração, commit e publicação seguem a modalidade de autorização explícita da
+  atividade, conforme a seção de autonomia operacional abaixo.
 - Faça atualizações documentais proporcionais ao incremento, evitando duplicação,
   antecipação de fases e documentação sem necessidade concreta.
 
@@ -127,6 +127,23 @@ sem nova aprovação humana de escopo:
 - remover somente os recursos temporários criados e identificados pela própria
   atividade.
 
+Cada atividade adota uma das seguintes modalidades de autorização:
+
+- **Implementação:** autoriza somente as alterações e validações previstas. Não
+  autoriza commit nem push.
+- **Implementação com commit:** autoriza as alterações, validações e o commit
+  local expressamente delimitado. Não autoriza push.
+- **Implementação com publicação:** autoriza as alterações, validações, o commit
+  local e o push normal sequencial expressamente delimitados. Depois de todas as
+  pré-condições do procedimento de Git serem satisfeitas, não é necessária nova
+  autorização entre commit e push.
+
+A modalidade com publicação somente existe quando o pedido autoriza
+explicitamente publicar ou realizar push na própria atividade. Expressões
+ambíguas como “vamos em frente”, “continue” ou equivalentes não autorizam push.
+Autorização para commit sem autorização explícita de publicação permanece restrita
+à modalidade com commit.
+
 Essa autonomia não elimina confirmações técnicas exigidas pelo sandbox. Antes de
 prosseguir, solicite aprovação humana quando for necessário modificar decisões
 arquiteturais aprovadas, regras de negócio, contratos normativos ou políticas de
@@ -134,11 +151,12 @@ segurança; ampliar materialmente o escopo; introduzir dependência de produçã
 aprovada; ou alterar privilégios permanentes fora do escopo expressamente
 autorizado.
 
-Exigem autorização específica: commit; push; reescrita de histórico Git; acesso
-ou alteração de bancos persistentes; exclusão de recursos preexistentes ou cuja
-propriedade não esteja comprovada; operações administrativas reais; e uso de
-recursos externos ou credenciais não autorizados. Commit e push permanecem
-autorizações independentes.
+Exigem autorização específica: commit ou publicação conforme as modalidades
+acima; reescrita de histórico Git; acesso ou alteração de bancos persistentes;
+exclusão de recursos preexistentes ou cuja propriedade não esteja comprovada;
+operações administrativas reais; e uso de recursos externos ou credenciais não
+autorizados. A modalidade com publicação não autoriza force push, rebase, merge,
+pull, reescrita de histórico nem correções ou commits adicionais fora do escopo.
 
 Preserve o sandbox e os controles de execução. Não crie regras `allow` amplas,
 não armazene credenciais em regras do Codex, não execute limpeza Docker global,
@@ -260,9 +278,13 @@ passar.
   autorização inequívoca.
 - Não inclua arquivos temporários, gerados, relatórios de cobertura, builds ou
   secrets.
-- Não execute `git commit` sem autorização específica.
-- Não execute `git push` sem autorização específica de publicação.
-- Autorização para commit não implica autorização para push.
+- Não execute `git commit` fora das modalidades **Implementação com commit** ou
+  **Implementação com publicação**.
+- Não execute `git push` sem a modalidade **Implementação com publicação**
+  explicitamente autorizada para a atividade.
+- Autorização apenas para commit não implica autorização para push; autorização
+  explícita de publicação inclui commit e push normal sequencial, condicionados ao
+  [Procedimento de Git e publicação](docs/operacao/git-e-publicacao.md).
 
 Sempre que a atividade envolver preparação de commit, publicação ou verificação
 de CI, consulte e siga o
