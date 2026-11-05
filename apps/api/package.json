@@ -22,7 +22,7 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
-    "test:e2e": "vitest run --config ./vitest.config.e2e.ts --exclude test/prisma-transaction.e2e-spec.ts --exclude test/f1-a-1-postgresql.e2e-spec.ts --exclude test/f1-a-2-bootstrap-provider.e2e-spec.ts --exclude test/f1-a-2-bootstrap-cli.e2e-spec.ts --exclude test/f1-b-2-1-auth-session.e2e-spec.ts --exclude test/f1-b-2-3-session-persistence.e2e-spec.ts --exclude test/f1-b-3-3-2-failed-login.e2e-spec.ts --exclude test/f1-b-3-3-3-authentication.e2e-spec.ts --exclude test/f1-b-4-5-1-password-recovery-foundation.e2e-spec.ts --exclude test/f1-b-4-5-2-1-physical-advisory-lock.e2e-spec.ts --exclude test/f1-b-4-5-2-2-start-password-reset.e2e-spec.ts --exclude test/f1-b-4-5-2-3-complete-password-reset.e2e-spec.ts",
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts --exclude test/prisma-transaction.e2e-spec.ts --exclude test/f1-a-1-postgresql.e2e-spec.ts --exclude test/f1-a-2-bootstrap-provider.e2e-spec.ts --exclude test/f1-a-2-bootstrap-cli.e2e-spec.ts --exclude test/f1-b-2-1-auth-session.e2e-spec.ts --exclude test/f1-b-2-3-session-persistence.e2e-spec.ts --exclude test/f1-b-3-3-2-failed-login.e2e-spec.ts --exclude test/f1-b-3-3-3-authentication.e2e-spec.ts --exclude test/f1-b-4-5-1-password-recovery-foundation.e2e-spec.ts --exclude test/f1-b-4-5-2-1-physical-advisory-lock.e2e-spec.ts --exclude test/f1-b-4-5-2-2-start-password-reset.e2e-spec.ts --exclude test/f1-b-4-5-2-3-complete-password-reset.e2e-spec.ts --exclude test/f1-b-4-5-2-4-reconcile-password-reset.e2e-spec.ts",
     "test:prisma": "vitest run --config ./vitest.config.e2e.ts test/prisma.e2e-spec.ts",
     "test:transaction": "vitest run --config ./vitest.config.e2e.ts test/prisma-transaction.e2e-spec.ts",
     "test:f1a1": "vitest run --config ./vitest.config.e2e.ts test/f1-a-1-postgresql.e2e-spec.ts",
@@ -35,7 +35,8 @@
     "test:f1b:password-recovery-foundation": "vitest run --config ./vitest.config.e2e.ts test/f1-b-4-5-1-password-recovery-foundation.e2e-spec.ts",
     "test:f1b:password-recovery-physical-lock": "vitest run --config ./vitest.config.e2e.ts test/f1-b-4-5-2-1-physical-advisory-lock.e2e-spec.ts",
     "test:f1b:password-reset-start": "vitest run --config ./vitest.config.e2e.ts test/f1-b-4-5-2-2-start-password-reset.e2e-spec.ts",
-    "test:f1b:password-reset-complete": "vitest run --config ./vitest.config.e2e.ts test/f1-b-4-5-2-3-complete-password-reset.e2e-spec.ts"
+    "test:f1b:password-reset-complete": "vitest run --config ./vitest.config.e2e.ts test/f1-b-4-5-2-3-complete-password-reset.e2e-spec.ts",
+    "test:f1b:password-reset-reconcile": "vitest run --config ./vitest.config.e2e.ts test/f1-b-4-5-2-4-reconcile-password-reset.e2e-spec.ts"
   },
   "dependencies": {
     "@nestjs/common": "12.3.2",
