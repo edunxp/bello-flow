@@ -191,9 +191,9 @@ transação única e testes PostgreSQL reais permanecem obrigatórios.
 
 #### Operações protegidas da F1-B.4.5.6
 
-O contrato está aprovado e as cinco operações possuem implementação validada
-somente no working tree local, ainda sem commit ou publicação. Elas são a única
-fronteira de
+O contrato está aprovado e as cinco operações foram publicadas no commit
+`601c92ab8f3922b5f0e2a03c432de5fc74c6258d`, com CI `42117321177` aprovado. Elas
+são a única fronteira de
 mutação do processador: runtime não recebe `SELECT` amplo em `account` nem DML
 direto em request, tentativa, token ou auditoria.
 
@@ -376,6 +376,30 @@ Timeout, perda de conexão ou commit indeterminado nunca são tratados como roll
 por tipo de exceção. Lease e hash permanecem somente nos campos operacionais
 previstos; token bruto, link, e-mail, IP bruto, lease e erro completo do adapter
 nunca integram auditoria, e token bruto ou link nunca são persistidos.
+
+### F1-B.4.5.7 — ausência de nova persistência
+
+O contrato aprovado do provider Resend não cria migration, tabela, coluna, índice,
+estado ou função PostgreSQL e não altera as cinco operações protegidas da
+F1-B.4.5.6. O adapter permanece sem acesso ao banco. A classificação externa é
+reduzida antes da conclusão aos três resultados existentes:
+
+| Resultado do adapter | Persistência existente                                                          |
+| -------------------- | ------------------------------------------------------------------------------- |
+| `ACCEPTED`           | `SENT`, com `AUTH_PASSWORD_RECOVERY_SEND_ACCEPTED` atômico e matriz já aprovada |
+| `NOT_ACCEPTED`       | `FAILED`, token invalidado e backoff/tentativa já aprovados                     |
+| `INDETERMINATE`      | `UNKNOWN`, token preservado até expiração e nenhum reenvio automático           |
+
+O provider message ID, status HTTP, tipo ou texto de erro, `Retry-After`, payload,
+destinatário, URL, token, hash e conteúdo da mensagem não são persistidos. Status,
+tipo fechado, duração e rate limiting podem existir apenas em observabilidade
+sanitizada e não ampliam a auditoria funcional.
+
+Retenção externa declarada pela Resend não se confunde com a retenção PostgreSQL
+do Bello Flow: ela é condicionante operacional da PT-009 e não autoriza cópia
+local, outbox genérica ou retenção própria do conteúdo. Nenhuma mudança de grants,
+roles, owner, `EXECUTE`, DML runtime ou credencial PostgreSQL pertence à
+F1-B.4.5.7.
 
 #### Contrato publicado da F1-B.4.5.4
 

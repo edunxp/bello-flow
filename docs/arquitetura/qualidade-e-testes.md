@@ -57,8 +57,9 @@ tentativa, preserva verificação negativa, `401` genérico e auditoria funciona
 O contrato de recuperação está aprovado, e a fundação PostgreSQL da F1-B.4.5.1 e
 as operações da F1-B.4.5.2, a admissão/capacidade da F1-B.4.5.3 e a
 solicitação/classificação da F1-B.4.5.4 e a redefinição interna da F1-B.4.5.5
-foram publicadas. Processamento, HTTP e demais testes ponta a ponta continuam
-pendentes. A entrega completa deve cobrir:
+foram publicadas. O processamento da F1-B.4.5.6 também foi publicado; o provider
+da F1-B.4.5.7 possui contrato aprovado, mas ainda não foi implementado. HTTP e
+demais testes ponta a ponta continuam pendentes. A entrega completa deve cobrir:
 
 - unitários: DTOs exatos, normalização, Base64URL canônica, hash com separação de
   domínio, transições, leases, cooldown, quotas, três tentativas, três tokens
@@ -414,7 +415,66 @@ executadas nesse ambiente. A suíte unitária completa da API executou 663 teste
 alcançou 94,39% de statements, 91,94% de branches, 97,22% de functions e 94,64%
 de lines. Web permaneceu em 100% nas quatro métricas; o consolidado alcançou
 94,41% de statements, 92,00% de branches, 97,24% de functions e 94,64% de lines.
-Esses resultados são locais e não antecipam commit, publicação ou CI.
+Esses resultados locais foram posteriormente publicados no commit
+`601c92ab8f3922b5f0e2a03c432de5fc74c6258d` e validados pelo CI `42117321177`.
+
+### Critérios específicos da F1-B.4.5.7
+
+A implementação futura do adapter Resend usa testes unitários e contratuais com
+fake HTTP exclusivamente local. CI não recebe credencial real, não acessa a
+Resend e não envia mensagem. A validação operacional posterior da conta, domínio
+e mensagem real é evidência separada e não integra o gate automatizado.
+
+| Área                   | Evidência automatizada obrigatória                                                                                                                                                                                                           |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| configuração           | `disabled` por ausência, três modos válidos, rejeição de modo desconhecido, `controlled` somente em teste, `resend` proibido em teste, requisitos fail-fast de chave, remetente e origem HTTPS, endpoint fixo e nenhuma exposição de segredo |
+| autenticação e request | um `POST` para `/emails`, Bearer correto, JSON UTF-8, remetente, destinatário, assunto, partes texto/HTML e ausência de anexos, tags, metadata, tracking ou campo não aprovado                                                               |
+| aceite                 | somente HTTP `200`, corpo integral, JSON válido e `id` string não vazio produz `ACCEPTED`; identificador não é persistido nem registrado                                                                                                     |
+| falha determinada      | cada combinação HTTP + `name` da whitelist D3, com `name`, `message` e `statusCode` válidos e coerentes, produz `NOT_ACCEPTED`                                                                                                               |
+| indeterminação         | combinação externa à whitelist, `409`, `5xx`, status inesperado, divergência de status, corpo ausente, parcial ou inválido, DNS, TLS, conexão, timeout, cancelamento e perda de resposta produzem `INDETERMINATE`                            |
+| efeito único           | exatamente uma requisição por `SEND_AUTHORIZED`, redirects rejeitados, nenhum retry, sleep ou segunda chamada por `Retry-After`, timeout ou abort                                                                                            |
+| link e mensagem        | texto contém URL exata, HTML usa escaping seguro e `href` equivalente após decodificação, assunto e texto mínimos, validade de 30 minutos e nenhum dado pessoal desnecessário                                                                |
+| observabilidade        | somente provider, resultado, duração, status, tipo fechado, rate limiting e código seguro; chave, destinatário, token, hash, URL, conteúdo, payload, resposta, provider ID e mensagem externa integral ausentes                              |
+| integração de módulo   | modo `resend` seleciona somente o adapter Resend atrás do port existente; `disabled` não inicia processamento e `controlled` preserva o comportamento de teste                                                                               |
+| regressão              | todas as suites da F1-B.4.5.6, cinco operações PostgreSQL, lifecycle, concorrência, reconciliação, auditoria, autenticação e sessões permanecem aprovadas                                                                                    |
+
+A whitelist automatizada é exatamente:
+
+```text
+400 validation_error
+400 invalid_idempotency_key
+401 missing_api_key
+401 validation_error
+403 restricted_api_key
+403 suspended_api_key
+404 not_found
+405 method_not_allowed
+422 invalid_attachment
+422 missing_required_field
+429 daily_quota_exceeded
+429 monthly_quota_exceeded
+429 rate_limit_exceeded
+```
+
+Teste parametrizado deve falhar se uma combinação for acrescentada ou removida
+sem mudança normativa. O timeout total inicial de 10 segundos cobre conexão, TLS,
+envio, headers e corpo e usa relógio controlado, sem sleep real. O fake comprova
+contagem de chamadas e comportamento de resposta parcial ou tardia.
+
+Casos `403 + invalid_permission`, `403 + validation_error`,
+`422 + invalid_parameter` e `422 + missing_required_parameter` exercitam
+explicitamente o resultado `INDETERMINATE`, pois não pertencem à whitelist.
+
+A cobertura permanece em no mínimo 90% para lines, statements, functions e
+branches em web, API e consolidado, sem exclusão artificial. `Quality`, `API
+integration` e `Required` permanecem obrigatórios.
+
+Antes da ativação, procedimento manual autorizado e sanitizado deve comprovar
+conta e MFA, plano e limites, subdomínio e DNS, DKIM/SPF e avaliação de DMARC,
+remetente, chave mínima e segregada, TLS, retenção e jurisdição avaliadas,
+`open_tracking=false`, `click_tracking=false`, ausência de pixel ou reescrita e
+preservação da URL. A evidência registra somente resultados, nunca destinatário,
+token, link, segredo, payload ou provider message ID.
 
 ## Integração com PostgreSQL real
 

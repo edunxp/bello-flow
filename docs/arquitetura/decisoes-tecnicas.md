@@ -211,9 +211,10 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 
 ### Complemento aprovado — F1-B.4.5 Recuperação de Senha
 
-- **Estado:** Aprovado; F1-B.4.5.1–F1-B.4.5.5 implementadas e publicadas nos
-  respectivos recortes; processamento, provider, HTTP, frontend e demais
-  incrementos permanecem pendentes
+- **Estado:** Aprovado; F1-B.4.5.1–F1-B.4.5.6 implementadas e publicadas nos
+  respectivos recortes; F1-B.4.5.7 aprovada normativamente e ainda não
+  implementada; provider validado, HTTP, frontend e demais incrementos permanecem
+  pendentes
 - **Data de aprovação:** 2026-11-04
 - **Escopo:** formaliza exclusivamente a recuperação e a redefinição de senha da
   F1-B.4.5. Não altera os quatro endpoints publicados na F1-B.4.4, não implementa
@@ -729,15 +730,16 @@ matriz própria, inclusive refunds operacionais; esta decisão não altera seu
 contrato.
 
 A sequência F1-B.4.5.6–F1-B.4.5.11 permanecia somente proposta de planejamento
-quando este recorte foi publicado. A F1-B.4.5.6 foi posteriormente aprovada no
-contrato abaixo; F1-B.4.5.7–F1-B.4.5.11 continuam propostas não aprovadas. PT-009
-e terminalização de intenções continuam necessárias para a disponibilidade
+quando este recorte foi publicado. A F1-B.4.5.6 e a F1-B.4.5.7 foram
+posteriormente aprovadas nos contratos abaixo; F1-B.4.5.8–F1-B.4.5.11 continuam
+propostas não aprovadas. PT-009, validação operacional do provider e
+terminalização de intenções continuam necessárias para a disponibilidade
 produtiva completa.
 
 ### Contrato aprovado — F1-B.4.5.6 Processador de Entrega com Adapter Controlado
 
-- **Estado:** aprovado normativamente; implementação, migration e testes validados
-  somente no working tree local, ainda sem commit ou publicação.
+- **Estado:** aprovado, implementado e publicado no commit
+  `601c92ab8f3922b5f0e2a03c432de5fc74c6258d`, com CI `42117321177` aprovado.
 - **Data de aprovação:** 2026-11-05.
 - **Objetivo:** processar internamente solicitações persistidas de recuperação,
   gerar o token just-in-time, preparar o link e exercitar a entrega por adapter
@@ -828,6 +830,173 @@ lease e erro integral não são auditados.
 - **Decisões funcionais:** DEC-010, DEC-020.
 - **Regras:** RN-070, RN-126, RN-128.
 - **Relacionadas:** AT-003, AT-009, PT-003, PT-007, PT-008 e PT-009.
+
+### Contrato aprovado — F1-B.4.5.7 Provider Produtivo e Configuração Operacional
+
+- **Estado:** aprovado normativamente; implementação não iniciada, provider não
+  validado operacionalmente e recuperação de senha não disponível em produção.
+- **Data de aprovação:** 2026-11-05.
+- **Objetivo:** integrar posteriormente um provider real de e-mail transacional
+  atrás do port da F1-B.4.5.6, com configuração, classificação conservadora de
+  respostas, mensagem mínima, observabilidade e testes, sem alterar a fronteira
+  PostgreSQL aprovada.
+- **Incluído na implementação futura:** adapter Resend, configuração e validação
+  fail-fast, wiring NestJS, template local mínimo, contrato HTTP, observabilidade
+  mínima, testes unitários e contratuais e documentação aplicável.
+- **Excluído:** migrations, tabelas ou estados novos; alteração das cinco funções
+  protegidas ou do port; provider adicional ou fallback; SDK obrigatório;
+  idempotency key; webhooks; tracking; frontend; endpoints públicos; fila externa;
+  outbox genérica; retenção própria; ativação produtiva; F1-B.4.5.8–F1-B.4.5.11.
+
+#### Decisões D1–D7
+
+| ID  | Decisão aprovada                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Resend é o único provider de referência, por API HTTP sobre HTTPS no endpoint fixo `https://api.resend.com/emails`, autenticação Bearer e cliente HTTP nativo do Node. Não há SDK obrigatório, fallback, segundo provider, persistência adicional nem armazenamento do provider message ID.                                                                                                                                                                                                                                     |
+| D2  | `BELLO_PASSWORD_RECOVERY_DELIVERY_MODE` aceita `disabled`, `controlled` ou `resend`; ausência equivale a `disabled`. `controlled` existe somente em `NODE_ENV=test`; `resend` é proibido em teste e exige `BELLO_PASSWORD_RECOVERY_RESEND_API_KEY`, `BELLO_PASSWORD_RECOVERY_FROM_ADDRESS` e `BELLO_PUBLIC_ORIGIN` HTTPS válidos. Configuração inválida impede a inicialização, segredos são separados por ambiente e nunca expostos, o endpoint não é configurável e `disabled` permanece kill switch sem fallback silencioso. |
+| D3  | O adapter faz exatamente uma requisição por `SEND_AUTHORIZED`, com timeout total inicial de 10 segundos, redirects rejeitados e nenhum retry automático. Somente a resposta de aceite ou as combinações fechadas de erro abaixo produzem resultado determinado; qualquer incerteza produz `INDETERMINATE`. `Retry-After` serve apenas à observabilidade sanitizada. `UNKNOWN` não é reenviado e não há garantia exactly-once.                                                                                                   |
+| D4  | O remetente usa nome visível `Bello Flow` e endereço configurado no subdomínio transacional verificado. A mensagem local em português tem assunto `Redefina sua senha no Bello Flow`, partes `text/plain` e `text/html` UTF-8, link canônico e validade de 30 minutos, sem dados pessoais desnecessários, anexos, imagens externas, templates remotos, tags ou metadados. Open e click tracking ficam desativados no domínio e são comprovados operacionalmente.                                                                |
+| D5  | Testes unitários e contratuais usam fake HTTP local, sem credencial ou rede externa no CI, e cobrem configuração, payload, encoding, autenticação, matriz HTTP, timeout, cancelamento, perda de resposta, redirect, chamada única, ausência de retry e de segredos, regressões da F1-B.4.5.6 e cobertura mínima de 90% nas quatro métricas. Envio real pertence à validação operacional separada.                                                                                                                               |
+| D6  | Observabilidade reutiliza mecanismos existentes, sem nova plataforma. Pode registrar provider fixo, resultado interno, duração, status HTTP, tipo fechado de erro, rate limiting e código não sensível de configuração; proíbe chave, destinatário, token ou hash, URL, conteúdo, payload, resposta integral, provider message ID ou mensagem externa não sanitizada. PT-014 permanece aberta.                                                                                                                                  |
+| D7  | O port permanece `deliver({recipientEmail, recoveryUrl, expiresAt, signal})`, com `ACCEPTED`, `NOT_ACCEPTED` e `INDETERMINATE`. Não recebe idempotency key, provider message ID, campo ou resultado adicional; o adapter Resend fica atrás dessa fronteira.                                                                                                                                                                                                                                                                     |
+
+#### D1 — tratamento de dados e ativação condicionada
+
+A documentação oficial consultada da Resend declara armazenamento de conteúdo de
+mensagens, logs de entrega, payloads de webhook e registros de conta nos Estados
+Unidos. Free, Pro e Scale declaram retenção de mensagens e logs por 30 dias;
+backups, por 7 dias; Enterprise admite retenção flexível. A região de envio não
+define a região de armazenamento. A opção de não armazenar conteúdo depende de
+elegibilidade e contratação e não pode ser presumida disponível. Essas
+informações devem ser reconfirmadas na contratação:
+
+- [GDPR, armazenamento e retenção](https://resend.com/security/gdpr/);
+- [DPA](https://resend.com/legal/dpa);
+- [subprocessadores](https://resend.com/legal/subprocessors); e
+- [não armazenamento de conteúdo](https://resend.com/docs/knowledge-base/how-do-i-ensure-sensitive-data-isnt-stored-on-resend).
+
+O provider recebe e pode reter o link completo de recuperação. A validade de 30
+minutos do token não equivale ao prazo de retenção externa nem representa sua
+aceitação ou mitigação. DPA, subprocessadores, jurisdição, retenção, backups e
+adequação jurídica aplicável permanecem condicionantes operacionais da PT-009.
+
+Antes de ativar `resend`, evidência sanitizada deve comprovar:
+
+1. titularidade e administração da conta, MFA, plano, custos, quotas e limites;
+2. subdomínio transacional exclusivo, DNS, DKIM, SPF e avaliação de DMARC;
+3. remetente autorizado e API key distinta por ambiente, com `sending access`
+   restrito ao domínio, secret manager, rotação e revogação;
+4. conectividade e TLS, DPA, retenção, jurisdição e subprocessadores aceitos pela
+   autoridade operacional e jurídica aplicável;
+5. `open_tracking=false` e `click_tracking=false` no subdomínio; e
+6. mensagem real controlada com remetente, conteúdo e URL preservados, sem pixel
+   ou reescrita de link e sem segredo nas evidências.
+
+Essas verificações não integram o CI e não estão comprovadas pela aprovação
+normativa ou por uma futura implementação local. PT-009 permanece aberta e sua
+reclassificação ou resolução exige as evidências e aprovação explícita.
+
+#### D2 — configuração e segredos
+
+```text
+BELLO_PASSWORD_RECOVERY_DELIVERY_MODE=disabled|controlled|resend
+BELLO_PASSWORD_RECOVERY_RESEND_API_KEY=<segredo>
+BELLO_PASSWORD_RECOVERY_FROM_ADDRESS=<endereço de domínio verificado>
+```
+
+- chave e endereço são obrigatórios apenas no modo `resend`; a chave deve ser não
+  vazia e não conter whitespace ou caracteres de controle, e o endereço deve ser
+  sintaticamente válido;
+- validação local da sintaxe não comprova chave, conta, domínio ou remetente reais;
+- variáveis de provider presentes em `disabled` não ativam envio, e não existe
+  fallback entre modos;
+- mensagens de validação identificam somente o campo ou código seguro, nunca o
+  valor, presença parcial, prefixo ou tamanho do segredo; e
+- o processo HTTP normal recebe somente a credencial de envio do próprio ambiente,
+  nunca credencial administrativa do provider.
+
+#### D3 — contrato HTTP e matriz fechada
+
+`ACCEPTED` exige resposta integral sem timeout ou cancelamento, HTTP `200`, JSON
+válido e campo `id` string não vazio. O identificador comprova somente aceite
+síncrono pela Resend e é descartado, sem persistência, log ou auditoria. Qualquer
+outro `2xx` ou `200` incompleto, inválido ou sem `id` é `INDETERMINATE`.
+
+Um erro somente é determinado quando a resposta é recebida integralmente, o JSON
+possui `name`, `message` e `statusCode`, `statusCode` coincide com o HTTP real, a
+combinação pertence à whitelist e não houve timeout, cancelamento, truncamento ou
+erro de leitura. A classificação não depende do texto variável de `message`, que
+nunca é registrado integralmente.
+
+| HTTP | `name` documentado        | Resultado interno | Justificativa normativa                                                                                    |
+| ---: | ------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------- |
+|  400 | `validation_error`        | `NOT_ACCEPTED`    | validação rejeitou a requisição                                                                            |
+|  400 | `invalid_idempotency_key` | `NOT_ACCEPTED`    | header inválido rejeitou a requisição; sua presença também indica desvio, pois o adapter não envia a chave |
+|  401 | `missing_api_key`         | `NOT_ACCEPTED`    | autenticação ausente                                                                                       |
+|  401 | `validation_error`        | `NOT_ACCEPTED`    | chave do endpoint de envio inexistente, removida ou inativa                                                |
+|  403 | `restricted_api_key`      | `NOT_ACCEPTED`    | chave inativa ou restrita                                                                                  |
+|  403 | `suspended_api_key`       | `NOT_ACCEPTED`    | chave suspensa                                                                                             |
+|  404 | `not_found`               | `NOT_ACCEPTED`    | endpoint inexistente                                                                                       |
+|  405 | `method_not_allowed`      | `NOT_ACCEPTED`    | método recusado                                                                                            |
+|  422 | `invalid_attachment`      | `NOT_ACCEPTED`    | payload rejeitado; também indica desvio, pois anexos estão excluídos                                       |
+|  422 | `missing_required_field`  | `NOT_ACCEPTED`    | campo obrigatório ausente                                                                                  |
+|  429 | `daily_quota_exceeded`    | `NOT_ACCEPTED`    | quota diária recusou a tentativa                                                                           |
+|  429 | `monthly_quota_exceeded`  | `NOT_ACCEPTED`    | quota mensal recusou a tentativa                                                                           |
+|  429 | `rate_limit_exceeded`     | `NOT_ACCEPTED`    | rate limiter recusou a tentativa                                                                           |
+
+Fonte editorial da whitelist: [catálogo oficial de erros da
+Resend](https://resend.com/docs/api-reference/errors). Combinações fora da tabela,
+inclusive `409`, qualquer `5xx`, status inesperado, estrutura desconhecida,
+divergência entre HTTP e `statusCode`, DNS, TLS, conexão interrompida, resposta
+parcial, JSON inválido, timeout, cancelamento e perda de resposta são
+`INDETERMINATE`.
+
+Embora constem no catálogo global da Resend, `403 + invalid_permission`,
+`403 + validation_error`, `422 + invalid_parameter` e
+`422 + missing_required_parameter` não possuem evidência suficiente de ausência
+de aceite especificamente em `POST /emails`; portanto também são
+`INDETERMINATE`.
+
+O timeout de 10 segundos cobre conexão, TLS, envio, headers e leitura integral do
+corpo. Sua adequação à conta e à rede reais deve ser validada operacionalmente.
+Abortar localmente não prova cancelamento remoto; redirects falham fechados como
+indeterminação. O adapter não dorme nem repete diante de `Retry-After`.
+
+#### D4 — remetente, mensagem, link e tracking
+
+O texto mínimo informa a solicitação de redefinição, apresenta o link, informa a
+validade de 30 minutos e orienta a ignorar a mensagem quando não solicitada. Não
+inclui nome, workspace, IP, identificador interno ou outro dado pessoal
+desnecessário. JSON e MIME usam UTF-8; a parte HTML aplica escaping de atributo
+sem recodificar a URL, e o `href`, depois da decodificação HTML, deve ser idêntico
+à entrada do port. A parte texto contém a URL exata.
+
+O link permanece:
+
+```text
+{BELLO_PUBLIC_ORIGIN}/reset-password#token={encodeURIComponent(base64url_token)}
+```
+
+Não se admitem encurtadores, redirects ou reescrita. Token e link permanecem fora
+de logs, auditoria, métricas e metadata. Tracking é configuração operacional do
+subdomínio, não propriedade omitida no payload de envio: o runtime não o
+administra e sua chave não recebe permissão administrativa. Antes da ativação, a
+mensagem real deve comprovar ausência de pixel, redirect e reescrita. Referências:
+[domínios verificados](https://resend.com/docs/dashboard/domains/introduction) e
+[configuração de domínio](https://resend.com/docs/api-reference/domains/update-domain).
+
+#### Limites de conclusão e publicação
+
+Contrato aprovado não equivale a implementação. Implementação local validada não
+equivale a commit ou publicação; publicação não equivale a provider validado; e
+provider validado não ativa automaticamente a recuperação. Ativação produtiva
+exige autorização posterior específica, PT-009 reavaliada e os demais incrementos
+necessários. Nenhuma disponibilidade produtiva é declarada por este contrato.
+
+- **Requisitos:** BEL-032, BEL-038.
+- **Decisões funcionais:** DEC-010, DEC-020.
+- **Regras:** RN-070, RN-126, RN-128.
+- **Relacionadas:** AT-003, AT-009, AT-010, PT-007, PT-008, PT-009 e PT-014.
 
 ## AT-002 — Autorização centralizada
 
@@ -1099,8 +1268,9 @@ lease e erro integral não são auditados.
 - **Regras:** RN-069–RN-076, RN-120–RN-128.
 - **Relacionadas:** AT-001, AT-003, AT-007, AT-010.
 - **Evolução:** a F1-B.4.5 aprovou geração just-in-time sem persistir token ou
-  link recuperável. Implementação, evidência PostgreSQL e provider produtivo
-  permanecem pendentes; PT-009 continua aberta.
+  link recuperável. F1-B.4.5.6 foi publicada; F1-B.4.5.7 aprova Resend e seu
+  contrato técnico sem declarar implementação ou validação operacional. PT-009
+  continua aberta.
 
 ## AT-010 — Observabilidade, testes e prontidão
 
@@ -1139,6 +1309,8 @@ lease e erro integral não são auditados.
 
 | Data       | Alteração                                                                                                                                                                                                                                                                                                                                     |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-05 | Contrato D1–D7 da F1-B.4.5.7 aprovado para Resend por API HTTPS, configuração fail-fast, matriz conservadora, mensagem e tracking, testes, observabilidade e port estável; implementação não iniciada, ativação condicionada e PT-009 preservada.                                                                                             |
+| 2026-11-05 | F1-B.4.5.6 implementada e publicada pelo commit `601c92ab8f3922b5f0e2a03c432de5fc74c6258d`, com CI `42117321177` aprovado nos jobs `Quality`, `API integration` e `Required`, sem provider produtivo ou encerramento de PT-009.                                                                                                               |
 | 2026-11-05 | F1-B.4.5.5 implementada e publicada pelo commit `9ac023961b769b9e52c53d6799501df300c4ce3e`, com CI `42083803500` aprovado; caso de uso NestJS, adapter das três operações SQL, D1, reconciliação e testes PostgreSQL reais validados, sem iniciar F1-B.4.5.6 nem encerrar PT-008 ou PT-009.                                                   |
 | 2026-11-05 | Publicação da F1-B.4.5.4 consolidada pelo commit `a57f718bf4efb74f2daa76c4b5127c9241d939be` e CI `42069921440`; contrato interno da F1-B.4.5.5 formalizado sobre as operações SQL publicadas e decisão F1-B.4.5.5/D1 consolidada para commit/refund da reserva de reset.                                                                      |
 | 2026-11-05 | D1–D3 da F1-B.4.5.4 consolidadas: cooldown desde `received_at` do request que alcançou `PENDING`, consumo da reserva em `UNKNOWN` persistente sem sucesso funcional ou repetição, e assinaturas SQL protegidas aprovadas para o planejamento; implementação permanece não iniciada.                                                           |

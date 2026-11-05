@@ -11,15 +11,15 @@ fonte normativa que aprovou cada resolução.
 
 ## Pendências prioritárias antes da implementação
 
-| ID técnico | Pendência                                                                                                                                                                                                   | AT relacionada         | Resultado esperado                                                                          |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------- |
-| PT-001     | versões específicas e compatibilidade de Node.js, Angular, NestJS, Prisma e PostgreSQL                                                                                                                      | todas                  | matriz de versões suportadas e política de atualização                                      |
-| PT-002     | representação física das posições esparsas e critério de rebalanceamento                                                                                                                                    | AT-004                 | prova de concorrência, precisão, crescimento e ordenação estável                            |
-| PT-003     | bloqueios, ordem de aquisição, isolamento e repetição por operação; as operações F1-B.4.5.2 foram publicadas e provaram seu recorte, mas a pendência permanece para outras mutações                         | AT-003, AT-004         | catálogo por mutação crítica com comportamento de conflito e evidência real por operação    |
-| PT-004     | modelo físico, restrições e índices                                                                                                                                                                         | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho                                  |
-| PT-006     | protocolo de revisão, mensagens, reconexão e verificações periódicas                                                                                                                                        | AT-005                 | contrato de sincronização e recuperação testável                                            |
-| PT-007     | tratamento seguro de links/tokens nas solicitações persistidas de e-mail; a F1-B.4.5.6 possui geração e processamento validados somente no working tree local, ainda sem commit ou publicação               | AT-009                 | consolidar evidência publicada sem confundir adapter controlado com provider produtivo      |
-| PT-008     | limites de tentativas para login e recuperação, transações e e-mail; a F1-B.4.5.6 possui processamento e limites validados somente no working tree local, mas a integração ponta a ponta permanece pendente | AT-001, AT-003, AT-009 | consolidar o recorte implementado sem alterar quotas e preservar os incrementos posteriores |
+| ID técnico | Pendência                                                                                                                                                                                     | AT relacionada         | Resultado esperado                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------- |
+| PT-001     | versões específicas e compatibilidade de Node.js, Angular, NestJS, Prisma e PostgreSQL                                                                                                        | todas                  | matriz de versões suportadas e política de atualização                                    |
+| PT-002     | representação física das posições esparsas e critério de rebalanceamento                                                                                                                      | AT-004                 | prova de concorrência, precisão, crescimento e ordenação estável                          |
+| PT-003     | bloqueios, ordem de aquisição, isolamento e repetição por operação; as operações F1-B.4.5.2 foram publicadas e provaram seu recorte, mas a pendência permanece para outras mutações           | AT-003, AT-004         | catálogo por mutação crítica com comportamento de conflito e evidência real por operação  |
+| PT-004     | modelo físico, restrições e índices                                                                                                                                                           | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho                                |
+| PT-006     | protocolo de revisão, mensagens, reconexão e verificações periódicas                                                                                                                          | AT-005                 | contrato de sincronização e recuperação testável                                          |
+| PT-007     | tratamento seguro de links/tokens nas solicitações persistidas de e-mail; geração e processamento da F1-B.4.5.6 foram publicados, mas provider e validação ponta a ponta permanecem pendentes | AT-009                 | avaliar o link no provider real sem confundir processamento publicado com disponibilidade |
+| PT-008     | limites de tentativas para login e recuperação, transações e e-mail; a F1-B.4.5.6 foi publicada, mas a integração ponta a ponta permanece pendente                                            | AT-001, AT-003, AT-009 | preservar quotas publicadas e validar os incrementos posteriores                          |
 
 O subconjunto de login da PT-008 foi aprovado em 2026-11-03 para planejamento,
 sem que a aprovação, por si, declarasse implementação. A proteção foi publicada
@@ -57,8 +57,9 @@ contratos estão em
 e [persistência](persistencia-e-auditoria.md#recuperação-de-senha-da-f1-b45), com
 o recorte F1-B.4.5.2 detalhado em
 [operações transacionais](persistencia-e-auditoria.md#operações-transacionais-da-f1-b452).
-PT-009 permanece integralmente aberta: adapter controlado valida apenas o fluxo
-técnico e não escolhe nem substitui provider SMTP/API produtivo.
+PT-009 permanece aberta: o adapter controlado valida apenas o fluxo técnico. A
+F1-B.4.5.7 seleciona normativamente a Resend como provider de referência, mas não
+comprova conta, domínio, credencial, tratamento de dados ou operação produtiva.
 
 A F1-B.4.5.3 foi publicada no commit
 `47a6ae033f42d40b56c24bad82b454af0616e2ec`, com CI `42050631222` aprovado. Ela
@@ -91,12 +92,36 @@ O contrato da F1-B.4.5.6 — Processador de Entrega com Adapter Controlado — f
 aprovado em 2026-11-05. Ele formaliza geração just-in-time, link em memória, cinco
 operações protegidas, claims e leases, três tentativas, adapter estritamente
 técnico, `UNKNOWN` sem reenvio e a matriz de testes. A implementação e as
-evidências estão validadas somente no working tree local, ainda sem commit,
-publicação ou CI remoto; por isso PT-007 e PT-008 não são reclassificadas nesta
-atividade.
+evidências foram publicadas no commit
+`601c92ab8f3922b5f0e2a03c432de5fc74c6258d`, com CI `42117321177` aprovado nos
+jobs `Quality`, `API integration` e `Required`. Essa consolidação factual não
+reclassifica PT-007 ou PT-008 sem autorização explícita.
 O modo `controlled` é restrito a `NODE_ENV=test` e não escolhe provider produtivo;
-PT-009 permanece integralmente aberta. F1-B.4.5.7–F1-B.4.5.11 continuam propostas
-não aprovadas.
+PT-009 permanece aberta.
+
+A F1-B.4.5.7 — Provider Produtivo e Configuração Operacional — foi aprovada
+normativamente em 2026-11-05, sem autorização de implementação. Resend é o único
+provider de referência por API HTTPS, com configuração fail-fast, matriz fechada
+de respostas, mensagem mínima, tracking desativado, observabilidade sanitizada e
+port preservado. F1-B.4.5.8–F1-B.4.5.11 continuam propostas não aprovadas.
+
+Essa aprovação resolve a escolha normativa de fornecedor e o desenho técnico, mas
+não resolve a PT-009. A pendência conserva as evidências operacionais de:
+
+- titularidade e administração da conta, MFA, plano, custos, quotas e rate limits;
+- subdomínio transacional, DNS, DKIM, SPF, avaliação de DMARC e remetente;
+- chave de `sending access` restrita ao domínio, segregação, secret manager,
+  rotação e revogação;
+- TLS, conectividade, DPA, subprocessadores, armazenamento nos Estados Unidos,
+  retenção declarada de 30 dias para mensagens/logs e 7 dias para backups e
+  avaliação jurídica aplicável;
+- `open_tracking=false`, `click_tracking=false` e mensagem real sem pixel ou
+  reescrita, com URL preservada e evidência sanitizada; e
+- adequação do timeout de 10 segundos na conta e rede reais.
+
+Implementação local, commit ou publicação não substituem essas provas. PT-009 só
+pode ser reclassificada ou encerrada com evidências operacionais e aprovação
+específica; nenhuma disponibilidade produtiva é declarada.
 
 A reconciliação da F1-B.4.5.2 é exclusivamente observacional e não produz nova
 terminalização `NOT_FOUND`. O protocolo autorizado para encerrar intenções
@@ -120,16 +145,16 @@ indicados; o registro de encerramento não declara implementação.
 
 ## Pendências operacionais
 
-| ID técnico | Pendência                                                 | AT relacionada        | Resultado esperado                                          |
-| ---------- | --------------------------------------------------------- | --------------------- | ----------------------------------------------------------- |
-| PT-009     | provedor SMTP ou API                                      | AT-009                | fornecedor/configuração, limites, erros e ambiente de teste |
-| PT-010     | hospedagem, terminação TLS e destino externo de backups   | AT-007                | topologia operacional e responsabilidades claras            |
-| PT-011     | política de retenção de backups                           | AT-006, AT-007        | prazo, descarte e relação com retenção da auditoria         |
-| PT-012     | mecanismo de backup-base, WAL e restauração               | AT-007                | RPO/RTO demonstrados por exercício mensal                   |
-| PT-013     | mecanismo de expurgo da auditoria                         | AT-006                | execução controlada, observável e compatível com backups    |
-| PT-014     | ferramentas e limiares de logs, métricas, erros e alertas | AT-007, AT-010        | conjunto mínimo operacional sem plataforma excessiva        |
-| PT-015     | ferramentas e desenho do pipeline de testes/CI            | AT-010                | execução reproduzível dos gates aprovados                   |
-| PT-016     | capacidade, desempenho e limites operacionais             | AT-003–AT-007, AT-009 | metas e testes baseados em carga esperada                   |
+| ID técnico | Pendência                                                 | AT relacionada        | Resultado esperado                                                                      |
+| ---------- | --------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------- |
+| PT-009     | validação operacional do provider Resend                  | AT-009                | conta, domínio, credencial, limites, tracking, dados, jurisdição e envio real aprovados |
+| PT-010     | hospedagem, terminação TLS e destino externo de backups   | AT-007                | topologia operacional e responsabilidades claras                                        |
+| PT-011     | política de retenção de backups                           | AT-006, AT-007        | prazo, descarte e relação com retenção da auditoria                                     |
+| PT-012     | mecanismo de backup-base, WAL e restauração               | AT-007                | RPO/RTO demonstrados por exercício mensal                                               |
+| PT-013     | mecanismo de expurgo da auditoria                         | AT-006                | execução controlada, observável e compatível com backups                                |
+| PT-014     | ferramentas e limiares de logs, métricas, erros e alertas | AT-007, AT-010        | conjunto mínimo operacional sem plataforma excessiva                                    |
+| PT-015     | ferramentas e desenho do pipeline de testes/CI            | AT-010                | execução reproduzível dos gates aprovados                                               |
+| PT-016     | capacidade, desempenho e limites operacionais             | AT-003–AT-007, AT-009 | metas e testes baseados em carga esperada                                               |
 
 PT-015 possui evidência executável no workflow versionado de CI, com os jobs
 `Quality`, `API integration` e `Required`, além do gate local reproduzível. A

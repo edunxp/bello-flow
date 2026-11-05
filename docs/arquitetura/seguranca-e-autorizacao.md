@@ -425,8 +425,9 @@ de 90% em lines, statements, functions e branches.
 O contrato abaixo está aprovado para implementação. A fundação PostgreSQL da
 F1-B.4.5.1, a camada transacional F1-B.4.5.2, a admissão/capacidade da
 F1-B.4.5.3 e os casos de uso internos F1-B.4.5.4–F1-B.4.5.5 foram publicados.
-O processamento da F1-B.4.5.6 possui implementação validada somente no working
-tree local, ainda sem commit ou publicação. Provider produtivo, HTTP e
+O processamento da F1-B.4.5.6 foi implementado e publicado no commit
+`601c92ab8f3922b5f0e2a03c432de5fc74c6258d`, com CI `42117321177` aprovado. A
+F1-B.4.5.7 possui contrato normativo aprovado, mas provider validado, HTTP e
 disponibilidade produtiva ainda não foram implementados.
 Ele detalha AT-001, AT-003 e AT-009, resolve normativamente a PT-007 e o recorte
 de recuperação da PT-008 e preserva a PT-009 aberta.
@@ -659,8 +660,8 @@ consumida e a classificação permanece conservadora.
 
 ### F1-B.4.5.6 — Processador de Entrega com Adapter Controlado
 
-O contrato deste incremento está aprovado e possui implementação validada somente
-no working tree local, ainda sem commit ou publicação. Ele liga
+O contrato deste incremento está aprovado, implementado e publicado no commit
+`601c92ab8f3922b5f0e2a03c432de5fc74c6258d`. Ele liga
 somente solicitações `PENDING` ao processamento interno, ao token just-in-time e
 ao adapter técnico. Não cria endpoint, frontend, provider produtivo, fila externa,
 outbox genérica, retenção ou disponibilidade de recuperação em produção.
@@ -767,8 +768,9 @@ Não se cria evento de entrega sem evidência própria.
   remoção do histórico após a captura;
 - adapter controlado pode validar tecnicamente o fluxo em testes, mas não
   representa provider real nem disponibilidade produtiva;
-- a PT-009 permanece aberta. Produção exige provider, timeout, credenciais e
-  política de erros aprovados.
+- a F1-B.4.5.7 aprova Resend e o contrato técnico do adapter produtivo, mas a
+  PT-009 permanece aberta. Produção exige implementação, credenciais e domínio
+  reais, validação operacional e autorização específica de ativação.
 
 ### Entrega e `UNKNOWN`
 
@@ -802,6 +804,79 @@ Os eventos usam somente conta conhecida, `recovery_request_id`,
 contêm e-mail, IP bruto, chave de bucket, senha, PHC, token, hash, link, corpo HTTP
 ou erro completo do provider. `SENT` significa aceitação pelo provider, não
 entrega ao destinatário; não existe evento de entrega sem evidência própria.
+
+### F1-B.4.5.7 — Provider Resend e barreiras de ativação
+
+O contrato aprovado usa exclusivamente a API HTTPS da Resend em
+`https://api.resend.com/emails`, com Bearer API key de `sending access` restrita ao
+subdomínio, cliente HTTP nativo do Node e nenhuma dependência do SDK. Não há
+fallback, segundo provider, webhook, idempotency key ou provider message ID
+persistido. O adapter permanece atrás do port da F1-B.4.5.6.
+
+#### Configuração segura
+
+`BELLO_PASSWORD_RECOVERY_DELIVERY_MODE` aceita `disabled`, `controlled` e
+`resend`. Ausência preserva `disabled`; modo desconhecido falha na inicialização;
+`controlled` só existe em `NODE_ENV=test`; e `resend` é proibido nesse ambiente.
+O modo `resend` exige `BELLO_PASSWORD_RECOVERY_RESEND_API_KEY` não vazia e sem
+whitespace ou caracteres de controle, `BELLO_PASSWORD_RECOVERY_FROM_ADDRESS`
+sintaticamente válido e `BELLO_PUBLIC_ORIGIN` HTTPS válido.
+
+O endpoint é constante e não pode ser substituído por variável. Credenciais são
+distintas por ambiente, entregues somente ao processo necessário e armazenadas
+fora do código. Erros e logs não revelam valor, prefixo, tamanho ou presença
+parcial do segredo. `disabled` é kill switch explícito mesmo quando a infraestrutura
+injeta credenciais, e nenhum modo possui fallback silencioso.
+
+#### Classificação conservadora e efeito externo
+
+`ACCEPTED` exige HTTP `200`, resposta integral, JSON válido e `id` string não
+vazio. O identificador é descartado e comprova aceite síncrono, nunca entrega.
+`NOT_ACCEPTED` exige JSON integral com `name`, `message` e `statusCode`, igualdade
+entre `statusCode` e HTTP e uma combinação da whitelist normativa da
+[F1-B.4.5.7](decisoes-tecnicas.md#contrato-aprovado--f1-b457-provider-produtivo-e-configuração-operacional).
+O texto variável de `message` não participa da classificação nem é registrado.
+
+Qualquer combinação externa à whitelist, `409`, `5xx`, resposta parcial ou
+inválida, divergência de status, DNS, TLS, interrupção de conexão, timeout,
+cancelamento ou perda de resposta é `INDETERMINATE`. O timeout total inicial é de
+10 segundos e cobre conexão, TLS, envio, headers e leitura; redirects são
+rejeitados. Há exatamente uma requisição por `SEND_AUTHORIZED`, sem retry do
+cliente, SDK ou adapter. `Retry-After` pode produzir somente observabilidade
+sanitizada. Abort local não comprova rollback remoto, e `UNKNOWN` não é reenviado.
+
+#### Mensagem, link e tracking
+
+O remetente visível é `Bello Flow`, com endereço configurado no subdomínio
+transacional verificado. A mensagem local em português usa assunto `Redefina sua
+senha no Bello Flow`, partes texto e HTML UTF-8, validade de 30 minutos, orientação
+para ignorar solicitação desconhecida e somente o link canônico já aprovado. Não
+inclui nome, workspace, IP, identificadores internos, anexos, imagens externas,
+template remoto, tags ou metadata desnecessária.
+
+Texto preserva a URL exata; HTML usa escaping de atributo e precisa resultar no
+mesmo `href` depois da decodificação. Encurtadores, redirects e reescrita são
+proibidos. O subdomínio exclusivo mantém `open_tracking=false` e
+`click_tracking=false`. Tracking é configurado e comprovado operacionalmente no
+domínio, não pelo runtime; omitir campos no payload não prova desativação, e a
+chave de envio não recebe administração de domínio.
+
+#### Dados externos e PT-009
+
+Segundo a documentação oficial consultada, conteúdo de mensagens e logs são
+armazenados nos Estados Unidos por 30 dias em Free, Pro e Scale, backups por 7
+dias, e a região de envio não muda a residência. O link completo pode ser tratado
+e retido externamente; a expiração do token em 30 minutos não equivale ao prazo de
+retenção. Não armazenamento de conteúdo depende de elegibilidade e contratação e
+não é presumido.
+
+Ativação exige comprovação sanitizada de titularidade da conta, MFA, plano,
+custos, quotas, DNS, DKIM, SPF, avaliação de DMARC, remetente, chave mínima e
+segregada, secret manager, rotação, revogação, TLS, conectividade, DPA,
+subprocessadores, jurisdição, retenção, tracking desativado e mensagem real sem
+pixel ou reescrita. Avaliação operacional e jurídica aplicável precisa aceitar ou
+mitigar o tratamento externo antes da ativação. PT-009 permanece aberta; aprovação
+normativa, implementação e publicação não declaram disponibilidade produtiva.
 
 ### Fronteira PostgreSQL da F1-B.4.5.2
 
@@ -953,9 +1028,10 @@ O comando, formato de autorização e mecanismo operacional da CLI serão defini
 - Redefinição bem-sucedida revoga sessões e produz auditoria sem o token.
 - Logs, feed e auditoria não registram o valor do link, cookie ou token.
 
-A F1-B.4.5 detalha geração just-in-time sem persistir token ou link recuperável.
-Implementação e evidência permanecem pendentes, e o provider produtivo continua
-na [PT-009](pendencias-tecnicas.md#pendências-operacionais).
+A F1-B.4.5 detalha geração just-in-time sem persistir token ou link recuperável;
+a geração e o processamento foram publicados pela F1-B.4.5.6. O contrato Resend
+da F1-B.4.5.7 ainda não está implementado ou validado operacionalmente, e a
+[PT-009](pendencias-tecnicas.md#pendências-operacionais) permanece aberta.
 
 ## Respostas e minimização
 
