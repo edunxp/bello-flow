@@ -48,9 +48,9 @@ por suposição.
 
 O contrato está aprovado. A fundação física da F1-B.4.5.1, as operações da
 F1-B.4.5.2, a admissão/capacidade da F1-B.4.5.3 e a solicitação/classificação da
-F1-B.4.5.4 foram publicadas; os demais casos de uso continuam pendentes. A
-persistência é específica do domínio de recuperação e não antecipa outbox
-genérica.
+F1-B.4.5.4 e o caso de uso de redefinição F1-B.4.5.5 foram publicados; os demais
+incrementos continuam pendentes. A persistência é específica do domínio de
+recuperação e não antecipa outbox genérica.
 
 #### Relações e estados
 
@@ -317,7 +317,12 @@ O recorte foi publicado no commit
 `a57f718bf4efb74f2daa76c4b5127c9241d939be`. Ele não cria outbox, token,
 tentativa, claim, lease, processamento ou acesso de provider.
 
-#### Contrato formalizado da F1-B.4.5.5
+#### Integração publicada da F1-B.4.5.5
+
+A integração NestJS foi publicada no commit
+`9ac023961b769b9e52c53d6799501df300c4ce3e`, com CI `42083803500` aprovado nos
+jobs `Quality`, `API integration` e `Required`. Ela não altera migrations,
+funções ou grants.
 
 O adapter NestJS da redefinição reutiliza, sem redefinir ou sobrecarregar, as três
 operações publicadas da F1-B.4.5.2:
@@ -424,6 +429,11 @@ Nos retries estreitos já publicados para a transação de start, rollback
 intermediário não finaliza a reserva. Ela permanece aberta e os mesmos IDs são
 reutilizados até o resultado conclusivo da política limitada. Somente então há
 um commit ou refund, nunca ambos.
+
+Falhas locais na preparação do start — derivação SHA-256, geração dos UUIDs ou
+montagem da entrada — são classificadas antes da chamada mutável e fazem refund
+exatamente uma vez. O tratamento de possível envio permanece em bloco separado,
+impedindo que falha indeterminada seja convertida em rollback ou repetição segura.
 
 #### Operações transacionais da F1-B.4.5.2
 

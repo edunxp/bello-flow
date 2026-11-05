@@ -31,7 +31,7 @@ alterar a precedência das fontes normativas.
 - O Codex inspeciona, implementa, valida e apresenta evidências dentro do escopo
   e da modalidade de autorização recebidos.
 
-## Etapa 1 — Planejamento e inspeção
+## Preparação — escopo e inspeção
 
 1. O usuário define o objetivo, a prioridade e as operações autorizadas.
 2. O ChatGPT identifica o escopo, as fontes normativas, as restrições
@@ -59,32 +59,39 @@ alterar a precedência das fontes normativas.
    para decisão explícita antes da parte afetada. Atividades independentes podem
    continuar quando permanecerem seguras e autorizadas.
 
-O resultado desta etapa deve distinguir fatos confirmados, inferências e
+O resultado desta preparação deve distinguir fatos confirmados, inferências e
 pendências. Planejamento não equivale a autorização de implementação, commit ou
 push.
 
-## Etapa 2 — Implementação e testes
+## Etapa 1 — Implementação
 
 1. O Codex implementa somente depois de receber autorização e somente no escopo
    aprovado.
-2. Erros técnicos podem ser corrigidos durante a mesma atividade quando a correção
+2. Código e testes aplicáveis são produzidos no mesmo ciclo, conforme o contrato
+   publicado.
+3. Erros técnicos podem ser corrigidos durante a mesma atividade quando a correção
    for necessária ao objetivo, permanecer dentro do contrato aprovado e não
    ampliar arquitetura, requisitos ou privilégios.
-3. Alteração de decisão normativa, política de segurança, requisito ou escopo
+4. Alteração de decisão normativa, política de segurança, requisito ou escopo
    material exige nova decisão antes da parte afetada.
-4. O Codex executa validações e testes proporcionais ao risco e comprova a
-   cobertura mínima vigente de 90% em lines, statements, functions e branches
-   quando aplicável.
-5. Garantias de transação, concorrência, locks, privilégios e migrations usam
-   PostgreSQL real comprovadamente descartável. Testes destrutivos nunca usam
-   banco persistente.
-6. Commit e push somente ocorrem quando autorizados pela modalidade definida no
-   [Procedimento de Git e publicação](git-e-publicacao.md).
 
 KISS e YAGNI orientam a implementação: não antecipar fases, infraestrutura,
 abstrações ou funcionalidades futuras.
 
-## Etapa 3 — Revisão técnica
+## Etapa 2 — Validação técnica
+
+1. O Codex executa validações e testes proporcionais ao risco e comprova a
+   cobertura mínima vigente de 90% em lines, statements, functions e branches
+   quando aplicável.
+2. Garantias de transação, concorrência, locks, privilégios e migrations usam
+   PostgreSQL real comprovadamente descartável. Testes destrutivos nunca usam
+   banco persistente.
+3. Regressões, lint, formatação, typecheck e build são executados conforme o risco
+   e as regras de qualidade aplicáveis.
+4. Evidências ainda válidas são reutilizadas; baterias completas não são repetidas
+   sem mudança ou risco que as justifique.
+
+## Etapa 3 — Revisão e correções
 
 1. O Codex entrega relatório objetivo, com comandos executados, resultados e
    referências verificáveis.
@@ -94,31 +101,72 @@ abstrações ou funcionalidades futuras.
    patch, arquivos e linhas relevantes.
 4. Problemas locais e independentes podem ser reunidos em uma rodada consolidada
    de correção, desde que continuem autorizados e não alterem decisões aprovadas.
-5. Bloqueios críticos exigem decisão explícita antes de implementação adicional.
-6. O relatório do Codex não substitui evidência de execução, resultado de teste,
+5. O Codex corrige os achados dentro do escopo autorizado e repete somente as
+   validações afetadas até obter aprovação.
+6. Bloqueios críticos exigem decisão explícita antes de implementação adicional.
+7. O relatório do Codex não substitui evidência de execução, resultado de teste,
    estado Git, migration, código ou documento normativo.
 
 A revisão deve priorizar evidências objetivas e achados acionáveis, evitando
 relatórios extensos sem impacto na decisão.
 
-## Etapa 4 — Publicação controlada
+## Etapa 4 — Consolidação documental
 
-1. Identifique a modalidade de autorização da atividade no
+1. Antes do commit, o Codex atualiza os documentos aplicáveis ao incremento.
+2. A documentação registra somente o estado comprovado: implementado, validado
+   localmente e aguardando commit ou publicação.
+3. Sucesso de CI remoto, SHA ainda inexistente e publicação ainda não realizada
+   não são antecipados.
+4. Documentação, código, testes e configurações estritamente necessárias formam o
+   mesmo conjunto revisável e, quando aprovados, o mesmo commit.
+5. Contratos normativos existentes são referenciados, não duplicados.
+
+## Etapa 5 — Revisão final
+
+1. O ChatGPT revisa em conjunto código, testes, documentação, evidências e estado
+   Git.
+2. Somente após aprovação final é preparada autorização específica para o commit.
+3. Achado remanescente retorna à etapa aplicável sem ampliar automaticamente o
+   escopo.
+
+## Etapa 6 — Commit local
+
+1. Mediante autorização específica, o Codex cria um único commit com código,
+   testes, documentação aplicável e configurações estritamente necessárias.
+2. O staging é explícito e integralmente revisado conforme o
    [Procedimento de Git e publicação](git-e-publicacao.md).
-2. Publicação exige autorização explícita. Frases ambíguas não autorizam push.
-3. Na modalidade **Implementação com publicação**, commit e push normal podem ser
-   sequenciais sem autorização intermediária quando todas as verificações forem
-   aprovadas.
-4. Antes do push, confirme branch, SHA, escopo, staging, ausência de segredos,
-   working tree e divergência com `origin/main` após `git fetch origin`.
-5. Não use force push, force-with-lease, merge, rebase ou pull para resolver
-   divergência automaticamente.
-6. Depois do push, confirme o SHA remoto exato e acompanhe o workflow pelo SHA,
-   branch, evento e tentativa corretos.
-7. A publicação somente é aprovada quando `Quality`, `API integration` e
-   `Required` terminarem com `success`.
-8. Falha ou divergência interrompe o fluxo e é reportada sem correção, novo commit
-   ou nova publicação não autorizados.
+3. Esta etapa não autoriza nem executa push.
+
+## Etapa 7 — Publicação
+
+1. Em atividade posterior e mediante autorização separada, o Codex confirma o
+   commit aprovado, atualiza as referências remotas e executa push normal.
+2. Antes do push, confirma branch, SHA, escopo, árvore limpa e divergência com
+   `origin/main`.
+3. Force push, force-with-lease, merge, rebase, pull e correções automáticas de
+   divergência permanecem proibidos.
+4. Depois do push, confirma o SHA remoto exato e a sincronização da branch.
+
+## Etapa 8 — CI remoto
+
+1. O Codex localiza o workflow pelo SHA exato, branch, evento e tentativa.
+2. `Quality`, `API integration` e `Required` precisam terminar com `success`.
+3. Enquanto houver job pendente, não presume aprovação. Falha é reportada sem
+   correção, novo commit, nova publicação ou reexecução não autorizados.
+4. Somente depois do sucesso remoto o incremento é classificado como publicado e
+   validado.
+
+## Etapa 9 — Encerramento
+
+1. O resultado da publicação, o SHA e o CI são registrados no relatório
+   operacional.
+2. Não se exige automaticamente novo commit apenas para inserir SHA ou número da
+   execução CI na documentação.
+3. Atualização documental posterior ocorre somente por exigência normativa ou
+   operacional expressa, correção factual, mudança material do estado do projeto
+   ou consolidação periódica.
+4. Quando necessária, essa atualização segue novamente as autorizações e regras
+   Git aplicáveis.
 
 ## Relatório padronizado do Codex
 

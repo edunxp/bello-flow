@@ -71,8 +71,14 @@ bloqueie atividades independentes sem justificativa.
 
 - A documentação deve acompanhar o estado real da implementação sem confundir
   decisão aprovada, alteração local, commit local, publicação e validação do CI.
-- Depois da publicação e da aprovação do CI de um marco relevante, atualize
-  `docs/estado-do-projeto.md` quando houver mudança de etapa ou objetivo.
+- Código, testes e documentação aplicável integram o mesmo ciclo. Antes do commit,
+  consolide os documentos afetados com o estado real: implementado, validado
+  localmente e aguardando commit ou publicação, sem antecipar sucesso do CI remoto.
+- Depois da publicação e da aprovação do CI, registre o resultado no relatório
+  operacional. Não crie automaticamente outro commit apenas para inserir SHA ou
+  número do CI; atualização documental posterior exige necessidade normativa ou
+  operacional expressa, correção factual, mudança material do projeto ou
+  consolidação periódica autorizada.
 - Mudanças de comportamento devem revisar os documentos técnicos e as pendências
   afetadas, sem encerrar ou reclassificar uma pendência sem aprovação explícita.
 - Registre nos documentos de estado os commits e as evidências de teste
@@ -140,16 +146,13 @@ Cada atividade adota uma das seguintes modalidades de autorização:
   autoriza commit nem push.
 - **Implementação com commit:** autoriza as alterações, validações e o commit
   local expressamente delimitado. Não autoriza push.
-- **Implementação com publicação:** autoriza as alterações, validações, o commit
-  local e o push normal sequencial expressamente delimitados. Depois de todas as
-  pré-condições do procedimento de Git serem satisfeitas, não é necessária nova
-  autorização entre commit e push.
+- **Publicação controlada:** autoriza somente o push normal de commit local já
+  aprovado e a verificação remota correspondente. Não autoriza novo commit.
 
-A modalidade com publicação somente existe quando o pedido autoriza
-explicitamente publicar ou realizar push na própria atividade. Expressões
-ambíguas como “vamos em frente”, “continue” ou equivalentes não autorizam push.
-Autorização para commit sem autorização explícita de publicação permanece restrita
-à modalidade com commit.
+A publicação ocorre em atividade posterior ao commit e somente quando o pedido
+autoriza explicitamente publicar ou realizar push. Expressões ambíguas como
+“vamos em frente”, “continue” ou equivalentes não autorizam push. Autorização para
+commit nunca implica autorização para publicação.
 
 Essa autonomia não elimina confirmações técnicas exigidas pelo sandbox. Antes de
 prosseguir, solicite aprovação humana quando for necessário modificar decisões
@@ -158,11 +161,12 @@ segurança; ampliar materialmente o escopo; introduzir dependência de produçã
 aprovada; ou alterar privilégios permanentes fora do escopo expressamente
 autorizado.
 
-Exigem autorização específica: commit ou publicação conforme as modalidades
-acima; reescrita de histórico Git; acesso ou alteração de bancos persistentes;
+Exigem autorização específica e separada: commit e publicação conforme as
+modalidades acima; reescrita de histórico Git; acesso ou alteração de bancos
+persistentes;
 exclusão de recursos preexistentes ou cuja propriedade não esteja comprovada;
 operações administrativas reais; e uso de recursos externos ou credenciais não
-autorizados. A modalidade com publicação não autoriza force push, rebase, merge,
+autorizados. A publicação controlada não autoriza force push, rebase, merge,
 pull, reescrita de histórico nem correções ou commits adicionais fora do escopo.
 
 Preserve o sandbox e os controles de execução. Não crie regras `allow` amplas,
@@ -285,12 +289,11 @@ passar.
   autorização inequívoca.
 - Não inclua arquivos temporários, gerados, relatórios de cobertura, builds ou
   secrets.
-- Não execute `git commit` fora das modalidades **Implementação com commit** ou
-  **Implementação com publicação**.
-- Não execute `git push` sem a modalidade **Implementação com publicação**
-  explicitamente autorizada para a atividade.
-- Autorização apenas para commit não implica autorização para push; autorização
-  explícita de publicação inclui commit e push normal sequencial, condicionados ao
+- Não execute `git commit` fora da modalidade **Implementação com commit**.
+- Não execute `git push` sem a modalidade **Publicação controlada** explicitamente
+  autorizada para a atividade.
+- Autorização para commit não implica autorização para push. A publicação trata
+  somente commit local já aprovado e permanece condicionada ao
   [Procedimento de Git e publicação](docs/operacao/git-e-publicacao.md).
 
 Sempre que a atividade envolver preparação de commit, publicação ou verificação

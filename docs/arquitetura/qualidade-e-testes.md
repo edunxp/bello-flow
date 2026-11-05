@@ -56,9 +56,9 @@ tentativa, preserva verificação negativa, `401` genérico e auditoria funciona
 
 O contrato de recuperação está aprovado, e a fundação PostgreSQL da F1-B.4.5.1 e
 as operações da F1-B.4.5.2, a admissão/capacidade da F1-B.4.5.3 e a
-solicitação/classificação da F1-B.4.5.4 foram publicadas. Redefinição,
-processamento, HTTP e
-demais testes continuam pendentes. A entrega completa deve cobrir:
+solicitação/classificação da F1-B.4.5.4 e a redefinição interna da F1-B.4.5.5
+foram publicadas. Processamento, HTTP e demais testes ponta a ponta continuam
+pendentes. A entrega completa deve cobrir:
 
 - unitários: DTOs exatos, normalização, Base64URL canônica, hash com separação de
   domínio, transições, leases, cooldown, quotas, três tentativas, três tokens
@@ -264,7 +264,15 @@ Promises e relógios são coordenados, sem sleeps arbitrários. O gate preserva
 regressão de autenticação/admissão e os jobs `Quality`, `API integration` e
 `Required`.
 
-#### Critérios formalizados da F1-B.4.5.5
+#### Evidências publicadas da F1-B.4.5.5
+
+A implementação foi publicada no commit
+`9ac023961b769b9e52c53d6799501df300c4ce3e`, com CI `42083803500` aprovado nos
+jobs `Quality`, `API integration` e `Required`. A suíte inclui testes unitários,
+integração NestJS e PostgreSQL `18.6` real descartável. A correção D1 testa
+deterministicamente falhas locais no SHA-256 e em cada geração de UUID, com
+refund único, estado `REFUNDED` e ausência de start, Argon2id, complete e
+reconciliação.
 
 Testes unitários NestJS, com mocks estritos e agendamento controlado, devem
 comprovar:
@@ -326,6 +334,10 @@ Não há teste de geração/entrega, provider, outbox, HTTP, frontend, terminali
 ou retenção neste incremento. A cobertura permanece em no mínimo 90% para lines,
 statements, functions e branches por aplicação e consolidado, sem redução de
 gates; `Quality`, `API integration` e `Required` permanecem obrigatórios.
+
+Na publicação, a API alcançou 94,67% de lines, 94,56% de statements, 97,13% de
+functions e 92,56% de branches; o consolidado alcançou respectivamente 94,68%,
+94,59%, 97,15% e 92,63%.
 
 ## Integração com PostgreSQL real
 

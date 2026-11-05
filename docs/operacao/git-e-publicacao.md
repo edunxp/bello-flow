@@ -13,19 +13,16 @@ pull, reset, force push ou reescrita de histórico automaticamente.
 
 ## Modalidades de autorização
 
-| Modalidade | Alterações e validações | Commit local | Push normal |
-|---|---|---|---|
-| **Implementação** | autorizado no escopo | não autorizado | não autorizado |
-| **Implementação com commit** | autorizado no escopo | autorizado no escopo | não autorizado |
-| **Implementação com publicação** | autorizado no escopo | autorizado no escopo | autorizado no escopo |
+| Modalidade                   | Alterações e validações       | Commit local             | Push normal                       |
+| ---------------------------- | ----------------------------- | ------------------------ | --------------------------------- |
+| **Implementação**            | autorizado no escopo          | não autorizado           | não autorizado                    |
+| **Implementação com commit** | autorizado no escopo          | autorizado no escopo     | não autorizado                    |
+| **Publicação controlada**    | não autoriza novas alterações | não autoriza novo commit | autorizado para o commit aprovado |
 
-A modalidade **Implementação com publicação** somente se aplica quando o pedido
-da atividade autorizar explicitamente publicação ou push. Nesse caso, commit e
-push normal podem ocorrer em sequência, sem uma segunda autorização entre eles,
-desde que todas as verificações deste procedimento sejam bem-sucedidas. Uma
-autorização apenas para commit permanece na segunda modalidade e não permite
-push. Expressões ambíguas como “vamos em frente”, “continue” ou equivalentes não
-selecionam a modalidade com publicação.
+A publicação ocorre em atividade posterior ao commit e exige autorização
+separada e explícita para push. Uma autorização apenas para commit permanece na
+segunda modalidade e não permite push. Expressões ambíguas como “vamos em frente”,
+“continue” ou equivalentes não selecionam a modalidade de publicação.
 
 Qualquer falha de escopo, validação, staging, divergência, autenticação,
 publicação ou CI interrompe o fluxo e deve ser reportada. A autorização original
@@ -63,9 +60,12 @@ Antes de preparar um commit:
    sensíveis durante a inspeção.
 5. Execute as validações e os testes previstos pela atividade e confirme
    `git diff --check` antes do staging.
-6. Exclua do conjunto pretendido artefatos gerados ou temporários, como `dist`,
+6. Confirme que código, testes, documentação aplicável e configurações necessárias
+   representam juntos o estado implementado e validado, sem antecipar publicação
+   ou sucesso do CI.
+7. Exclua do conjunto pretendido artefatos gerados ou temporários, como `dist`,
    `coverage`, logs, caches e arquivos de editor.
-7. Para arquivos novos, valide também o conteúdo que ainda não aparece no
+8. Para arquivos novos, valide também o conteúdo que ainda não aparece no
    `git diff` convencional.
 
 Se a árvore contiver alterações inesperadas, não as descarte. Isole os arquivos
@@ -74,8 +74,7 @@ relate a divergência.
 
 ## Commit
 
-Execute esta seção somente nas modalidades **Implementação com commit** ou
-**Implementação com publicação**.
+Execute esta seção somente na modalidade **Implementação com commit**.
 
 1. Confirme os caminhos autorizados e adicione-os explicitamente. Evite
    `git add .`, `git add -A` ou outro staging amplo quando houver qualquer risco
@@ -121,10 +120,8 @@ o caminho. Não remova alterações do usuário para ajustar o staging.
 
 ## Publicação
 
-Execute esta seção somente na modalidade **Implementação com publicação**, depois
-de criar e identificar o commit autorizado. Se todas as condições abaixo forem
-satisfeitas, prossiga do commit para o push sem solicitar autorização
-intermediária.
+Execute esta seção somente na modalidade **Publicação controlada**, em atividade
+posterior à criação e aprovação do commit local.
 
 1. Confirme a branch, o commit autorizado e a árvore limpa:
 
@@ -233,6 +230,12 @@ O relatório final da publicação deve conter:
 - status e conclusão do workflow `CI`;
 - link da execução;
 - limitações ou pendências de verificação.
+
+Esse relatório encerra a publicação. Não se cria automaticamente outro commit
+apenas para registrar SHA ou número do CI na documentação. Atualização documental
+posterior exige necessidade normativa ou operacional expressa, correção factual,
+mudança material do projeto ou consolidação periódica e segue nova autorização
+Git.
 
 ## Situações excepcionais
 

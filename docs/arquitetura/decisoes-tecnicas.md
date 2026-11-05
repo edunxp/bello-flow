@@ -211,8 +211,9 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 
 ### Complemento aprovado — F1-B.4.5 Recuperação de Senha
 
-- **Estado:** Aprovado; fundação PostgreSQL F1-B.4.5.1 e camada transacional
-  F1-B.4.5.2 publicadas; demais incrementos pendentes
+- **Estado:** Aprovado; F1-B.4.5.1–F1-B.4.5.5 implementadas e publicadas nos
+  respectivos recortes; processamento, provider, HTTP, frontend e demais
+  incrementos permanecem pendentes
 - **Data de aprovação:** 2026-11-04
 - **Escopo:** formaliza exclusivamente a recuperação e a redefinição de senha da
   F1-B.4.5. Não altera os quatro endpoints publicados na F1-B.4.4, não implementa
@@ -605,9 +606,11 @@ tokens ou auditoria.
   owner migrator, `search_path` protegido, grants mínimos, ausência de acesso
   sensível direto e atomicidade de request, classificação e auditoria aplicável.
 
-### Contrato formalizado — F1-B.4.5.5 Caso de Uso de Redefinição de Senha
+### Contrato publicado — F1-B.4.5.5 Caso de Uso de Redefinição de Senha
 
-- **Estado:** planejamento técnico formalizado; implementação não iniciada.
+- **Estado:** implementado e publicado pelo commit
+  `9ac023961b769b9e52c53d6799501df300c4ce3e`, com CI `42083803500` aprovado nos
+  jobs `Quality`, `API integration` e `Required`.
 - **Objetivo:** ligar a fronteira NestJS às operações PostgreSQL publicadas de
   intenção, conclusão e reconciliação, à admissão de reset, à política de senha e
   ao executor Argon2id compartilhado, sem criar endpoint ou produzir token.
@@ -648,6 +651,12 @@ A política de senha pertence à validação inicial; a etapa posterior à inten
 somente o trabalho Argon2id. Essa ordem preserva o `400 INVALID_REQUEST` já
 aprovado sem gravar marcador para senha inválida e mantém a regra publicada de
 intenção confirmada antes do hashing caro.
+
+A implementação também protege a preparação local posterior à admissão. Falha
+na derivação SHA-256, geração dos IDs ou montagem da entrada, antes da chamada de
+start, restitui a reserva exatamente uma vez e retorna indisponibilidade. O bloco
+da chamada mutável permanece separado: depois de possível envio, refund é
+proibido e a reconciliação observacional decide somente o resultado externo.
 
 #### Resultados, idempotência e indeterminação
 
@@ -1034,6 +1043,7 @@ produtiva completa.
 
 | Data       | Alteração                                                                                                                                                                                                                                                                                                                                     |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-05 | F1-B.4.5.5 implementada e publicada pelo commit `9ac023961b769b9e52c53d6799501df300c4ce3e`, com CI `42083803500` aprovado; caso de uso NestJS, adapter das três operações SQL, D1, reconciliação e testes PostgreSQL reais validados, sem iniciar F1-B.4.5.6 nem encerrar PT-008 ou PT-009.                                                   |
 | 2026-11-05 | Publicação da F1-B.4.5.4 consolidada pelo commit `a57f718bf4efb74f2daa76c4b5127c9241d939be` e CI `42069921440`; contrato interno da F1-B.4.5.5 formalizado sobre as operações SQL publicadas e decisão F1-B.4.5.5/D1 consolidada para commit/refund da reserva de reset.                                                                      |
 | 2026-11-05 | D1–D3 da F1-B.4.5.4 consolidadas: cooldown desde `received_at` do request que alcançou `PENDING`, consumo da reserva em `UNKNOWN` persistente sem sucesso funcional ou repetição, e assinaturas SQL protegidas aprovadas para o planejamento; implementação permanece não iniciada.                                                           |
 | 2026-11-05 | Publicação da F1-B.4.5.3 consolidada pelo commit `47a6ae033f42d40b56c24bad82b454af0616e2ec` e CI `42050631222`; contrato técnico da F1-B.4.5.4 proposto para solicitação e classificação protegidas.                                                                                                                                          |

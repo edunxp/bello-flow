@@ -164,7 +164,7 @@ revela existência, elegibilidade ou estado da conta, e o `503` não revela a
 causa operacional. Para o login, limites, chaves, armazenamento, `Retry-After`
 e `429` estão definidos no subconjunto aprovado da PT-008. Recuperação de senha
 possui contrato separado na F1-B.4.5, implementado apenas nos incrementos
-publicados F1-B.4.5.1–F1-B.4.5.4.
+publicados F1-B.4.5.1–F1-B.4.5.5; os endpoints de recuperação permanecem futuros.
 
 ### `POST /api/auth/login`
 
@@ -423,9 +423,10 @@ de 90% em lines, statements, functions e branches.
 ## Recuperação de senha — contrato aprovado da F1-B.4.5
 
 O contrato abaixo está aprovado para implementação. A fundação PostgreSQL da
-F1-B.4.5.1, a camada transacional F1-B.4.5.2 e a admissão/capacidade da
-F1-B.4.5.3 foram publicadas, mas casos de uso, processamento, HTTP e
-disponibilidade produtiva ainda não foram implementados.
+F1-B.4.5.1, a camada transacional F1-B.4.5.2, a admissão/capacidade da
+F1-B.4.5.3 e os casos de uso internos F1-B.4.5.4–F1-B.4.5.5 foram publicados.
+Processamento, provider, HTTP e disponibilidade produtiva ainda não foram
+implementados.
 Ele detalha AT-001, AT-003 e AT-009, resolve normativamente a PT-007 e o recorte
 de recuperação da PT-008 e preserva a PT-009 aberta.
 
@@ -598,9 +599,12 @@ lock da conta; a janela está ativa antes de `received_at + 10 minutes` e expira
 igualdade. A retenção operacional de 30 dias não remove a prova dentro dessa
 janela.
 
-### F1-B.4.5.5 — fronteira interna de redefinição planejada
+### F1-B.4.5.5 — fronteira interna de redefinição publicada
 
-O caso de uso interno futuro recebe token, nova senha e IP confiável, sem sessão.
+O caso de uso interno foi publicado no commit
+`9ac023961b769b9e52c53d6799501df300c4ce3e`, com CI `42083803500` aprovado nos
+jobs `Quality`, `API integration` e `Required`. Ele recebe token, nova senha e IP
+confiável, sem sessão.
 A estrutura e a política da senha são validadas antes da admissão e de qualquer
 efeito. A admissão reserva o bucket de reset por IP antes de `await`; `429` ou
 saturação terminam sem PostgreSQL, Argon2id ou auditoria funcional.
@@ -645,6 +649,12 @@ genérica, timeout, transporte, cancelamento ou perda de conexão não comprovam
 rollback. A reserva é finalizada uma única vez; commit significa tentativa
 admitida consumida, não sucesso, validade do token ou existência da conta. A
 matriz do login permanece inalterada.
+
+A preparação local posterior à admissão está protegida separadamente da chamada
+de start. Falha no SHA-256, nos UUIDs ou na montagem da entrada faz refund uma
+única vez, sem PostgreSQL, Argon2id, complete ou reconciliação. Uma vez que o
+start possa ter sido enviado, esse tratamento não se aplica: a reserva é
+consumida e a classificação permanece conservadora.
 
 ### Token, link e disponibilidade
 
