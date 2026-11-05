@@ -7,6 +7,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { AuthController } from '../src/auth/auth.controller.js';
 import { AuthSessionPersistence } from '../src/auth/auth-session.persistence.js';
+import { Argon2ExecutionService } from '../src/auth/argon2-execution.service.js';
 import {
   AUTHENTICATION_ERROR_CODE,
   AuthenticationError,
@@ -152,6 +153,10 @@ describe('F1-B.3.3.3 password authentication (PostgreSQL)', () => {
       new LoginAdmissionService(
         DEFAULT_LOGIN_ADMISSION_CONFIG,
         SYSTEM_LOGIN_ADMISSION_TIME,
+        new Argon2ExecutionService(
+          DEFAULT_LOGIN_ADMISSION_CONFIG,
+          SYSTEM_LOGIN_ADMISSION_TIME,
+        ),
       ),
     );
   });

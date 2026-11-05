@@ -6,8 +6,10 @@ import { AuthSessionModule } from './auth-session.module.js';
 import { AuthSessionPersistence } from './auth-session.persistence.js';
 import { AuthController } from './auth.controller.js';
 import { AuthenticationService } from './authentication.service.js';
+import { Argon2ExecutionService } from './argon2-execution.service.js';
 import { LoginAdmissionConfigurationError } from './login-admission.config.js';
 import { LoginAdmissionService } from './login-admission.service.js';
+import { PasswordRecoveryAdmissionService } from './password-recovery-admission.service.js';
 
 @Injectable()
 class ConsumerProbe {
@@ -131,6 +133,26 @@ describe('AuthSessionModule', () => {
         .select(AuthSessionModule)
         .get(LoginAdmissionService, { strict: true }),
     ).toBeInstanceOf(LoginAdmissionService);
+    expect(
+      context
+        .select(AuthSessionModule)
+        .get(PasswordRecoveryAdmissionService, { strict: true }),
+    ).toBeInstanceOf(PasswordRecoveryAdmissionService);
+    expect(
+      context
+        .select(AuthSessionModule)
+        .get(Argon2ExecutionService, { strict: true }),
+    ).toBeInstanceOf(Argon2ExecutionService);
+    const loginAdmission = context
+      .select(AuthSessionModule)
+      .get(LoginAdmissionService, { strict: true }) as unknown as {
+      readonly argon2Execution: Argon2ExecutionService;
+    };
+    expect(loginAdmission.argon2Execution).toBe(
+      context
+        .select(AuthSessionModule)
+        .get(Argon2ExecutionService, { strict: true }),
+    );
     expect(
       context.select(AuthSessionModule).get(AuthController, { strict: true }),
     ).toBeInstanceOf(AuthController);

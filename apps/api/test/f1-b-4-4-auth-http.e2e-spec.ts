@@ -6,6 +6,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
+import { Argon2ExecutionService } from '../src/auth/argon2-execution.service.js';
 import {
   AUTHENTICATION_ERROR_CODE,
   AuthenticationError,
@@ -496,9 +497,11 @@ describe('F1-B.4.4 authentication HTTP endpoints', () => {
   });
 
   it('cancels a disconnected login while it is waiting for admission', async () => {
+    const config = { ...DEFAULT_LOGIN_ADMISSION_CONFIG, concurrency: 1 };
     const admission = new LoginAdmissionService(
-      { ...DEFAULT_LOGIN_ADMISSION_CONFIG, concurrency: 1 },
+      config,
       SYSTEM_LOGIN_ADMISSION_TIME,
+      new Argon2ExecutionService(config, SYSTEM_LOGIN_ADMISSION_TIME),
     );
     let releaseFirst!: () => void;
     const firstBlocked = new Promise<void>((resolve) => {

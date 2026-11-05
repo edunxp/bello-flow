@@ -1,4 +1,5 @@
 import type { LoginAdmissionConfig } from './login-admission.config.js';
+import { Argon2ExecutionService } from './argon2-execution.service.js';
 import {
   LOGIN_ADMISSION_ERROR_CODE,
   LoginAdmissionError,
@@ -84,6 +85,10 @@ function makeService(
     service: new LoginAdmissionService(
       { ...DEFAULT_TEST_CONFIG, ...overrides },
       time,
+      new Argon2ExecutionService(
+        { ...DEFAULT_TEST_CONFIG, ...overrides },
+        time,
+      ),
     ),
   };
 }

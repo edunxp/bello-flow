@@ -8,6 +8,15 @@ import {
   LOGIN_ADMISSION_CONFIG,
   type LoginAdmissionConfig,
 } from './login-admission.config.js';
+import {
+  Argon2ExecutionError,
+  Argon2ExecutionService,
+} from './argon2-execution.service.js';
+import {
+  ADMISSION_TIME,
+  SYSTEM_ADMISSION_TIME,
+  type AdmissionTime,
+} from './admission-time.js';
 
 const IDENTITY_CAPACITY = 5;
 const IDENTITY_REFILL_MS = 180_000;
@@ -21,20 +30,9 @@ type TrustedIpKey = string & { readonly [trustedIpKeyBrand]: true };
 type IdentityKey = EmailKey | typeof INVALID_EMAIL_SENTINEL;
 type BucketKey = IdentityKey | TrustedIpKey;
 
-export const LOGIN_ADMISSION_TIME = Symbol('LOGIN_ADMISSION_TIME');
-
-export interface LoginAdmissionTime {
-  now(): number;
-  schedule(callback: () => void, delayMs: number): () => void;
-}
-
-export const SYSTEM_LOGIN_ADMISSION_TIME: LoginAdmissionTime = Object.freeze({
-  now: () => performance.now(),
-  schedule: (callback: () => void, delayMs: number) => {
-    const timeout = setTimeout(callback, delayMs);
-    return () => clearTimeout(timeout);
-  },
-});
+export const LOGIN_ADMISSION_TIME = ADMISSION_TIME;
+export const SYSTEM_LOGIN_ADMISSION_TIME = SYSTEM_ADMISSION_TIME;
+export type LoginAdmissionTime = AdmissionTime;
 
 export const LOGIN_ADMISSION_ERROR_CODE = Object.freeze({
   RATE_LIMITED: 'RATE_LIMITED',
@@ -87,17 +85,6 @@ type Reservation = {
   readonly ip: BucketReservation;
 };
 
-type WaiterState = 'QUEUED' | 'ACQUIRED' | 'TIMED_OUT' | 'CANCELLED';
-
-type Waiter = {
-  state: WaiterState;
-  readonly resolve: () => void;
-  readonly reject: (error: LoginAdmissionError) => void;
-  readonly signal?: AbortSignal;
-  cancelTimeout?: () => void;
-  onAbort?: () => void;
-};
-
 function serviceUnavailable(): LoginAdmissionError {
   return new LoginAdmissionError(
     LOGIN_ADMISSION_ERROR_CODE.SERVICE_UNAVAILABLE,
@@ -141,14 +128,13 @@ export class LoginAdmissionService {
   private readonly ipBuckets = new Map<TrustedIpKey, Bucket>();
   private identityCleanupIterator?: MapIterator<[IdentityKey, Bucket]>;
   private ipCleanupIterator?: MapIterator<[TrustedIpKey, Bucket]>;
-  private activeExecutions = 0;
-  private readonly waiters: Waiter[] = [];
 
   constructor(
     @Inject(LOGIN_ADMISSION_CONFIG)
     private readonly config: LoginAdmissionConfig,
     @Inject(LOGIN_ADMISSION_TIME)
     private readonly time: LoginAdmissionTime,
+    private readonly argon2Execution: Argon2ExecutionService,
   ) {}
 
   async executeProtected<T>(execution: LoginAdmissionExecution<T>): Promise<T> {
@@ -165,29 +151,25 @@ export class LoginAdmissionService {
     const reservation = this.reserve(identityKey, ipKey);
 
     try {
-      await this.acquire(execution.signal);
+      return await this.argon2Execution.execute(async () => {
+        const completion = await execution.operation();
+        if (completion.status === 'AUTHENTICATED') {
+          this.confirmSuccess(reservation);
+          return completion.value;
+        }
+        if (completion.status === 'DETERMINED_REJECTION') {
+          this.commit(reservation);
+        } else {
+          this.refund(reservation);
+        }
+        throw completion.error;
+      }, execution.signal);
     } catch (error) {
       this.refund(reservation);
-      throw error;
-    }
-
-    try {
-      const completion = await execution.operation();
-      if (completion.status === 'AUTHENTICATED') {
-        this.confirmSuccess(reservation);
-        return completion.value;
+      if (error instanceof Argon2ExecutionError) {
+        throw serviceUnavailable();
       }
-      if (completion.status === 'DETERMINED_REJECTION') {
-        this.commit(reservation);
-      } else {
-        this.refund(reservation);
-      }
-      throw completion.error;
-    } catch (error) {
-      this.refund(reservation);
       throw error;
-    } finally {
-      this.release();
     }
   }
 
@@ -421,67 +403,5 @@ export class LoginAdmissionService {
 
   private isRemovable(bucket: Bucket, capacity: number): boolean {
     return bucket.tokens === capacity && bucket.reservations.size === 0;
-  }
-
-  private acquire(signal: AbortSignal | undefined): Promise<void> {
-    if (signal?.aborted) {
-      return Promise.reject(serviceUnavailable());
-    }
-    if (this.activeExecutions < this.config.concurrency) {
-      this.activeExecutions += 1;
-      return Promise.resolve();
-    }
-    if (this.waiters.length >= this.config.queueMax) {
-      return Promise.reject(serviceUnavailable());
-    }
-
-    return new Promise<void>((resolve, reject) => {
-      const waiter: Waiter = { state: 'QUEUED', resolve, reject, signal };
-      waiter.onAbort = () => {
-        this.finishWaiting(waiter, 'CANCELLED', serviceUnavailable());
-      };
-      signal?.addEventListener('abort', waiter.onAbort, { once: true });
-      this.waiters.push(waiter);
-      waiter.cancelTimeout = this.time.schedule(() => {
-        this.finishWaiting(waiter, 'TIMED_OUT', serviceUnavailable());
-      }, this.config.waitTimeoutMs);
-    });
-  }
-
-  private finishWaiting(
-    waiter: Waiter,
-    state: Exclude<WaiterState, 'QUEUED'>,
-    error?: LoginAdmissionError,
-  ): boolean {
-    if (waiter.state !== 'QUEUED') {
-      return false;
-    }
-    waiter.state = state;
-    waiter.cancelTimeout?.();
-    if (waiter.onAbort) {
-      waiter.signal?.removeEventListener('abort', waiter.onAbort);
-    }
-    const index = this.waiters.indexOf(waiter);
-    if (index >= 0) {
-      this.waiters.splice(index, 1);
-    }
-    if (state === 'ACQUIRED') {
-      waiter.resolve();
-    } else {
-      waiter.reject(error ?? serviceUnavailable());
-    }
-    return true;
-  }
-
-  private release(): void {
-    this.activeExecutions -= 1;
-    while (this.waiters.length > 0) {
-      const waiter = this.waiters[0]!;
-      if (this.finishWaiting(waiter, 'ACQUIRED')) {
-        this.activeExecutions += 1;
-        return;
-      }
-      this.waiters.shift();
-    }
   }
 }

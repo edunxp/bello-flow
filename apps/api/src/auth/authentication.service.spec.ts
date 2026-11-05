@@ -12,6 +12,7 @@ import {
   type AuthenticateWithPasswordInput,
 } from './authentication.service.js';
 import { DEFAULT_LOGIN_ADMISSION_CONFIG } from './login-admission.config.js';
+import { Argon2ExecutionService } from './argon2-execution.service.js';
 import {
   LoginAdmissionService,
   SYSTEM_LOGIN_ADMISSION_TIME,
@@ -150,6 +151,10 @@ describe('AuthenticationService', () => {
       new LoginAdmissionService(
         DEFAULT_LOGIN_ADMISSION_CONFIG,
         SYSTEM_LOGIN_ADMISSION_TIME,
+        new Argon2ExecutionService(
+          DEFAULT_LOGIN_ADMISSION_CONFIG,
+          SYSTEM_LOGIN_ADMISSION_TIME,
+        ),
       ),
     );
   });

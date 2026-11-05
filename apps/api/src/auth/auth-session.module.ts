@@ -4,15 +4,14 @@ import { PrismaModule } from '../prisma/prisma.module.js';
 import { AuthSessionPersistence } from './auth-session.persistence.js';
 import { AuthController } from './auth.controller.js';
 import { AuthenticationService } from './authentication.service.js';
+import { Argon2ExecutionService } from './argon2-execution.service.js';
+import { ADMISSION_TIME, SYSTEM_ADMISSION_TIME } from './admission-time.js';
 import {
   LOGIN_ADMISSION_CONFIG,
   loadLoginAdmissionConfig,
 } from './login-admission.config.js';
-import {
-  LOGIN_ADMISSION_TIME,
-  LoginAdmissionService,
-  SYSTEM_LOGIN_ADMISSION_TIME,
-} from './login-admission.service.js';
+import { LoginAdmissionService } from './login-admission.service.js';
+import { PasswordRecoveryAdmissionService } from './password-recovery-admission.service.js';
 
 @Module({
   imports: [PrismaModule],
@@ -20,15 +19,17 @@ import {
   providers: [
     AuthSessionPersistence,
     AuthenticationService,
+    Argon2ExecutionService,
     LoginAdmissionService,
+    PasswordRecoveryAdmissionService,
     PasswordCredentialService,
     {
       provide: LOGIN_ADMISSION_CONFIG,
       useFactory: () => loadLoginAdmissionConfig(process.env),
     },
     {
-      provide: LOGIN_ADMISSION_TIME,
-      useValue: SYSTEM_LOGIN_ADMISSION_TIME,
+      provide: ADMISSION_TIME,
+      useValue: SYSTEM_ADMISSION_TIME,
     },
   ],
   exports: [AuthenticationService],
