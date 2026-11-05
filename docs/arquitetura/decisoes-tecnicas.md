@@ -728,10 +728,106 @@ resultados indeterminados contornem a quota por repetição. O login conserva su
 matriz própria, inclusive refunds operacionais; esta decisão não altera seu
 contrato.
 
-A sequência F1-B.4.5.6–F1-B.4.5.11 permanece somente proposta de planejamento,
-sem aprovação automática. PT-009 e terminalização de intenções não bloqueiam a
-formalização deste recorte, mas continuam necessárias para a disponibilidade
+A sequência F1-B.4.5.6–F1-B.4.5.11 permanecia somente proposta de planejamento
+quando este recorte foi publicado. A F1-B.4.5.6 foi posteriormente aprovada no
+contrato abaixo; F1-B.4.5.7–F1-B.4.5.11 continuam propostas não aprovadas. PT-009
+e terminalização de intenções continuam necessárias para a disponibilidade
 produtiva completa.
+
+### Contrato aprovado — F1-B.4.5.6 Processador de Entrega com Adapter Controlado
+
+- **Estado:** aprovado normativamente; implementação, migration e testes ainda não
+  iniciados.
+- **Data de aprovação:** 2026-11-05.
+- **Objetivo:** processar internamente solicitações persistidas de recuperação,
+  gerar o token just-in-time, preparar o link e exercitar a entrega por adapter
+  controlado sem declarar disponibilidade produtiva.
+- **Incluído:** processador interno NestJS, cinco operações PostgreSQL protegidas,
+  token e link controlados, adapter estritamente técnico, lifecycle simples e
+  testes unitários e PostgreSQL reais.
+- **Excluído:** provider produtivo, HTTP público, frontend, fila externa, outbox
+  genérica, retenção, terminalização de intenções de reset abandonadas e qualquer
+  incremento F1-B.4.5.7–F1-B.4.5.11.
+
+#### Decisões D1–D12
+
+| ID  | Decisão aprovada                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | O incremento é a **F1-B.4.5.6 — Processador de Entrega com Adapter Controlado**, limitado ao escopo interno descrito acima.                                                                                                                                                                                                                                                                                                |
+| D2  | Uma operação PostgreSQL protegida coordena claim e recuperação. `PREPARING` pode ser retomado com ownership válido; `PREPARED` cujo token bruto foi perdido invalida o token e consome a tentativa; `SENDING` expirado somente pode ser recuperado como `UNKNOWN`, sem novo envio.                                                                                                                                         |
+| D3  | O lease inicial é de 60 segundos, sem heartbeat. A transição para `SENDING` renova o lease uma única vez e atomicamente por mais 60 segundos. O adapter controlado tem timeout de 10 segundos. Segurança decorre também de ownership, locks, estados terminais monotônicos e ausência de reenvio, nunca apenas desses tempos.                                                                                              |
+| D4  | Token bruto perdido depois de `PREPARED` não é reconstruído. O token persistido é invalidado, a tentativa recebe `FAILED / PREPARATION_FAILURE` e seu ordinal é consumido. Há backoff de 1 minuto após a tentativa 1 e 5 minutos após a tentativa 2; a tentativa 3 termina a request como `FAILED`. Novo token exige nova tentativa e ordinal.                                                                             |
+| D5  | A fronteira usa `claim_password_recovery_delivery`, `prepare_password_recovery_delivery`, `confirm_password_recovery_sending`, `complete_password_recovery_delivery` e `reconcile_password_recovery_delivery`, todas protegidas por `SECURITY DEFINER`, owner migrator, `search_path` seguro, objetos qualificados e `EXECUTE` mínimo. Runtime não recebe novo `SELECT` ou DML amplo.                                      |
+| D6  | O e-mail é obtido exclusivamente no retorno protegido da primeira transição `PREPARED → SENDING`. `SEND_AUTHORIZED` só existe no retorno original após commit confirmado. Repetição em `SENDING` retorna `ALREADY_SENDING`, sem destinatário ou autorização. Reconciliação nunca autoriza efeito externo e não se amplia `SELECT account.email`.                                                                           |
+| D7  | O link usa a `BELLO_PUBLIC_ORIGIN` confiável e a rota `/reset-password`, no formato `{BELLO_PUBLIC_ORIGIN}/reset-password#token={encodeURIComponent(base64url_token)}`. Origem não é derivada de `Host` ou headers encaminhados. Token bruto e link existem somente em memória; apenas o hash SHA-256 com separação de domínio é persistido.                                                                               |
+| D8  | O adapter recebe `recipientEmail`, `recoveryUrl`, `expiresAt` e `signal` e classifica `ACCEPTED`, `NOT_ACCEPTED` ou `INDETERMINATE`. Timeout, exceção inesperada, cancelamento e perda de resposta são indeterminados sem prova de ausência de aceite. `AbortSignal` não prova cancelamento no provider. O adapter não acessa o banco nem altera estado. Não há garantia exactly-once nem reenvio automático de `UNKNOWN`. |
+| D9  | `BELLO_PASSWORD_RECOVERY_DELIVERY_MODE` aceita somente `disabled` ou `controlled`; ausência equivale a `disabled`. `controlled` é permitido somente com `NODE_ENV=test`. Em `development`, `production` ou diante de valor desconhecido, a configuração controlada impede a inicialização. Provider produtivo permanece fora do escopo e PT-009 aberta.                                                                    |
+| D10 | No modo `controlled`, o processador NestJS usa loop simples sem nova dependência, polling ocioso de 1 segundo e no máximo 10 claims por ciclo. `NO_WORK` confirmado é distinto de falha de infraestrutura ou resultado desconhecido. Shutdown impede novos claims e chamadas ainda não iniciadas; timeout ou interrupção não provam ausência de aceite.                                                                    |
+| D11 | O paralelismo é 1 por instância. Não há leader election, heartbeat distribuído ou coordenação externa. As operações SQL permanecem corretas sob concorrência acidental e duas instâncias.                                                                                                                                                                                                                                  |
+| D12 | `AUTH_PASSWORD_RECOVERY_SEND_ACCEPTED` é gravado somente após `ACCEPTED`, atomicamente com `SENT`. A nova origem normativa é `INTERNAL_PROCESSOR`; a matriz completa está no contrato de segurança. Aceite pelo provider não significa entrega ao destinatário.                                                                                                                                                            |
+
+#### Invariantes de processamento
+
+- Cada tentativa cria just-in-time 32 bytes de CSPRNG, codificados em Base64URL
+  canônica, e persiste somente o hash de 32 bytes separado pelo domínio já
+  aprovado. O token é único, de uso único e válido por 30 minutos.
+- Uma request admite até três tentativas, cada tentativa possui no máximo um token
+  físico e a conta possui no máximo três tokens ativos, contados sob o advisory
+  lock compartilhado.
+- `SENDING` precisa de commit confirmado antes de qualquer efeito externo.
+  `SEND_AUTHORIZED` é capacidade efêmera e não repetível do retorno original; não
+  é estado persistido nem pode ser reconstruída por leitura.
+- `SENT`, `FAILED`, `UNKNOWN` e `CANCELLED` são terminais para o processador. Um
+  executor obsoleto ou resultado tardio não os sobrescreve.
+- `UNKNOWN` preserva a expiração natural do token potencialmente entregue. Falha
+  de comunicação não é automaticamente falha determinada.
+- Reconciliação é observacional e nunca concede autorização externa. Commit
+  indeterminado exige observação conservadora antes de qualquer mutação repetível.
+- Não existe garantia exactly-once. Crash entre o commit de `SENDING` e a chamada
+  pode perder uma entrega; crash depois da chamada e antes da terminalização pode
+  ocultar um aceite em `UNKNOWN`. Ambos são preferíveis ao reenvio por suposição.
+
+#### Ownership, corrida e terminalização
+
+As operações adquirem o advisory lock da conta antes dos row locks na ordem global
+aprovada. `PREPARING` e `PREPARED` recuperáveis recebem ownership coerente; não há
+novo ownership de envio em `SENDING`. A renovação única de lease na entrada de
+`SENDING` reserva a janela externa, mas não é a garantia de exclusividade.
+
+Resultado do adapter que chega depois do vencimento nominal somente pode
+terminalizar se a tentativa ainda estiver em `SENDING` com o mesmo `lease_id`. A
+conclusão e a recuperação se serializam pelos locks: se a recuperação confirmar
+`UNKNOWN` primeiro, a conclusão tardia retorna estado terminal e não escreve; se
+a conclusão confirmar primeiro, a recuperação observa o terminal. Nenhum caminho
+reabre ou sobrescreve estado terminal.
+
+#### Fronteiras de commit indeterminado
+
+| Operação        | Prova reconciliável                                                                                                                                             | Repetição permitida                                                                                        |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| claim           | attempt `PREPARING` e lease esperados comprovam claim; ausência ou falha de observação não significam `NO_WORK`                                                 | somente novo polling independente depois da observação conservadora; não repetir cegamente a mesma mutação |
+| prepare         | `PREPARED` com `attempt_id`, `lease_id`, `token_id` e hash esperados comprova preparação; `PREPARING` sem token e com o mesmo lease comprova ausência do efeito | a mesma preparação e os mesmos identificadores somente no segundo caso                                     |
+| confirm sending | `PREPARED` com o mesmo lease comprova ausência da transição; `SENDING` comprova que ela ocorreu ou pode ter ocorrido                                            | repetir a transição somente em `PREPARED`; observar `SENDING` nunca recria `SEND_AUTHORIZED`               |
+| complete        | estado terminal e efeitos coerentes comprovam conclusão; `SENDING` com o mesmo lease comprova ausência de terminalização                                        | repetir somente a mutação SQL com o resultado externo já conhecido; nunca repetir o adapter                |
+| reconcile       | leitura coerente comprova apenas o estado observado                                                                                                             | a própria leitura pode ser repetida; ela nunca muta nem autoriza chamada externa                           |
+
+`NO_WORK` só existe como retorno confirmado de claim concluído. Erro de conexão,
+timeout SQL, cardinalidade inválida, resultado desconhecido ou reconciliação
+inconclusiva são falhas ou indeterminação, não ociosidade.
+
+#### Auditoria e rastreabilidade
+
+O evento de aceite usa `actor_account_id = NULL`, `origin = INTERNAL_PROCESSOR`,
+`scope = SECURITY`, `operation = AUTH_PASSWORD_RECOVERY_SEND_ACCEPTED`, `result =
+SUCCESS`, `entity_type = ACCOUNT`, `entity_id = account_id`, `operation_id =
+delivery_attempt_id`, `correlation_id = recovery_request_id`, `sequence = 1` e
+`before_data`, `after_data` e `context` nulos. Token, hash, URL, e-mail, IP bruto,
+lease e erro integral não são auditados.
+
+- **Requisitos:** BEL-032, BEL-038.
+- **Decisões funcionais:** DEC-010, DEC-020.
+- **Regras:** RN-070, RN-126, RN-128.
+- **Relacionadas:** AT-003, AT-009, PT-003, PT-007, PT-008 e PT-009.
 
 ## AT-002 — Autorização centralizada
 

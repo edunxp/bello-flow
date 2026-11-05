@@ -339,6 +339,65 @@ Na publicação, a API alcançou 94,67% de lines, 94,56% de statements, 97,13% d
 functions e 92,56% de branches; o consolidado alcançou respectivamente 94,68%,
 94,59%, 97,15% e 92,63%.
 
+#### Critérios específicos da F1-B.4.5.6
+
+O contrato está aprovado e a implementação ainda não foi iniciada. A aceitação
+exige testes unitários, integração NestJS e PostgreSQL `18.6` real em banco
+comprovadamente descartável para a seguinte matriz:
+
+| Grupo                     | Evidência obrigatória                                                                                                                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| fluxo nominal             | `PENDING → PREPARING → PREPARED → SENDING → SENT`; token CSPRNG de 32 bytes; Base64URL canônica; hash separado por domínio; link em memória; `SENDING` confirmado antes do adapter            |
+| falha determinada         | `NOT_ACCEPTED` comprovado; token invalidado; tentativa `FAILED / DELIVERY_FAILURE`; backoff de 1 e 5 minutos; request `FAILED` depois da terceira tentativa                                   |
+| tentativas e tokens       | no máximo três tentativas; token físico e identificador distintos por ordinal; um token por tentativa; nenhum ordinal reutilizado                                                             |
+| perda em `PREPARED`       | token bruto irrecuperável; token persistido invalidado; `FAILED / PREPARATION_FAILURE`; ordinal consumido; novo token somente em nova tentativa                                               |
+| `SENDING` e `UNKNOWN`     | lease expirado recupera somente para `UNKNOWN`; token preserva expiração natural; nenhum replay, reconciliação ou nova instância chama novamente o adapter                                    |
+| crashes                   | falha antes e depois dos commits de claim, `PREPARING`, `PREPARED`, `SENDING` e terminalização; crash entre commit de `SENDING` e adapter; crash entre adapter e conclusão                    |
+| commit indeterminado      | prova específica para cada uma das cinco operações; repetição somente da mutação comprovadamente segura; reconciliação nunca devolve `SEND_AUTHORIZED`                                        |
+| lease e executor obsoleto | lease inicial e renovação única de 60 segundos; timeout de 10 segundos; lease expirado durante chamada; conclusão tardia; executor antigo bloqueado; nenhum terminal sobrescrito              |
+| concorrência              | claims simultâneos, duas instâncias, envio contra solicitação, login, sessão e reset; ordem global de locks; ausência de deadlock e de envio duplicado                                        |
+| teto de tokens            | até três tokens ativos por conta sob advisory lock compartilhado, inclusive sob claims e resets concorrentes                                                                                  |
+| privilégios               | owner, `SECURITY DEFINER`, `search_path`, objetos qualificados, ausência de SQL dinâmico, `REVOKE` de `PUBLIC`, `EXECUTE` mínimo e negação de `SELECT account.email` e DML direto             |
+| auditoria                 | `AUTH_PASSWORD_RECOVERY_SEND_ACCEPTED` somente após `ACCEPTED`, atômico com `SENT`, matriz `INTERNAL_PROCESSOR` exata e ausência de token, hash, URL, e-mail, IP bruto, lease e erro integral |
+| ativação                  | ausência e `disabled` não iniciam processamento; `controlled` somente em `NODE_ENV=test`; valor desconhecido ou `controlled` em development/production falha na inicialização                 |
+| lifecycle                 | polling de 1 segundo somente após `NO_WORK` confirmado; lote máximo de 10; paralelismo 1; falha de infraestrutura não vira ociosidade; shutdown impede claims e chamadas não iniciadas        |
+| regressão                 | autenticação, login, sessões, logout, logout global, solicitação de recuperação, reset, admissão, anti-enumeração, CORS desabilitado e `/health/live` preservados                             |
+
+Dentro dessa matriz, as evidências dirigidas também devem comprovar:
+
+- nas cinco operações, aquisição apenas das classes necessárias e preservação da
+  ordem relativa advisory lock, `account`, `password_credential`, marcador de
+  reset, request, tentativa, token, sessões e auditoria;
+- request `PENDING` durante backoff, elegibilidade calculada pelo `terminal_at` da
+  tentativa anterior mais 1 ou 5 minutos e ausência de nova tentativa
+  `PREPARING` antes desse instante;
+- `invalidated_operation_id = delivery_attempt_id` tanto na perda do token bruto
+  em `PREPARED` quanto em `NOT_ACCEPTED`, incluindo repetição idempotente e rejeição
+  de correlação divergente;
+- nenhum `SEND_AUTHORIZED` exposto pelo adapter de persistência antes do commit ou
+  autocommit confirmado, nenhuma transação caller-managed aberta durante a chamada
+  externa e descarte da autorização diante de commit indeterminado; e
+- eventos minimizados de aquisição, expiração e recuperação de lease observáveis
+  sem `lease_id` ou identificador sensível, mantendo esses valores fora da
+  auditoria e de logs sensíveis.
+
+O adapter controlado é determinístico e não depende de serviço externo. Relógios,
+promises, timeout, crashes e corridas são coordenados sem sleeps arbitrários como
+prova. Os testes devem incluir resultado tardio concorrendo com recuperação: se a
+conclusão vencer, a recuperação observa terminal; se `UNKNOWN` vencer, o resultado
+tardio retorna terminal sem escrever.
+
+Cada operação protegida deve provar cardinalidade de uma linha, idempotência,
+rollback, commit indeterminado, ownership divergente, estado terminal e
+inconsistência. `NO_WORK` só é aceito como retorno confirmado; erro de conexão,
+timeout SQL e observação inconclusiva permanecem falha ou indeterminação.
+
+Token, link e destinatário usados em teste são exclusivamente sintéticos e não
+podem aparecer em logs, snapshots, mensagens de erro ou auditoria. A cobertura
+permanece em no mínimo 90% em lines, statements, functions e branches para web,
+API e consolidado, sem exclusões para atingir o gate. `Quality`, `API integration`
+e `Required` continuam obrigatórios.
+
 ## Integração com PostgreSQL real
 
 Testes críticos não devem substituir o PostgreSQL por implementação em memória. Devem validar:

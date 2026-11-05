@@ -11,15 +11,15 @@ fonte normativa que aprovou cada resolução.
 
 ## Pendências prioritárias antes da implementação
 
-| ID técnico | Pendência                                                                                                                                                                                                      | AT relacionada         | Resultado esperado                                                                                                |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| PT-001     | versões específicas e compatibilidade de Node.js, Angular, NestJS, Prisma e PostgreSQL                                                                                                                         | todas                  | matriz de versões suportadas e política de atualização                                                            |
-| PT-002     | representação física das posições esparsas e critério de rebalanceamento                                                                                                                                       | AT-004                 | prova de concorrência, precisão, crescimento e ordenação estável                                                  |
-| PT-003     | bloqueios, ordem de aquisição, isolamento e repetição por operação; as operações F1-B.4.5.2 foram publicadas e provaram seu recorte, mas a pendência permanece para outras mutações                            | AT-003, AT-004         | catálogo por mutação crítica com comportamento de conflito e evidência real por operação                          |
-| PT-004     | modelo físico, restrições e índices                                                                                                                                                                            | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho                                                        |
-| PT-006     | protocolo de revisão, mensagens, reconexão e verificações periódicas                                                                                                                                           | AT-005                 | contrato de sincronização e recuperação testável                                                                  |
-| PT-007     | tratamento seguro de links/tokens nas solicitações persistidas de e-mail; a fundação física foi publicada e o contrato não persiste token ou link recuperável, mas geração e processamento continuam pendentes | AT-009                 | comprovar geração just-in-time, hash de validação, estados e falhas em PostgreSQL real                            |
-| PT-008     | limites de tentativas para login e recuperação, transações e e-mail; login e F1-B.4.5.1–F1-B.4.5.5 estão publicados, enquanto processamento e integração ponta a ponta permanecem pendentes                    | AT-001, AT-003, AT-009 | implementar e validar processamento e limites integrados da recuperação sem alterar as quotas publicadas do login |
+| ID técnico | Pendência                                                                                                                                                                                                              | AT relacionada         | Resultado esperado                                                                                                |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| PT-001     | versões específicas e compatibilidade de Node.js, Angular, NestJS, Prisma e PostgreSQL                                                                                                                                 | todas                  | matriz de versões suportadas e política de atualização                                                            |
+| PT-002     | representação física das posições esparsas e critério de rebalanceamento                                                                                                                                               | AT-004                 | prova de concorrência, precisão, crescimento e ordenação estável                                                  |
+| PT-003     | bloqueios, ordem de aquisição, isolamento e repetição por operação; as operações F1-B.4.5.2 foram publicadas e provaram seu recorte, mas a pendência permanece para outras mutações                                    | AT-003, AT-004         | catálogo por mutação crítica com comportamento de conflito e evidência real por operação                          |
+| PT-004     | modelo físico, restrições e índices                                                                                                                                                                                    | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho                                                        |
+| PT-006     | protocolo de revisão, mensagens, reconexão e verificações periódicas                                                                                                                                                   | AT-005                 | contrato de sincronização e recuperação testável                                                                  |
+| PT-007     | tratamento seguro de links/tokens nas solicitações persistidas de e-mail; fundação e contrato F1-B.4.5.6 foram aprovados, mas geração e processamento ainda não foram implementados                                    | AT-009                 | comprovar geração just-in-time, hash de validação, estados e falhas em PostgreSQL real                            |
+| PT-008     | limites de tentativas para login e recuperação, transações e e-mail; login e F1-B.4.5.1–F1-B.4.5.5 estão publicados e F1-B.4.5.6 está aprovada, enquanto processamento e integração ponta a ponta permanecem pendentes | AT-001, AT-003, AT-009 | implementar e validar processamento e limites integrados da recuperação sem alterar as quotas publicadas do login |
 
 O subconjunto de login da PT-008 foi aprovado em 2026-11-03 para planejamento,
 sem que a aprovação, por si, declarasse implementação. A proteção foi publicada
@@ -86,14 +86,24 @@ PT-007, PT-008 ou PT-009: geração/processamento do token, fluxo integrado e
 provider continuam pendentes. Frontend, provider, terminalização e retenção
 pertencem a incrementos posteriores e não foram aprovados automaticamente.
 
+O contrato da F1-B.4.5.6 — Processador de Entrega com Adapter Controlado — foi
+aprovado em 2026-11-05. Ele formaliza geração just-in-time, link em memória, cinco
+operações protegidas, claims e leases, três tentativas, adapter estritamente
+técnico, `UNKNOWN` sem reenvio e a matriz de testes. A implementação ainda não foi
+iniciada e, portanto, PT-007 e PT-008 permanecem abertas para evidências reais.
+O modo `controlled` é restrito a `NODE_ENV=test` e não escolhe provider produtivo;
+PT-009 permanece integralmente aberta. F1-B.4.5.7–F1-B.4.5.11 continuam propostas
+não aprovadas.
+
 A reconciliação da F1-B.4.5.2 é exclusivamente observacional e não produz nova
 terminalização `NOT_FOUND`. O protocolo autorizado para encerrar intenções
 abandonadas, inclusive autoridade e coordenação persistente entre executores,
 permanece pendência operacional para incremento futuro antes da disponibilização
-produtiva completa. Não se aprovam nesta etapa função de fechamento, nova role,
-credencial, ownership, lease, heartbeat ou fencing. Essa postergação preserva
-PT-003, PT-007, PT-008 e PT-009 abertas e não declara a recuperação funcional
-concluída.
+produtiva completa. Para esse protocolo de abandono não estão aprovados função de
+fechamento, nova role, credencial, ownership, lease, heartbeat ou fencing. Os
+leases aprovados separadamente na F1-B.4.5.6 pertencem somente à entrega e não
+resolvem essa autoridade futura. A postergação preserva PT-003, PT-007, PT-008 e
+PT-009 abertas e não declara a recuperação funcional concluída.
 
 ## Pendências técnicas resolvidas
 

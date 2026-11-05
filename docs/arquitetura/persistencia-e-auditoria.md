@@ -189,6 +189,172 @@ requests, tentativas, tokens ou operações de reset. Os acessos existentes
 necessários ao login não são removidos neste incremento. SQL parametrizado,
 transação única e testes PostgreSQL reais permanecem obrigatórios.
 
+#### Operações protegidas da F1-B.4.5.6
+
+O contrato está aprovado, mas ainda não implementado. A F1-B.4.5.6 acrescentará
+somente cinco operações específicas de entrega. Elas são a única fronteira de
+mutação do processador: runtime não recebe `SELECT` amplo em `account` nem DML
+direto em request, tentativa, token ou auditoria.
+
+Todas as funções retornam exatamente uma linha para uma invocação válida,
+inclusive `NO_WORK`, ownership obsoleto e estado terminal. Zero ou mais de uma
+linha são violação de contrato e não podem ser convertidos em sucesso. UUIDs são
+v4, hashes possuem exatamente 32 bytes e resultados desconhecidos falham
+fechados.
+
+| Operação                               | Entradas mínimas                                                                   | Saída mínima                                                                                      | Efeito transacional                                                                                                  |
+| -------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `claim_password_recovery_delivery`     | IDs estáveis de tentativa proposta e lease                                         | resultado, `recovery_request_id`, `delivery_attempt_id`, ordinal, lease e prazo quando aplicáveis | seleciona e revalida candidato, cria ou retoma `PREPARING`, recupera lease expirado ou confirma ausência de trabalho |
+| `prepare_password_recovery_delivery`   | attempt, lease, `token_id`, hash separado por domínio e expiração                  | resultado e identificadores esperados, sem token bruto                                            | sob teto de tokens, persiste hash e expiração e muda `PREPARING → PREPARED`                                          |
+| `confirm_password_recovery_sending`    | attempt e lease                                                                    | resultado; e-mail e expiração somente em `SEND_AUTHORIZED`                                        | muda `PREPARED → SENDING`, confirma `sending_confirmed_at` e renova uma única vez o lease                            |
+| `complete_password_recovery_delivery`  | attempt, lease, resultado externo e `audit_event_id` quando aplicável              | resultado terminal e próximo instante elegível quando aplicável                                   | conclui `SENT`, `FAILED` ou `UNKNOWN`, com invalidação, backoff e auditoria conforme o resultado                     |
+| `reconcile_password_recovery_delivery` | request, attempt, lease, token e operação esperados conforme a fronteira observada | `OBSERVED` com estado minimizado, `NOT_FOUND`, `INCONSISTENT` ou `UNKNOWN`                        | nenhuma mutação; compara somente evidências persistidas                                                              |
+
+##### Claim e recuperação
+
+`claim_password_recovery_delivery` faz seleção otimista fora do lock somente para
+encontrar candidato. Dentro da transação, adquire somente as classes necessárias,
+sempre na ordem relativa global: advisory lock da conta, `account`,
+`password_credential`, marcador de reset quando aplicável,
+`password_recovery_request`, `password_recovery_delivery_attempt` e
+`password_reset_token`. Sessões e auditoria não são adquiridas pelo claim. Estado,
+lease, elegibilidade e contagens são então revalidados. Seus resultados são:
+
+- `CLAIMED`: nova tentativa em `PREPARING`, com lease inicial de 60 segundos;
+- `RESUMED_PREPARING`: tentativa sem token retomada com ownership válido;
+- `RECOVERED_PREPARED`: token bruto perdido foi invalidado, a tentativa recebeu
+  `FAILED / PREPARATION_FAILURE` e a request recebeu backoff ou `FAILED` terminal;
+- `RECOVERED_SENDING_UNKNOWN`: `SENDING` expirado foi terminalizado como
+  `UNKNOWN`, sem novo ownership de envio;
+- `NO_WORK`: nenhuma request elegível depois da revalidação confirmada; ou
+- `INCONSISTENT`: evidência física incompatível com as invariantes.
+
+Em `RECOVERED_PREPARED`, a tentativa é terminalizada com `terminal_at` igual ao
+instante PostgreSQL da transação. Depois da tentativa 1, a request permanece
+`PENDING` e a próxima tentativa somente se torna elegível quando esse
+`terminal_at + INTERVAL '1 minute'` for alcançado; depois da tentativa 2, o mesmo
+cálculo usa `terminal_at + INTERVAL '5 minutes'`. O claim deriva a elegibilidade
+do `terminal_at` persistido da tentativa anterior e só então cria a próxima
+tentativa em `PREPARING`, com novo `delivery_attempt_id`, novo ordinal e
+`scheduled_at` igual ao instante da nova transação. Não se usa `updated_at` como
+instante futuro nem se cria coluna adicional para backoff. A tentativa 3 termina
+a request como `FAILED`.
+
+O token é invalidado na mesma transação com `invalidated_operation_id` igual ao
+`delivery_attempt_id` da tentativa que o criou. Ambos são UUID v4, a coluna de
+invalidação não é única e o índice existente permite a reconciliação por essa
+correlação. Repetição coerente observa o mesmo valor; token já consumido,
+invalidado por outra operação ou com correlação divergente é inconsistente e não
+é sobrescrito. O ordinal encerrado nunca é reutilizado.
+
+`NO_WORK` somente pode resultar de commit confirmado da função. Erro de conexão,
+timeout, cardinalidade inválida ou observação inconclusiva não são `NO_WORK`.
+
+##### Preparação
+
+`prepare_password_recovery_delivery` exige `PREPARING`, mesmo lease e ownership
+vigente. Ela adquire, conforme necessário, advisory lock da conta, `account`,
+`password_credential`, marcador de reset quando aplicável, request, tentativa e
+tokens por UUID, preservando a ordem global. Depois revalida o ownership, bloqueia
+os tokens ativos, confirma o teto inferior a três, cria um único token físico para
+a tentativa e grava `PREPARED` atomicamente. Resultados:
+
+- `PREPARED`, para a primeira gravação confirmada;
+- `ALREADY_PREPARED_MATCHING`, somente quando attempt, lease, `token_id` e hash
+  são exatamente os mesmos;
+- `STALE_OWNER`, para lease divergente;
+- `ALREADY_TERMINAL`; ou
+- `INCONSISTENT`.
+
+O token bruto nunca entra na função. Commit indeterminado é reconciliado pelo
+mesmo attempt, lease, `token_id` e hash. `PREPARING` com mesmo lease e ausência
+comprovada de token permite repetir a mesma preparação; qualquer outra divergência
+proíbe repetição automática. Depois de reinício que perdeu o token bruto já
+preparado, a recuperação ocorre somente após lease e segue o consumo de tentativa
+descrito acima.
+
+##### Confirmação de `SENDING`
+
+`confirm_password_recovery_sending` exige `PREPARED`, mesmo lease vigente e token
+ativo. Na mesma transação, grava `SENDING`, `sending_confirmed_at` e renova o lease
+uma única vez para 60 segundos. Seus resultados são:
+
+- `SEND_AUTHORIZED`: existe somente na primeira transição recém-confirmada e no
+  retorno original depois do commit; contém e-mail e expiração necessários ao
+  adapter, mas não token ou link;
+- `ALREADY_SENDING`: observação sem e-mail e sem autorização;
+- `STALE_OWNER`;
+- `ALREADY_TERMINAL`; ou
+- `INCONSISTENT`.
+
+Se o commit for indeterminado, `PREPARED` com o mesmo lease permite repetir a
+transição. `SENDING` comprova que a fronteira foi ou pode ter sido atravessada e
+proíbe chamada externa. Nem replay nem reconciliação recriam `SEND_AUTHORIZED`.
+
+A função SQL pode produzir sua linha antes do commit da transação que a chamou.
+Por isso, somente o adapter de persistência pode expor `SEND_AUTHORIZED` ao
+processador, e apenas depois de confirmar o commit ou autocommit da transição
+`PREPARED → SENDING`. Na fronteira da chamada externa não pode existir transação
+caller-managed ainda aberta. Resultado recebido internamente antes do commit não
+autoriza envio; se o commit for indeterminado, o adapter descarta essa autorização
+efêmera e executa somente reconciliação observacional. Replay que observa
+`SENDING` devolve `ALREADY_SENDING`, sem destinatário, e reconciliação nunca produz
+`SEND_AUTHORIZED`.
+
+##### Conclusão
+
+`complete_password_recovery_delivery` aceita somente um resultado externo já
+classificado:
+
+- `ACCEPTED` muda `SENDING → SENT`, terminaliza a request e grava
+  `AUTH_PASSWORD_RECOVERY_SEND_ACCEPTED` na mesma transação;
+- `NOT_ACCEPTED` muda a tentativa para `FAILED / DELIVERY_FAILURE`, invalida o
+  token com `invalidated_operation_id = delivery_attempt_id` e mantém a request
+  `PENDING` até `terminal_at + 1 minute` ou `terminal_at + 5 minutes`, conforme o
+  ordinal; depois da tentativa 3, termina a request como `FAILED`; e
+- `INDETERMINATE` muda tentativa e request para `UNKNOWN`, preserva o token e sua
+  expiração natural.
+
+Na invalidação por `NOT_ACCEPTED`, repetição coerente preserva o mesmo
+`delivery_attempt_id`; token consumido, já invalidado por outra operação ou com
+correlação divergente não é sobrescrito e produz resultado inconsistente.
+
+A conclusão exige o mesmo lease, mas pode chegar depois de seu instante nominal
+se a tentativa ainda estiver em `SENDING` e o ownership não tiver sido substituído.
+Conclusão e recuperação adquirem os mesmos locks. A primeira terminalização
+confirmada prevalece; `SENT`, `FAILED`, `UNKNOWN` e `CANCELLED` devolvem
+`ALREADY_TERMINAL` e nunca são sobrescritos.
+
+Commit indeterminado é repetível somente como mutação SQL quando a reconciliação
+comprovar `SENDING` com o mesmo lease e o executor ainda possuir o resultado
+externo. O adapter nunca é repetido. Estado terminal coerente comprova a conclusão;
+evidência parcial é `INCONSISTENT` e falha de observação é `UNKNOWN`.
+
+##### Reconciliação, idempotência e privilégios
+
+`reconcile_password_recovery_delivery` é somente leitura, pode ser repetida e não
+retorna e-mail. Ela nunca concede autorização externa, renova lease, invalida
+token, corrige estado ou terminaliza tentativa. `OBSERVED` inclui apenas os IDs,
+estado, ownership e marcadores necessários à fronteira consultada.
+
+As cinco funções são `SECURITY DEFINER`, pertencem ao migrator, fixam
+`search_path` protegido, qualificam todos os objetos, validam argumentos e não
+usam SQL dinâmico. `PUBLIC`, bootstrap e manutenção não recebem `EXECUTE`; o papel
+runtime recebe somente os `EXECUTE` necessários. Cada operação adquire somente as
+classes necessárias, preservando esta ordem relativa global sem inversão:
+advisory lock da conta; `account`; `password_credential`; marcador de
+reset quando aplicável; `password_recovery_request` por UUID;
+`password_recovery_delivery_attempt` por UUID; `password_reset_token` por UUID;
+sessões por UUID quando aplicável; e auditoria. Classe não necessária é omitida,
+mas nenhuma classe posterior é adquirida antes de uma classe anterior necessária.
+
+Falhas transacionais comprovadamente revertidas podem seguir a política limitada
+de retry já aprovada, reutilizando os mesmos IDs e revalidando todo o estado.
+Timeout, perda de conexão ou commit indeterminado nunca são tratados como rollback
+por tipo de exceção. Lease e hash permanecem somente nos campos operacionais
+previstos; token bruto, link, e-mail, IP bruto, lease e erro completo do adapter
+nunca integram auditoria, e token bruto ou link nunca são persistidos.
+
 #### Contrato publicado da F1-B.4.5.4
 
 A estrutura publicada permite registrar e classificar a solicitação sem nova

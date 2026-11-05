@@ -656,6 +656,100 @@ de start. Falha no SHA-256, nos UUIDs ou na montagem da entrada faz refund uma
 start possa ter sido enviado, esse tratamento não se aplica: a reserva é
 consumida e a classificação permanece conservadora.
 
+### F1-B.4.5.6 — Processador de Entrega com Adapter Controlado
+
+O contrato deste incremento está aprovado, mas ainda não implementado. Ele liga
+somente solicitações `PENDING` ao processamento interno, ao token just-in-time e
+ao adapter técnico. Não cria endpoint, frontend, provider produtivo, fila externa,
+outbox genérica, retenção ou disponibilidade de recuperação em produção.
+
+#### Autorização de envio e resultado externo
+
+`PREPARED → SENDING` é uma transição protegida e confirmada antes do efeito
+externo. Somente a primeira transição recém-confirmada pode devolver
+`SEND_AUTHORIZED`, junto do e-mail destinatário minimizado para o adapter. Esse
+retorno é efêmero e não repetível: nova chamada em `SENDING` devolve
+`ALREADY_SENDING`, sem destinatário e sem autorização, e reconciliação é sempre
+observacional.
+
+O adapter recebe somente `recipientEmail`, `recoveryUrl`, `expiresAt` e `signal`,
+não acessa PostgreSQL e devolve uma destas classificações:
+
+- `ACCEPTED`: o provider controlado confirmou aceite; autoriza `SENT` e a
+  auditoria correspondente;
+- `NOT_ACCEPTED`: há prova de que não ocorreu aceite; autoriza falha determinada,
+  invalidação e backoff aplicável; ou
+- `INDETERMINATE`: houve timeout, exceção inesperada, cancelamento, perda de
+  resposta ou outra situação sem prova de ausência de aceite; autoriza somente
+  `UNKNOWN`.
+
+`AbortSignal` limita a espera local, mas não prova cancelamento no provider. Não
+há garantia exactly-once. Depois de `SENDING`, crash, commit indeterminado ou
+recuperação de lease não autoriza nova chamada externa. Resultado tardio só pode
+concluir `SENDING` ainda pertencente ao mesmo lease e nunca sobrescreve terminal.
+
+#### Ativação e lifecycle
+
+`BELLO_PASSWORD_RECOVERY_DELIVERY_MODE` aceita `disabled` ou `controlled`; sua
+ausência equivale a `disabled`. `controlled` é aceito exclusivamente com
+`NODE_ENV=test`. Valor desconhecido ou modo controlado em `development` ou
+`production` impede a inicialização. Esse fail-fast é a barreira verificável que
+impede o adapter técnico de representar provider produtivo; PT-009 permanece
+aberta.
+
+No modo controlado, um processador NestJS interno usa loop simples, sem scheduler
+ou dependência nova, com paralelismo 1 por instância, polling ocioso de 1 segundo
+e no máximo 10 claims por ciclo. Somente `NO_WORK` confirmado representa
+ociosidade. Erro de infraestrutura, timeout e resultado desconhecido permanecem
+falha ou indeterminação e não provocam loop imediato nem envio presumido.
+
+Shutdown impede novos claims e novas chamadas ainda não iniciadas. Chamada já
+iniciada espera somente até o timeout controlado de 10 segundos e sua interrupção
+não é reclassificada como prova de não aceite. Múltiplas instâncias dependem dos
+locks PostgreSQL aprovados; não se introduzem leader election, heartbeat
+distribuído ou coordenação externa.
+
+#### Link, memória e logs
+
+O link é construído exclusivamente como
+`{BELLO_PUBLIC_ORIGIN}/reset-password#token={encodeURIComponent(base64url_token)}`.
+`BELLO_PUBLIC_ORIGIN` é a origem canônica confiável já validada no bootstrap; não
+se usam `Host` nem headers encaminhados. Token e link existem apenas em memória e
+somente o hash separado por domínio é persistido.
+
+Token, hash, link, destinatário, IP bruto e erro integral do adapter são proibidos
+em logs, exceções, métricas e auditoria. Valores e identificadores de lease não
+integram auditoria nem logs que possam expor dados operacionais sensíveis. Eventos
+minimizados de aquisição, expiração e recuperação podem ser observados em logs ou
+métricas sem `lease_id`, destinatário ou outro identificador sensível, preservando
+a política operacional já aprovada. A operação protegida não amplia `SELECT
+account.email`; o e-mail existe somente no retorno original de `SEND_AUTHORIZED`.
+
+#### Matriz de auditoria do aceite
+
+`AUTH_PASSWORD_RECOVERY_SEND_ACCEPTED` ocorre exclusivamente depois de
+`ACCEPTED`, na mesma transação de `SENT`. `INTERNAL_PROCESSOR` é a origem normativa
+do processador interno:
+
+| Campo              | Valor aprovado                         |
+| ------------------ | -------------------------------------- |
+| `actor_account_id` | `NULL`                                 |
+| `origin`           | `INTERNAL_PROCESSOR`                   |
+| `scope`            | `SECURITY`                             |
+| `operation`        | `AUTH_PASSWORD_RECOVERY_SEND_ACCEPTED` |
+| `result`           | `SUCCESS`                              |
+| `entity_type`      | `ACCOUNT`                              |
+| `entity_id`        | `account_id`                           |
+| `operation_id`     | `delivery_attempt_id`                  |
+| `correlation_id`   | `recovery_request_id`                  |
+| `sequence`         | `1`                                    |
+| `before_data`      | `NULL`                                 |
+| `after_data`       | `NULL`                                 |
+| `context`          | `NULL`                                 |
+
+`SENT` e o evento comprovam aceite pelo provider, não entrega ao destinatário.
+Não se cria evento de entrega sem evidência própria.
+
 ### Token, link e disponibilidade
 
 - cada tentativa gera just-in-time 32 bytes de CSPRNG e Base64URL canônica sem
@@ -667,8 +761,8 @@ consumida e a classificação permanece conservadora.
   provider; não são persistidos, criptografados para recuperação, registrados ou
   reconstruídos;
 - a URL usa exclusivamente a origem pública confiável e a rota frontend
-  `/reset-password`; recomenda-se transportar o token no fragmento e removê-lo do
-  histórico após a captura;
+  `/reset-password`; a F1-B.4.5.6 aprovou o transporte do token no fragmento e sua
+  remoção do histórico após a captura;
 - adapter controlado pode validar tecnicamente o fluxo em testes, mas não
   representa provider real nem disponibilidade produtiva;
 - a PT-009 permanece aberta. Produção exige provider, timeout, credenciais e

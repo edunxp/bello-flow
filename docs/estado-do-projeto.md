@@ -10,18 +10,19 @@ aprovado ou um marco relevante for publicado.
 - **Última entrega publicada:** F1-B.4.5.5 — Caso de Uso de Redefinição de Senha,
   concluída pelo commit `9ac023961b769b9e52c53d6799501df300c4ce3e`.
 - **Publicação e CI:** branch `main` sincronizada após a publicação; execução
-  [CI 42083803500](https://github.com/edunxp/bello-flow/actions/runs/42083803500)
+  [CI 42087770386](https://github.com/edunxp/bello-flow/actions/runs/42087770386)
   aprovada nos jobs `Quality`, `API integration` e `Required`.
 - **Estado da F1-B.4.5:** fundação PostgreSQL, camada transacional, admissão
   efêmera, executor Argon2id global compartilhado e solicitação/classificação
   persistente e o caso de uso interno de redefinição foram publicados. As
   reconciliações permanecem observacionais, a admissão e a anti-enumeração estão
   integradas e a regressão do login foi preservada. A recuperação completa ainda
-  não está concluída: geração e processamento de entrega, provider produtivo,
-  endpoints HTTP e frontend permanecem sem implementação.
-- **Próximo objetivo:** nenhum incremento posterior está iniciado ou autorizado
-  por este registro. A sequência F1-B.4.5.6–F1-B.4.5.11 permanece somente uma
-  proposta de planejamento.
+  não está concluída: o contrato da F1-B.4.5.6 foi aprovado, mas sua implementação,
+  o provider produtivo, os endpoints HTTP e o frontend permanecem pendentes.
+- **Próximo objetivo:** F1-B.4.5.6 — Processador de Entrega com Adapter Controlado
+  possui contrato normativo aprovado e implementação ainda não iniciada. Este
+  registro não autoriza implementá-lo. F1-B.4.5.7–F1-B.4.5.11 permanecem somente
+  propostas de planejamento não aprovadas.
 - **Pendências:** PT-003, PT-007, PT-008 e PT-009 preservam o estado de seus
   documentos canônicos. Esta consolidação não as encerra nem declara a recuperação
   disponível em produção.
@@ -190,20 +191,35 @@ normativas nem alteram o estado de decisões ou pendências.
 
 Nenhum próximo incremento está iniciado ou autorizado por este documento.
 
+### F1-B.4.5.6 — contrato aprovado, implementação não iniciada
+
+O contrato normativo do **Processador de Entrega com Adapter Controlado** está
+aprovado como complemento de AT-001, AT-003 e AT-009. O recorte abrange somente
+processamento interno NestJS, operações PostgreSQL protegidas, token just-in-time,
+link controlado, adapter técnico e testes. Provider produtivo, HTTP público,
+frontend, fila externa, outbox genérica, retenção e incrementos posteriores estão
+excluídos. A implementação, as migrations e as evidências de teste ainda não foram
+iniciadas. PT-009 permanece aberta.
+
+O contrato está consolidado em
+[decisões técnicas](arquitetura/decisoes-tecnicas.md#contrato-aprovado--f1-b456-processador-de-entrega-com-adapter-controlado),
+[segurança](arquitetura/seguranca-e-autorizacao.md#f1-b456--processador-de-entrega-com-adapter-controlado),
+[persistência](arquitetura/persistencia-e-auditoria.md#operações-protegidas-da-f1-b456)
+e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b456).
+
 ### Sequência posterior proposta — não aprovada
 
 Os identificadores abaixo organizam o planejamento e não constituem contrato,
 autorização de implementação ou aprovação automática:
 
-1. F1-B.4.5.6 — Processador de Entrega com Adapter Controlado;
-2. F1-B.4.5.7 — Provider Produtivo e Configuração Operacional;
-3. F1-B.4.5.8 — Terminalização de Intenções Abandonadas;
-4. F1-B.4.5.9 — Retenção Operacional;
-5. F1-B.4.5.10 — Endpoints HTTP de Recuperação; e
-6. F1-B.4.5.11 — Frontend e Prontidão Ponta a Ponta.
+1. F1-B.4.5.7 — Provider Produtivo e Configuração Operacional;
+2. F1-B.4.5.8 — Terminalização de Intenções Abandonadas;
+3. F1-B.4.5.9 — Retenção Operacional;
+4. F1-B.4.5.10 — Endpoints HTTP de Recuperação; e
+5. F1-B.4.5.11 — Frontend e Prontidão Ponta a Ponta.
 
-PT-009 e o protocolo de terminalização permanecem abertos. A F1-B.4.5.5 não os
-antecipa nem aprova automaticamente os incrementos posteriores.
+PT-009 e o protocolo de terminalização permanecem abertos. A aprovação normativa
+da F1-B.4.5.6 não os resolve nem aprova automaticamente os incrementos posteriores.
 
 Qualquer operação de versionamento, publicação ou próximo incremento exige
 autorização específica. As rotas, formatos de resposta e decisões D1–D5
