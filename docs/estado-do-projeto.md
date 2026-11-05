@@ -17,10 +17,10 @@ aprovado ou um marco relevante for publicado.
   PostgreSQL real. A recuperação de senha completa ainda não está concluída:
   casos de uso, processamento e entrega de e-mail, endpoints HTTP e frontend
   permanecem sem implementação.
-- **Próximo objetivo:** o planejamento publicado não atribui identificador nem
-  ordem formal ao incremento posterior à F1-B.4.5.2. Antes de implementar, é
-  necessário decompor e aprovar a próxima entrega entre os componentes restantes
-  do contrato geral, sem presumir que processador de e-mail ou HTTP venha primeiro.
+- **Próximo objetivo:** F1-B.4.5.3 — Admissão e Capacidade Compartilhada,
+  formalizada para planejamento e ainda não implementada. O incremento restringe-se
+  às quotas efêmeras da recuperação e à capacidade Argon2id global compartilhada,
+  sem casos de uso completos, PostgreSQL, e-mail, HTTP ou frontend.
 - **Pendências:** PT-003, PT-007, PT-008 e PT-009 preservam o estado de seus
   documentos canônicos. Esta consolidação não as encerra nem declara a recuperação
   disponível em produção.
@@ -130,41 +130,62 @@ normativas nem alteram o estado de decisões ou pendências.
 
 ## Próximo incremento
 
-- **Identificador oficial:** não definido nos contratos e no planejamento
-  publicados. Não existe base documental para criar ou atribuir
-  `F1-B.4.5.3` nesta consolidação.
-- **Nome da entrega:** pendente de planejamento complementar e aprovação.
-- **Objetivo funcional remanescente:** completar o fluxo aprovado de recuperação
-  e redefinição de senha sem expor existência da conta ou segredos, incluindo os
-  casos de uso, admissão e quotas, processamento da outbox específica, geração
-  just-in-time e entrega do token, endpoints HTTP e integração frontend.
+- **F1-B.4.5.3 — Admissão e Capacidade Compartilhada:** planejamento formalizado;
+  implementação ainda não iniciada e não autorizada por este registro.
+- **Objetivo:** implementar os controles efêmeros de admissão da solicitação e do
+  reset e separar a capacidade Argon2id global para uso compartilhado por login e
+  futuro caso de uso de reset, preservando integralmente o login publicado.
+- **Escopo:** buckets de identidade normalizada ou sentinela e IP confiável,
+  reserva simultânea sem débito parcial, `Retry-After`, memória limitada,
+  saturação localizada, capacidade Argon2id, cancelamento seguro e relógio
+  controlável. Não inclui endpoint, caso de uso completo, persistência, outbox,
+  provider, terminalização, frontend ou nova operação PostgreSQL.
 - **Dependências concluídas:** fundação física F1-B.4.5.1; camada transacional
   F1-B.4.5.2; fundação HTTP/PT-005; autenticação, sessões e capacidade Argon2id do
   login já publicadas.
-- **Dependências pendentes:** decomposição e sequência formal dos incrementos;
-  protocolo autorizado para intenções abandonadas antes da disponibilidade
-  produtiva; e resolução operacional da PT-009 para provider real, timeout,
-  credenciais e política de erros. PT-003, PT-007 e PT-008 não são encerradas por
-  este registro.
+- **Dependências pendentes posteriores:** protocolo autorizado para intenções
+  abandonadas; PT-009 para provider real, timeout, credenciais e política de
+  erros; e assinaturas/privilégios da futura fronteira SQL. Elas não bloqueiam o
+  planejamento da F1-B.4.5.3. PT-003, PT-007 e PT-008 não são encerradas.
 - **Contratos aplicáveis:** complemento aprovado da F1-B.4.5 em AT-001, AT-003,
   AT-009 e AT-010; BEL-032 e BEL-038; DEC-010 e DEC-020; RN-069–RN-072 e
   RN-120–RN-129; contratos de segurança, persistência, auditoria e qualidade da
   recuperação de senha.
-- **Fronteiras de segurança:** anti-enumeração; PT-005; quotas por identidade ou
+- **Fronteiras gerais preservadas:** anti-enumeração; PT-005; quotas por identidade ou
   sentinela e IP; capacidade Argon2id compartilhada; token CSPRNG de uso único,
   armazenado somente por hash e nunca persistido em claro; locks por conta;
   menor privilégio; auditoria sem segredos; e ausência de disponibilidade
   produtiva enquanto PT-009 permanecer aberta.
-- **Critérios de aceite existentes:** DTOs e respostas HTTP exatos; quotas,
+- **Critérios gerais posteriores:** DTOs e respostas HTTP exatos; quotas,
   cooldown e capacidade; geração, expiração e uso único do token; até três
   tentativas; transições e `UNKNOWN`; concorrência e rollback; auditoria e
   retenção; PostgreSQL real descartável; ausência de segredos; regressões;
   cobertura mínima de 90% e jobs `Quality`, `API integration` e `Required`.
-- **Decisões abertas:** identificador, nome, fronteira e ordem do próximo
-  incremento; recorte entre casos de uso, processador, HTTP e frontend; protocolo
-  de fechamento de intenções abandonadas; e escolhas operacionais da PT-009.
-- **Próximo passo recomendado:** aprovar um planejamento complementar que numere
-  e delimite a próxima entrega antes de autorizar implementação funcional.
+- **Compatibilidade obrigatória:** as quotas, respostas, concorrência,
+  cancelamentos e resultados do login permanecem inalterados; a capacidade
+  Argon2id passa a ser global sem criar quota de recuperação dentro do login.
+- **Critérios de aceite:** quotas e reposições exatas, reserva atômica, maior
+  `Retry-After`, saturação `503`, limites estritos de mapas, fila Argon2id FIFO,
+  cancelamento/liberação únicos, ausência de PostgreSQL e Argon2id após rejeição
+  de pré-admissão, relógio determinístico, regressão integral do login e cobertura
+  mínima de 90% por métrica e aplicação.
+
+### Sequência posterior proposta — não aprovada
+
+Os identificadores abaixo organizam o planejamento e não constituem contrato,
+autorização de implementação ou aprovação automática:
+
+1. F1-B.4.5.4 — Solicitação e Classificação da Recuperação;
+2. F1-B.4.5.5 — Caso de Uso de Redefinição;
+3. F1-B.4.5.6 — Processador de Entrega com Adapter Controlado;
+4. F1-B.4.5.7 — Provider Produtivo e Configuração Operacional;
+5. F1-B.4.5.8 — Terminalização de Intenções Abandonadas;
+6. F1-B.4.5.9 — Retenção Operacional;
+7. F1-B.4.5.10 — Endpoints HTTP de Recuperação; e
+8. F1-B.4.5.11 — Frontend e Prontidão Ponta a Ponta.
+
+PT-009, o protocolo de terminalização e a futura fronteira SQL permanecem
+abertos e exigem decisões próprias antes dos incrementos que deles dependem.
 
 Qualquer operação de versionamento, publicação ou próximo incremento exige
 autorização específica. As rotas, formatos de resposta e decisões D1–D5

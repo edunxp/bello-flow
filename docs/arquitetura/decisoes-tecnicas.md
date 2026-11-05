@@ -211,8 +211,8 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 
 ### Complemento aprovado — F1-B.4.5 Recuperação de Senha
 
-- **Estado:** Aprovado; fundação PostgreSQL F1-B.4.5.1 publicada e demais
-  incrementos ainda pendentes
+- **Estado:** Aprovado; fundação PostgreSQL F1-B.4.5.1 e camada transacional
+  F1-B.4.5.2 publicadas; demais incrementos pendentes
 - **Data de aprovação:** 2026-11-04
 - **Escopo:** formaliza exclusivamente a recuperação e a redefinição de senha da
   F1-B.4.5. Não altera os quatro endpoints publicados na F1-B.4.4, não implementa
@@ -327,8 +327,8 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 
 ### Complemento aprovado — F1-B.4.5.2 Operações Transacionais e Reconciliação
 
-- **Estado:** Aprovado para implementação; implementação e evidências ainda
-  pendentes.
+- **Estado:** Implementado e publicado em quatro subincrementos, com evidências
+  PostgreSQL e CI aprovadas.
 - **Data de aprovação:** 2026-11-04.
 - **Escopo:** restringe a F1-B.4.5.2 às operações PostgreSQL de intenção,
   conclusão e reconciliação do reset, à adequação do advisory lock usado pelo
@@ -405,6 +405,62 @@ campos de auditoria estão em
 [persistência e auditoria](persistencia-e-auditoria.md#operações-transacionais-da-f1-b452),
 e os limites de segurança estão em
 [segurança e autorização](seguranca-e-autorizacao.md#fronteira-postgresql-da-f1-b452).
+
+### Planejamento formalizado — F1-B.4.5.3 Admissão e Capacidade Compartilhada
+
+- **Estado:** Planejamento formalizado; implementação ainda não iniciada. Esta
+  formalização não autoriza implementação, commit ou publicação.
+- **Data de formalização:** 2026-11-05.
+- **Escopo:** controles efêmeros de admissão da solicitação de recuperação e da
+  conclusão do reset, além da separação da capacidade Argon2id para uso global por
+  login e reset. Não inclui endpoint HTTP, caso de uso completo, persistência de
+  solicitação, processador, provider, terminalização, frontend ou operação SQL.
+- **Quotas da recuperação:** solicitação por identidade normalizada ou sentinela
+  com capacidade `3` e reposição de `1` a cada dez minutos; solicitação por IP
+  confiável com capacidade `30` e reposição de `1` por minuto; reset por IP
+  confiável com capacidade `60` e reposição de `1` a cada cinco segundos. Não há
+  bucket por token.
+- **Reserva e resposta:** os buckets aplicáveis à solicitação são reservados em
+  uma única seção síncrona, sem débito parcial. Esgotamento retorna o maior
+  `Retry-After` aplicável; a rejeição de pré-admissão não consulta PostgreSQL, não
+  executa Argon2id e não cria auditoria funcional. O reset reserva somente seu
+  bucket de IP antes do trabalho protegido.
+- **Memória e anti-enumeração:** mapas efêmeros locais à instância única aceitam
+  no máximo 16.000 identidades, incluindo uma única sentinela compartilhada, e
+  4.000 IPs. A sentinela não contém nem deriva do e-mail bruto e sempre opera com
+  o IP. Somente bucket integralmente recuperado e sem reserva pode ser removido;
+  saturação sem entrada removível retorna `503` localizado.
+- **Capacidade Argon2id:** login e reset compartilham globalmente até duas
+  execuções e fila FIFO de até quatro posições, com espera máxima de um segundo.
+  Cancelamento só retira espera ainda não admitida; trabalho iniciado mantém a
+  vaga até terminar. Aquisição, timeout, cancelamento e liberação produzem um
+  único resultado e não permitem starvation por ultrapassagem da fila.
+- **Fronteira arquitetural:** a admissão efêmera decide somente reserva, limite,
+  saturação e restituição autorizada; o executor Argon2id decide somente fila e
+  capacidade. Serviços de autenticação existentes continuam consumidores sem
+  alteração de contrato externo, e futuros serviços de recuperação usarão essas
+  fronteiras internas sem acesso aos mapas ou à fila. Nomes, classes e divisão
+  física permanecem decisão de implementação, desde que as invariantes sejam
+  preservadas.
+- **Compatibilidade:** capacidades `5`/`180s` por identidade e `60`/`5s` por IP,
+  sentinela, reserva, resultados e respostas do login permanecem inalterados. A
+  extração da capacidade global não cria quota nova para login, sessão, logout ou
+  logout global e não altera `AuthenticationService` ou seus contratos HTTP.
+- **Cancelamento e restituição:** a infraestrutura oferece finalização idempotente
+  de cada reserva, sem saldo acima da capacidade. A F1-B.4.5.3 não cria nova
+  matriz funcional de restituição para casos de uso futuros; cada consumidor só
+  pode confirmar ou restituir conforme o contrato normativo aplicável.
+- **Qualidade:** relógio e agendamento controláveis, promises coordenadas e provas
+  determinísticas substituem sleeps. Devem ser comprovados reposição, reserva
+  atômica, `Retry-After`, saturação, limites, concorrência, FIFO, cancelamento,
+  ausência de vazamento por identidade e regressão do login, preservando 90% em
+  lines, statements, functions e branches por aplicação e consolidado.
+- **Pendências preservadas:** a F1-B.4.5.3 não encerra PT-008 integralmente. PT-009,
+  terminalização de intenções abandonadas e assinaturas/privilégios da futura
+  fronteira SQL não são dependências diretas e continuam abertos.
+
+A sequência F1-B.4.5.4–F1-B.4.5.11 permanece somente proposta de planejamento,
+sem identificadores normativos aprovados ou autorização automática.
 
 ## AT-002 — Autorização centralizada
 
@@ -716,6 +772,7 @@ e os limites de segurança estão em
 
 | Data | Alteração |
 |---|---|
+| 2026-11-05 | Planejamento da F1-B.4.5.3 formalizado para admissão efêmera da recuperação e capacidade Argon2id global compartilhada, preservando integralmente o login e mantendo casos de uso, PostgreSQL, e-mail, HTTP, frontend, PT-009 e terminalização fora do incremento. |
 | 2026-11-04 | Contrato da F1-B.4.5.2 aprovado para implementação, restringindo o incremento a intenção, conclusão, reconciliação observacional, advisory lock compartilhado, grants e testes PostgreSQL; fechamento autorizado de intenções abandonadas permanece futuro, sem declarar implementação e preservando PT-003, PT-007, PT-008 e PT-009 abertas. |
 | 2026-11-04 | Contrato da F1-B.4.5 aprovado para implementação, formalizando recuperação de senha, HTTP, admissão, token, outbox específica, concorrência, reconciliação, retenção, privilégios e testes, sem declarar implementação ou disponibilidade produtiva e mantendo PT-009 aberta. |
 | 2026-11-03 | Subconjunto de login da PT-008 aprovado para planejamento, com token buckets, memória limitada, saturação segura e concorrência Argon2id, sem declarar implementação; recuperação, transações e e-mail permanecem pendentes. |

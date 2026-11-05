@@ -54,9 +54,10 @@ tentativa, preserva verificação negativa, `401` genérico e auditoria funciona
 
 ### Matriz obrigatória da F1-B.4.5
 
-O contrato de recuperação está aprovado e a fundação PostgreSQL da F1-B.4.5.1 foi
-publicada. Casos de uso, operações da F1-B.4.5.2, processamento, HTTP e demais
-testes continuam pendentes. A entrega completa deve cobrir:
+O contrato de recuperação está aprovado, e a fundação PostgreSQL da F1-B.4.5.1 e
+as operações da F1-B.4.5.2 foram publicadas. Casos de uso, admissão da
+recuperação, processamento, HTTP e demais testes continuam pendentes. A entrega
+completa deve cobrir:
 
 - unitários: DTOs exatos, normalização, Base64URL canônica, hash com separação de
   domínio, transições, leases, cooldown, quotas, três tentativas, três tokens
@@ -164,6 +165,38 @@ statements, functions e branches por aplicação e consolidado e os jobs
 obrigatórios `Quality`, `API integration` e `Required`. Testes automatizados não
 acessam banco persistente e a limpeza é restrita aos recursos comprovadamente
 criados pela própria execução.
+
+#### Critérios específicos da F1-B.4.5.3
+
+A F1-B.4.5.3 é aceita somente com testes determinísticos que comprovem:
+
+- capacidade `3` e reposição de dez minutos para identidade ou sentinela da
+  solicitação, `30` e um minuto para seu IP e `60` e cinco segundos para o IP do
+  reset, sem bucket por token;
+- reserva simultânea de identidade/sentinela e IP sem débito parcial, inclusive
+  sob concorrência, e restituição idempotente sem exceder a capacidade;
+- normalização idêntica para variações da mesma identidade e sentinela única para
+  entradas não normalizáveis, sem armazenar ou revelar e-mail bruto;
+- `Retry-After` inteiro correspondente à maior espera aplicável, sem revelar qual
+  bucket limitou a requisição;
+- ausência de PostgreSQL, Argon2id e auditoria funcional depois de `429` ou `503`
+  de pré-admissão;
+- limites estritos de 16.000 identidades e 4.000 IPs, remoção apenas de bucket
+  recuperado, limpeza incremental, saturação localizada e ausência de expulsão de
+  entrada restritiva;
+- duas execuções Argon2id globais para login e reset, fila FIFO de quatro e espera
+  máxima de um segundo, sem ultrapassagem que produza starvation indevida;
+- exclusão mútua entre aquisição, timeout e cancelamento, retirada de espera ainda
+  não admitida e liberação única somente após o trabalho iniciado terminar;
+- preservação integral das quotas, respostas, cancelamentos, concorrência e
+  resultados publicados do login, incluindo configuração válida e fail-fast; e
+- relógio controlável e promises coordenadas, sem sleeps como prova.
+
+Os testes não precisam de PostgreSQL porque o incremento não executa persistência.
+Permanecem obrigatórios lint, typecheck, testes unitários, build, cobertura mínima
+de 90% em lines, statements, functions e branches por aplicação e consolidado e
+os jobs `Quality`, `API integration` e `Required`. Esta evidência cobre somente o
+recorte de admissão/capacidade e não encerra a PT-008 integralmente.
 
 ## Integração com PostgreSQL real
 

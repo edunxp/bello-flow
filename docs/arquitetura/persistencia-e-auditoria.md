@@ -46,8 +46,8 @@ por suposição.
 
 ### Recuperação de senha da F1-B.4.5
 
-O contrato está aprovado. A fundação física da F1-B.4.5.1 foi publicada; as
-operações da F1-B.4.5.2 e os demais casos de uso continuam pendentes. A
+O contrato está aprovado. A fundação física da F1-B.4.5.1 e as operações da
+F1-B.4.5.2 foram publicadas; os demais casos de uso continuam pendentes. A
 persistência é específica do domínio de recuperação e não antecipa outbox
 genérica.
 
@@ -62,9 +62,9 @@ Não persiste e-mail ou `email_key`.
 muitos. Possui `delivery_attempt_id`, ordinal entre 1 e 3, estado, agenda, lease,
 instantes de confirmação de `SENDING`, aceitação e término e classe fechada de
 falha. `UNIQUE(recovery_request_id, attempt_number)` impede repetição do ordinal.
-Na F1-B.4.5.2, passa a possuir também `cancelled_operation_id UUID`: ele é
+Na F1-B.4.5.2, passou a possuir também `cancelled_operation_id UUID`: ele é
 obrigatório somente em `CANCELLED` e nulo em todos os demais estados. Essa
-adequação está aprovada, mas ainda não foi implementada.
+adequação foi implementada e publicada.
 
 `password_reset_token` pertence a uma única tentativa, e cada tentativa possui no
 máximo um token. Possui hash único de 32 bytes, conta, criação, expiração, consumo
@@ -77,9 +77,9 @@ estado de reconciliação, início, atualização e término. Ele é criado some
 depois de um token resolver uma conta e antes do Argon2id; não contém token, hash,
 senha ou e-mail. A transação do reset leva o marcador a `COMPLETED`. Falha de
 conexão permite registrar ou preservar `UNKNOWN`, protegendo as evidências contra
-limpeza e reinício do processo. A F1-B.4.5.2 aprova ainda `REJECTED` como estado
-terminal para rejeição funcional determinada após a resolução da conta; a
-fundação publicada ainda não contém esse estado.
+limpeza e reinício do processo. A F1-B.4.5.2 acrescentou `REJECTED` como estado
+terminal para rejeição funcional determinada após a resolução da conta; o estado
+foi implementado e publicado na camada transacional.
 
 Requests admitem `RECEIVED`, `SUPPRESSED`, `PENDING`, `PREPARING`, `PREPARED`,
 `SENDING`, `SENT`, `FAILED`, `UNKNOWN` e `CANCELLED` como estado agregado.
@@ -558,8 +558,9 @@ e sem segredos nesta etapa. Elas não criam nova classificação funcional de
 auditoria. Permanecem obrigatórios os eventos aprovados de login, falha de login,
 logout, revogação global e negativas funcionais de autorização. O subconjunto de
 admissão abusiva do login está aprovado na PT-008; a recuperação possui contrato
-aprovado separado na F1-B.4.5 e fundação PostgreSQL publicada na F1-B.4.5.1;
-operações, casos de uso e demais evidências da pendência continuam abertos.
+aprovado separado na F1-B.4.5, fundação PostgreSQL publicada na F1-B.4.5.1 e
+operações publicadas na F1-B.4.5.2; casos de uso e demais evidências da pendência
+continuam abertos.
 
 No subconjunto aprovado de proteção do login, uma requisição rejeitada com `429`
 antes de alcançar `AuthenticationService` é rejeição técnica de admissão e não

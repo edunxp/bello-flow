@@ -422,10 +422,10 @@ de 90% em lines, statements, functions e branches.
 ## Recuperação de senha — contrato aprovado da F1-B.4.5
 
 O contrato abaixo está aprovado para implementação. A fundação PostgreSQL da
-F1-B.4.5.1 foi publicada, mas casos de uso, processamento, HTTP e disponibilidade
-produtiva ainda não foram implementados. Ele detalha AT-001, AT-003 e AT-009,
-resolve normativamente a PT-007 e o recorte de recuperação da PT-008 e preserva
-a PT-009 aberta.
+F1-B.4.5.1 e a camada transacional F1-B.4.5.2 foram publicadas, mas casos de uso,
+processamento, HTTP e disponibilidade produtiva ainda não foram implementados.
+Ele detalha AT-001, AT-003 e AT-009, resolve normativamente a PT-007 e o recorte
+de recuperação da PT-008 e preserva a PT-009 aberta.
 
 ### Identidade e anti-enumeração
 
@@ -502,6 +502,38 @@ PHC, link e identificadores internos nunca integram respostas.
 - Login e reset compartilham o limite global de duas execuções Argon2id, fila FIFO
   de quatro e espera máxima de um segundo. As quotas próprias do login não mudam.
 
+### F1-B.4.5.3 — admissão e capacidade compartilhada
+
+Este incremento está formalizado para planejamento e ainda não foi implementado.
+Ele materializa somente as quotas efêmeras já aprovadas e a capacidade Argon2id
+global, sem expor endpoint ou executar caso de uso, PostgreSQL, outbox ou e-mail.
+
+- A admissão de solicitação reserva identidade normalizada ou sentinela e IP em
+  uma única seção síncrona, antes de qualquer `await`, sem débito parcial.
+- A admissão do reset reserva somente o bucket de IP aprovado; não existe bucket
+  por token.
+- A sentinela é única, ocupa uma posição do limite de identidades, não contém nem
+  deriva do e-mail bruto e nunca substitui o bucket de IP.
+- Os mapas permanecem efêmeros e locais à instância única. Somente entradas
+  integralmente recuperadas e sem reserva podem ser removidas; saturação rejeita
+  somente a nova chave com `503`, sem degradar buckets existentes.
+- Esgotamento usa `429 RATE_LIMITED` e o maior `Retry-After` aplicável, sem revelar
+  qual chave limitou a requisição. Pré-admissão rejeitada não consulta banco, não
+  executa Argon2id e não produz auditoria funcional.
+- A fila Argon2id é única para login e reset, FIFO, limitada a quatro esperas e
+  duas execuções. Cancelamento antes da aquisição, timeout e aquisição são
+  mutuamente exclusivos; trabalho iniciado ocupa a vaga até seu término real.
+- Admissão e capacidade são responsabilidades internas separáveis. Serviços
+  existentes de autenticação e futuros serviços de recuperação consomem seus
+  resultados sem acesso direto aos mapas ou à fila; a forma concreta dessa
+  separação não é prescrita.
+- O comportamento publicado do login permanece integralmente preservado,
+  incluindo quotas próprias, sentinela, resultados, restituições, erros,
+  cancelamento e ausência de quotas em sessão e logout.
+
+A F1-B.4.5.3 não define persistência, cooldown, classificação funcional,
+processamento, provider ou resposta HTTP da recuperação e não encerra a PT-008.
+
 ### Token, link e disponibilidade
 
 - cada tentativa gera just-in-time 32 bytes de CSPRNG e Base64URL canônica sem
@@ -555,7 +587,7 @@ entrega ao destinatário; não existe evento de entrega sem evidência própria.
 
 ### Fronteira PostgreSQL da F1-B.4.5.2
 
-Este recorte aprovado ainda não está implementado. Ele contém somente intenção,
+Este recorte foi implementado e publicado. Ele contém somente intenção,
 conclusão, reconciliação, grants, testes PostgreSQL e a adequação do advisory lock
 do login. Não publica endpoint, não processa e-mail, não gera nem entrega token e
 não resolve a PT-009. Fixtures inseridas pelo migrator são preparação técnica de

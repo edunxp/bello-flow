@@ -15,11 +15,11 @@ fonte normativa que aprovou cada resolução.
 |---|---|---|---|
 | PT-001 | versões específicas e compatibilidade de Node.js, Angular, NestJS, Prisma e PostgreSQL | todas | matriz de versões suportadas e política de atualização |
 | PT-002 | representação física das posições esparsas e critério de rebalanceamento | AT-004 | prova de concorrência, precisão, crescimento e ordenação estável |
-| PT-003 | bloqueios, ordem de aquisição, isolamento e repetição por operação; os contratos da recuperação e da F1-B.4.5.2 foram aprovados, mas as operações ainda exigem implementação e prova PostgreSQL | AT-003, AT-004 | catálogo por mutação crítica com comportamento de conflito e evidência real por operação |
+| PT-003 | bloqueios, ordem de aquisição, isolamento e repetição por operação; as operações F1-B.4.5.2 foram publicadas e provaram seu recorte, mas a pendência permanece para outras mutações | AT-003, AT-004 | catálogo por mutação crítica com comportamento de conflito e evidência real por operação |
 | PT-004 | modelo físico, restrições e índices | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho |
 | PT-006 | protocolo de revisão, mensagens, reconexão e verificações periódicas | AT-005 | contrato de sincronização e recuperação testável |
 | PT-007 | tratamento seguro de links/tokens nas solicitações persistidas de e-mail; a fundação física foi publicada e o contrato não persiste token ou link recuperável, mas geração e processamento continuam pendentes | AT-009 | comprovar geração just-in-time, hash de validação, estados e falhas em PostgreSQL real |
-| PT-008 | limites de tentativas para login e recuperação, transações e e-mail; login está implementado, fundação da recuperação publicada e operações F1-B.4.5.2 apenas aprovadas | AT-001, AT-003, AT-009 | implementar e validar operações, processamento e limites da recuperação sem alterar as quotas publicadas do login |
+| PT-008 | limites de tentativas para login e recuperação, transações e e-mail; login e operações F1-B.4.5.2 estão publicados, enquanto admissão, casos de uso e processamento da recuperação permanecem pendentes | AT-001, AT-003, AT-009 | implementar e validar admissão, processamento e limites da recuperação sem alterar as quotas publicadas do login |
 
 O subconjunto de login da PT-008 foi aprovado em 2026-11-03 para planejamento,
 sem que a aprovação, por si, declarasse implementação. A proteção foi publicada
@@ -45,12 +45,13 @@ F1-B.4.5.1 foi publicada no commit
 backfill, correlação da credencial, negação inicial de privilégios e testes reais.
 Isso não implementa geração, processamento ou operações transacionais.
 
-O contrato aprovado da F1-B.4.5.2 formaliza intenção, conclusão, reconciliação,
+O contrato aprovado da F1-B.4.5.2 formalizou intenção, conclusão, reconciliação,
 advisory lock compartilhado, grants e testes, inclusive `REJECTED` e correlação
-de cancelamento das tentativas. Migration, funções, grants e evidências desse
-recorte ainda não existem. Por isso PT-003 permanece aberta para implementação,
-provas e outras mutações, PT-007 não é declarada encerrada e PT-008 continua
-aberta para operações, processamento e limites reais. Os contratos estão em
+de cancelamento das tentativas. O recorte foi publicado em quatro subincrementos,
+com migrations, funções, grants e evidências PostgreSQL. Por isso PT-003 preserva
+somente os demais recortes e mutações, PT-007 não é declarada encerrada e PT-008
+continua aberta para admissão, casos de uso, processamento e limites reais. Os
+contratos estão em
 [decisões técnicas](decisoes-tecnicas.md#complemento-aprovado--f1-b45-recuperação-de-senha),
 [segurança](seguranca-e-autorizacao.md#recuperação-de-senha--contrato-aprovado-da-f1-b45)
 e [persistência](persistencia-e-auditoria.md#recuperação-de-senha-da-f1-b45), com
@@ -58,6 +59,11 @@ o recorte F1-B.4.5.2 detalhado em
 [operações transacionais](persistencia-e-auditoria.md#operações-transacionais-da-f1-b452).
 PT-009 permanece integralmente aberta: adapter controlado valida apenas o fluxo
 técnico e não escolhe nem substitui provider SMTP/API produtivo.
+
+O planejamento da F1-B.4.5.3 formaliza o próximo recorte de PT-008 para admissão
+efêmera da recuperação e capacidade Argon2id global compartilhada. Ele não altera
+as quotas publicadas do login e não encerra PT-008 antes de implementação,
+evidências e processamento dos incrementos posteriores.
 
 A reconciliação da F1-B.4.5.2 é exclusivamente observacional e não produz nova
 terminalização `NOT_FOUND`. O protocolo autorizado para encerrar intenções
