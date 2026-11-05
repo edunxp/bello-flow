@@ -24,7 +24,10 @@ function createHarness() {
   const executeRaw = vi.fn().mockResolvedValue(1);
   const queryRaw = vi.fn(async (...call: RawCall): Promise<unknown> => {
     const sql = sqlOf(call);
-    if (sql.includes('pg_advisory_xact_lock')) {
+    if (
+      sql.includes('pg_advisory_xact_lock') ||
+      sql.includes('acquire_auth_account_advisory_xact_lock')
+    ) {
       return [{ pg_advisory_xact_lock: null }];
     }
     if (sql.includes('reconcile_auth_session_operation')) {
@@ -102,7 +105,9 @@ describe('AuthSessionPersistence creation', () => {
       sqlOf(call as RawCall),
     );
     expect(
-      queries.findIndex((sql) => sql.includes('pg_advisory_xact_lock')),
+      queries.findIndex((sql) =>
+        sql.includes('acquire_auth_account_advisory_xact_lock'),
+      ),
     ).toBeLessThan(
       queries.findIndex((sql) => sql.includes('credential.password_hash')),
     );
@@ -162,7 +167,7 @@ describe('AuthSessionPersistence creation', () => {
     const harness = createHarness();
     harness.queryRaw.mockImplementation(async (...call: RawCall) => {
       const sql = sqlOf(call);
-      if (sql.includes('pg_advisory_xact_lock')) {
+      if (sql.includes('acquire_auth_account_advisory_xact_lock')) {
         return [{ pg_advisory_xact_lock: null }];
       }
       if (sql.includes('reconcile_auth_session_operation')) {
@@ -293,6 +298,17 @@ describe('AuthSessionPersistence failed login auditing', () => {
     expect(JSON.stringify(auditCall)).not.toContain('email@example.com');
     expect(JSON.stringify(auditCall)).not.toContain('candidate-password');
     expect(JSON.stringify(auditCall)).not.toContain('$argon2id$');
+    const queries = harness.queryRaw.mock.calls.map((call) =>
+      sqlOf(call as RawCall),
+    );
+    expect(queries.some((sql) => sql.includes('pg_advisory_xact_lock'))).toBe(
+      true,
+    );
+    expect(
+      queries.some((sql) =>
+        sql.includes('acquire_auth_account_advisory_xact_lock'),
+      ),
+    ).toBe(false);
   });
 
   it('returns an idempotent result when the operation already exists', async () => {
@@ -537,7 +553,8 @@ describe('AuthSessionPersistence revocation', () => {
     harness.queryRaw.mockImplementation(
       async (...call: RawCall): Promise<unknown> => {
         const sql = sqlOf(call);
-        if (sql.includes('pg_advisory_xact_lock')) return [{}];
+        if (sql.includes('acquire_auth_account_advisory_xact_lock'))
+          return [{}];
         if (sql.includes('reconcile_auth_session_operation')) {
           return [{ status: options?.reconciliation ?? 'NOT_FOUND' }];
         }

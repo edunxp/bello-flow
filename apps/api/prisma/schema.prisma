@@ -78,22 +78,24 @@ model PasswordRecoveryRequest {
 }
 
 model PasswordRecoveryDeliveryAttempt {
-  deliveryAttemptId  String                  @id @map("delivery_attempt_id") @db.Uuid
-  recoveryRequestId  String                  @map("recovery_request_id") @db.Uuid
-  attemptNumber      Int                     @map("attempt_number") @db.SmallInt
-  state              String                  @db.VarChar(20)
-  scheduledAt        DateTime                @map("scheduled_at") @db.Timestamptz(6)
-  leaseId            String?                 @map("lease_id") @db.Uuid
-  leaseExpiresAt     DateTime?               @map("lease_expires_at") @db.Timestamptz(6)
-  sendingConfirmedAt DateTime?               @map("sending_confirmed_at") @db.Timestamptz(6)
-  acceptedAt         DateTime?               @map("accepted_at") @db.Timestamptz(6)
-  terminalAt         DateTime?               @map("terminal_at") @db.Timestamptz(6)
-  failureClass       String?                 @map("failure_class") @db.VarChar(30)
-  recoveryRequest    PasswordRecoveryRequest @relation(fields: [recoveryRequestId], references: [recoveryRequestId], onDelete: Restrict, onUpdate: Restrict)
-  resetToken         PasswordResetToken?
+  deliveryAttemptId    String                  @id @map("delivery_attempt_id") @db.Uuid
+  recoveryRequestId    String                  @map("recovery_request_id") @db.Uuid
+  attemptNumber        Int                     @map("attempt_number") @db.SmallInt
+  state                String                  @db.VarChar(20)
+  scheduledAt          DateTime                @map("scheduled_at") @db.Timestamptz(6)
+  leaseId              String?                 @map("lease_id") @db.Uuid
+  leaseExpiresAt       DateTime?               @map("lease_expires_at") @db.Timestamptz(6)
+  sendingConfirmedAt   DateTime?               @map("sending_confirmed_at") @db.Timestamptz(6)
+  acceptedAt           DateTime?               @map("accepted_at") @db.Timestamptz(6)
+  terminalAt           DateTime?               @map("terminal_at") @db.Timestamptz(6)
+  failureClass         String?                 @map("failure_class") @db.VarChar(30)
+  cancelledOperationId String?                 @map("cancelled_operation_id") @db.Uuid
+  recoveryRequest      PasswordRecoveryRequest @relation(fields: [recoveryRequestId], references: [recoveryRequestId], onDelete: Restrict, onUpdate: Restrict)
+  resetToken           PasswordResetToken?
 
   @@unique([recoveryRequestId, attemptNumber], map: "password_recovery_delivery_attempt_request_number_key")
   @@index([state, scheduledAt, deliveryAttemptId], map: "password_recovery_delivery_attempt_state_schedule_idx")
+  @@index([cancelledOperationId], map: "password_recovery_delivery_attempt_cancelled_operation_idx")
   @@map("password_recovery_delivery_attempt")
 }
 

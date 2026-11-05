@@ -4,7 +4,6 @@ import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   AUTH_SESSION_AUDIT_OPERATION,
-  deriveAccountAdvisoryLockKey,
   deriveOperationAdvisoryLockKey,
   generateOperationId,
   generateSessionId,
@@ -196,13 +195,11 @@ export class AuthSessionPersistence {
 
     const token = generateSessionToken();
     const tokenHash = hashSessionToken(token);
-    const lockKey = deriveAccountAdvisoryLockKey(input.accountId);
-
     try {
       const committed = await this.prisma.$transaction(
         async (tx) => {
           await this.configureTransaction(tx);
-          await this.acquireAdvisoryLock(tx, lockKey);
+          await this.acquireAccountAdvisoryLock(tx, input.accountId);
 
           const existing = await this.reconcileWithinTransaction(tx, {
             accountId: input.accountId,
@@ -419,13 +416,11 @@ export class AuthSessionPersistence {
     assertUuidV4(input.accountId);
     const operationId = input.operationId ?? generateOperationId();
     assertUuidV4(operationId);
-    const lockKey = deriveAccountAdvisoryLockKey(input.accountId);
-
     try {
       return await this.prisma.$transaction(
         async (tx) => {
           await this.configureTransaction(tx);
-          await this.acquireAdvisoryLock(tx, lockKey);
+          await this.acquireAccountAdvisoryLock(tx, input.accountId);
 
           const reconciliation = await this.reconcileWithinTransaction(tx, {
             accountId: input.accountId,
@@ -541,13 +536,11 @@ export class AuthSessionPersistence {
     assertUuidV4(input.sessionId);
     const operationId = input.operationId ?? generateOperationId();
     assertUuidV4(operationId);
-    const lockKey = deriveAccountAdvisoryLockKey(input.accountId);
-
     try {
       return await this.prisma.$transaction(
         async (tx) => {
           await this.configureTransaction(tx);
-          await this.acquireAdvisoryLock(tx, lockKey);
+          await this.acquireAccountAdvisoryLock(tx, input.accountId);
 
           const reconciliation = await this.reconcileWithinTransaction(tx, {
             accountId: input.accountId,
@@ -649,6 +642,17 @@ export class AuthSessionPersistence {
     await tx.$queryRaw`
       SELECT pg_catalog.pg_advisory_xact_lock(${lockKey}::bigint)::text
         AS "lockAcquired"
+    `;
+  }
+
+  private async acquireAccountAdvisoryLock(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+  ): Promise<void> {
+    await tx.$queryRaw`
+      SELECT public.acquire_auth_account_advisory_xact_lock(
+        ${accountId}::uuid
+      )::text AS "lockAcquired"
     `;
   }
 
