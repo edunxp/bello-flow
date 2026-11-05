@@ -36,11 +36,26 @@ alterar a precedência das fontes normativas.
 1. O usuário define o objetivo, a prioridade e as operações autorizadas.
 2. O ChatGPT identifica o escopo, as fontes normativas, as restrições
    arquiteturais e de segurança e os critérios de aceite.
-3. O Codex realiza inspeção somente leitura quando ela for necessária para
-   confirmar o estado real, localizar contratos ou reduzir incerteza relevante.
-4. Inspeções já aprovadas não são repetidas sem mudança de escopo, alteração do
-   repositório ou evidência nova que justifique a repetição.
-5. Bloqueios materiais de arquitetura, segurança, integridade ou contrato retornam
+3. A inspeção é incremental e proporcional à complexidade e ao risco da
+   atividade. O Codex prioriza arquivos, módulos, contratos e dependências
+   diretamente relacionados ao incremento e realiza inspeção somente leitura
+   quando necessária para confirmar o estado real ou reduzir incerteza relevante.
+4. Evidências de etapas anteriores são reutilizadas enquanto o componente e suas
+   dependências relevantes não tiverem mudado. Inspeções gerais do repositório não
+   são repetidas sem necessidade concreta, e decisões normativas publicadas não
+   são reabertas sem evidência nova.
+5. O escopo da inspeção somente é ampliado quando uma dependência,
+   incompatibilidade ou risco tecnicamente identificado exigir evidência
+   adicional.
+6. Quando o contrato estiver aprovado, o escopo estiver claro e houver
+   autorização de implementação, o trabalho pode seguir diretamente para
+   implementação e testes, sem exigir uma etapa separada de inspeção para cada
+   subincremento. Permanecem obrigatórias a leitura das instruções do agente e das
+   fontes aplicáveis, além das validações proporcionais ao risco.
+7. Reduzir inspeções repetitivas não reduz os testes necessários nem as garantias
+   de segurança, cobertura mínima de 90% por métrica, PostgreSQL descartável e
+   gates de CI definidos nas etapas seguintes.
+8. Bloqueios materiais de arquitetura, segurança, integridade ou contrato retornam
    para decisão explícita antes da parte afetada. Atividades independentes podem
    continuar quando permanecerem seguras e autorizadas.
 
