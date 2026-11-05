@@ -18,6 +18,13 @@ Para identificar o estado atual e o próximo objetivo, consulte
 [docs/estado-do-projeto.md](docs/estado-do-projeto.md). Esse documento é
 informativo e não substitui as fontes normativas aprovadas.
 
+Antes de iniciar planejamento, inspeção, implementação, revisão ou publicação,
+consulte o
+[Fluxo de desenvolvimento ChatGPT + Codex](docs/operacao/fluxo-de-desenvolvimento.md).
+Ele organiza as etapas e as entregas entre os participantes sem substituir as
+fontes normativas, a autorização específica da atividade ou o
+[Procedimento de Git e publicação](docs/operacao/git-e-publicacao.md).
+
 ## Fontes normativas
 
 Antes de alterar comportamento, identifique as decisões e regras aplicáveis:
