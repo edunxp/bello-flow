@@ -213,7 +213,11 @@ As interfaces conceituais aprovadas são:
   resolvido e elegível persiste e retorna `STARTED`; token resolvido já expirado,
   consumido, invalidado ou cuja inelegibilidade da conta seja determinada
   persiste `REJECTED` e a auditoria correspondente. Esses retornos não criam
-  novos estados físicos;
+  novos estados físicos. Excepcionalmente, token conhecido vinculado a conta sem
+  `password_credential` é inconsistência operacional anterior à intenção: a
+  função falha de modo estável e sem efeitos, não cria marcador nem auditoria,
+  não inventa `expected_changed_operation_id` e não o classifica como
+  `INCONSISTENT` persistente;
 - `complete_password_reset_operation(reset_operation_id uuid, audit_event_id
   uuid, new_password_hash text)` recebe somente a operação iniciada, o novo PHC
   Argon2id no perfil aprovado e o ID reservado do evento, revalida todo o estado
@@ -354,6 +358,11 @@ viável, token que perde corrida depois de `STARTED`, conta que se torna ineleg�
 ou divergência de `changed_operation_id` produzem `REJECTED`, auditoria de
 negativa e zero efeitos de sucesso. Falha operacional não é rejeição funcional;
 preserva `STARTED` ou `UNKNOWN` e não cria auditoria funcional por suposição.
+Para a intenção ainda não registrada, a ausência da própria linha de
+`password_credential` é a exceção fail-closed: não há correlação legítima para o
+campo `expected_changed_operation_id NOT NULL`, portanto a transação falha antes
+do marcador e da auditoria. A resposta externa futura permanece indistinguível e
+o diagnóstico técnico não inclui token, hash, conta, e-mail ou outro segredo.
 
 ##### Auditoria da operação
 

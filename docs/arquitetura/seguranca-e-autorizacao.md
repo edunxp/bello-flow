@@ -595,6 +595,14 @@ consomem, invalidam, cancelam, revogam ou alteram credencial. Falha operacional
 não é rejeição e retorna ao caso de uso como indeterminação ou indisponibilidade,
 sem auditoria funcional inventada.
 
+A ausência de `password_credential` para a conta de um token conhecido é a
+exceção operacional fail-closed anterior à intenção. Como não existe
+`changed_operation_id` real a correlacionar, a função não cria marcador, não
+produz `AUTH_PASSWORD_RESET_REJECTED`, não altera token, conta, credencial ou
+sessão e não inventa identificador. O caso de uso futuro o traduz em falha
+operacional uniforme, sem revelar a existência da conta; diagnóstico técnico
+eventual usa somente código estável e não registra identificadores ou segredos.
+
 Cada reset resolvido possui exatamente um evento terminal na sequência `1`. Em
 sucesso, usa `AUTH_PASSWORD_RESET_SUCCEEDED`/`SUCCESS`; em rejeição,
 `AUTH_PASSWORD_RESET_REJECTED`/`DENIED`. `operation_id` e `correlation_id` são o

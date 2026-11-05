@@ -369,7 +369,11 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 - **Rejeição:** `REJECTED` fica aprovado como estado terminal do marcador e
   resultado explícito da reconciliação. Rejeição funcional determinada depois
   de resolver a conta produz auditoria e nenhum efeito de reset bem-sucedido.
-  Token não resolvido não cria marcador nem auditoria vinculada à conta.
+  Token não resolvido não cria marcador nem auditoria vinculada à conta. Token
+  conhecido cuja conta não possua `password_credential` é uma inconsistência
+  operacional fail-closed anterior à intenção: não cria marcador ou auditoria,
+  não altera dados, não inventa a correlação obrigatória e não constitui estado
+  `INCONSISTENT` de operação persistida.
 - **Cancelamento:** tentativa de entrega passa a possuir
   `cancelled_operation_id`; sua nulidade acompanha `CANCELLED`. Correlações
   terminais anteriores nunca são sobrescritas.
