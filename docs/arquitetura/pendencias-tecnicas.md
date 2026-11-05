@@ -11,15 +11,15 @@ fonte normativa que aprovou cada resolução.
 
 ## Pendências prioritárias antes da implementação
 
-| ID técnico | Pendência | AT relacionada | Resultado esperado |
-|---|---|---|---|
-| PT-001 | versões específicas e compatibilidade de Node.js, Angular, NestJS, Prisma e PostgreSQL | todas | matriz de versões suportadas e política de atualização |
-| PT-002 | representação física das posições esparsas e critério de rebalanceamento | AT-004 | prova de concorrência, precisão, crescimento e ordenação estável |
-| PT-003 | bloqueios, ordem de aquisição, isolamento e repetição por operação; as operações F1-B.4.5.2 foram publicadas e provaram seu recorte, mas a pendência permanece para outras mutações | AT-003, AT-004 | catálogo por mutação crítica com comportamento de conflito e evidência real por operação |
-| PT-004 | modelo físico, restrições e índices | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho |
-| PT-006 | protocolo de revisão, mensagens, reconexão e verificações periódicas | AT-005 | contrato de sincronização e recuperação testável |
-| PT-007 | tratamento seguro de links/tokens nas solicitações persistidas de e-mail; a fundação física foi publicada e o contrato não persiste token ou link recuperável, mas geração e processamento continuam pendentes | AT-009 | comprovar geração just-in-time, hash de validação, estados e falhas em PostgreSQL real |
-| PT-008 | limites de tentativas para login e recuperação, transações e e-mail; login e operações F1-B.4.5.2 estão publicados, enquanto admissão, casos de uso e processamento da recuperação permanecem pendentes | AT-001, AT-003, AT-009 | implementar e validar admissão, processamento e limites da recuperação sem alterar as quotas publicadas do login |
+| ID técnico | Pendência                                                                                                                                                                                                                     | AT relacionada         | Resultado esperado                                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| PT-001     | versões específicas e compatibilidade de Node.js, Angular, NestJS, Prisma e PostgreSQL                                                                                                                                        | todas                  | matriz de versões suportadas e política de atualização                                                                           |
+| PT-002     | representação física das posições esparsas e critério de rebalanceamento                                                                                                                                                      | AT-004                 | prova de concorrência, precisão, crescimento e ordenação estável                                                                 |
+| PT-003     | bloqueios, ordem de aquisição, isolamento e repetição por operação; as operações F1-B.4.5.2 foram publicadas e provaram seu recorte, mas a pendência permanece para outras mutações                                           | AT-003, AT-004         | catálogo por mutação crítica com comportamento de conflito e evidência real por operação                                         |
+| PT-004     | modelo físico, restrições e índices                                                                                                                                                                                           | AT-003, AT-004, AT-006 | modelo revisado contra autorização, consultas e desempenho                                                                       |
+| PT-006     | protocolo de revisão, mensagens, reconexão e verificações periódicas                                                                                                                                                          | AT-005                 | contrato de sincronização e recuperação testável                                                                                 |
+| PT-007     | tratamento seguro de links/tokens nas solicitações persistidas de e-mail; a fundação física foi publicada e o contrato não persiste token ou link recuperável, mas geração e processamento continuam pendentes                | AT-009                 | comprovar geração just-in-time, hash de validação, estados e falhas em PostgreSQL real                                           |
+| PT-008     | limites de tentativas para login e recuperação, transações e e-mail; login, operações F1-B.4.5.2 e admissão/capacidade F1-B.4.5.3 estão publicados, enquanto casos de uso e processamento da recuperação permanecem pendentes | AT-001, AT-003, AT-009 | implementar e validar classificação, processamento e limites integrados da recuperação sem alterar as quotas publicadas do login |
 
 O subconjunto de login da PT-008 foi aprovado em 2026-11-03 para planejamento,
 sem que a aprovação, por si, declarasse implementação. A proteção foi publicada
@@ -60,10 +60,27 @@ o recorte F1-B.4.5.2 detalhado em
 PT-009 permanece integralmente aberta: adapter controlado valida apenas o fluxo
 técnico e não escolhe nem substitui provider SMTP/API produtivo.
 
-O planejamento da F1-B.4.5.3 formaliza o próximo recorte de PT-008 para admissão
-efêmera da recuperação e capacidade Argon2id global compartilhada. Ele não altera
-as quotas publicadas do login e não encerra PT-008 antes de implementação,
-evidências e processamento dos incrementos posteriores.
+A F1-B.4.5.3 foi publicada no commit
+`47a6ae033f42d40b56c24bad82b454af0616e2ec`, com CI `42050631222` aprovado. Ela
+implementa a admissão efêmera da recuperação e a capacidade Argon2id global
+compartilhada sem alterar as quotas publicadas do login. PT-008 permanece aberta
+porque classificação persistente, casos de uso e processamento ponta a ponta
+continuam pendentes.
+
+O planejamento da F1-B.4.5.4 formaliza a fronteira interna de solicitação e
+classificação, sem implementação. Suas três decisões foram consolidadas: cooldown
+de dez minutos desde `received_at` do request que comprovadamente alcançou
+`PENDING`, inclusive após mudanças de estado; consumo da reserva quando a
+reconciliação permanece `UNKNOWN`, sem sucesso funcional nem repetição; e
+assinaturas protegidas `request_password_recovery` e
+`reconcile_password_recovery_request`.
+
+Essas decisões não encerram PT-008: classificação, concorrência, grants e
+integração ainda precisam ser implementados e comprovados. Também não autorizam
+migration ou código. PT-003 continua aberta para evidência desta mutação; PT-007
+para geração e processamento; e PT-009 para provider. Frontend e terminalização
+de intenções de reset pertencem a incrementos posteriores e não foram aprovados
+automaticamente.
 
 A reconciliação da F1-B.4.5.2 é exclusivamente observacional e não produz nova
 terminalização `NOT_FOUND`. O protocolo autorizado para encerrar intenções
@@ -80,22 +97,22 @@ Esta seção registra encerramentos para preservar rastreabilidade. O contrato
 normativo aprovado permanece na decisão técnica e no documento arquitetural
 indicados; o registro de encerramento não declara implementação.
 
-| ID técnico | Estado | Resolução | Evidência normativa |
-|---|---|---|---|
-| PT-005 | **Resolvida — aprovada em 2026-11-03** | mesma origem pública para Angular e NestJS; cookie host-only seguro; origem canônica; CORS desabilitado; proteção CSRF por header, origem e conteúdo; perfis de desenvolvimento controlados | [complemento de AT-001](decisoes-tecnicas.md#complemento-aprovado--resolução-da-pt-005) e [contrato de segurança](seguranca-e-autorizacao.md#transporte-http-cookie-origem-cors-e-csrf) |
+| ID técnico | Estado                                 | Resolução                                                                                                                                                                                   | Evidência normativa                                                                                                                                                                     |
+| ---------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PT-005     | **Resolvida — aprovada em 2026-11-03** | mesma origem pública para Angular e NestJS; cookie host-only seguro; origem canônica; CORS desabilitado; proteção CSRF por header, origem e conteúdo; perfis de desenvolvimento controlados | [complemento de AT-001](decisoes-tecnicas.md#complemento-aprovado--resolução-da-pt-005) e [contrato de segurança](seguranca-e-autorizacao.md#transporte-http-cookie-origem-cors-e-csrf) |
 
 ## Pendências operacionais
 
-| ID técnico | Pendência | AT relacionada | Resultado esperado |
-|---|---|---|---|
-| PT-009 | provedor SMTP ou API | AT-009 | fornecedor/configuração, limites, erros e ambiente de teste |
-| PT-010 | hospedagem, terminação TLS e destino externo de backups | AT-007 | topologia operacional e responsabilidades claras |
-| PT-011 | política de retenção de backups | AT-006, AT-007 | prazo, descarte e relação com retenção da auditoria |
-| PT-012 | mecanismo de backup-base, WAL e restauração | AT-007 | RPO/RTO demonstrados por exercício mensal |
-| PT-013 | mecanismo de expurgo da auditoria | AT-006 | execução controlada, observável e compatível com backups |
-| PT-014 | ferramentas e limiares de logs, métricas, erros e alertas | AT-007, AT-010 | conjunto mínimo operacional sem plataforma excessiva |
-| PT-015 | ferramentas e desenho do pipeline de testes/CI | AT-010 | execução reproduzível dos gates aprovados |
-| PT-016 | capacidade, desempenho e limites operacionais | AT-003–AT-007, AT-009 | metas e testes baseados em carga esperada |
+| ID técnico | Pendência                                                 | AT relacionada        | Resultado esperado                                          |
+| ---------- | --------------------------------------------------------- | --------------------- | ----------------------------------------------------------- |
+| PT-009     | provedor SMTP ou API                                      | AT-009                | fornecedor/configuração, limites, erros e ambiente de teste |
+| PT-010     | hospedagem, terminação TLS e destino externo de backups   | AT-007                | topologia operacional e responsabilidades claras            |
+| PT-011     | política de retenção de backups                           | AT-006, AT-007        | prazo, descarte e relação com retenção da auditoria         |
+| PT-012     | mecanismo de backup-base, WAL e restauração               | AT-007                | RPO/RTO demonstrados por exercício mensal                   |
+| PT-013     | mecanismo de expurgo da auditoria                         | AT-006                | execução controlada, observável e compatível com backups    |
+| PT-014     | ferramentas e limiares de logs, métricas, erros e alertas | AT-007, AT-010        | conjunto mínimo operacional sem plataforma excessiva        |
+| PT-015     | ferramentas e desenho do pipeline de testes/CI            | AT-010                | execução reproduzível dos gates aprovados                   |
+| PT-016     | capacidade, desempenho e limites operacionais             | AT-003–AT-007, AT-009 | metas e testes baseados em carga esperada                   |
 
 PT-015 possui evidência executável no workflow versionado de CI, com os jobs
 `Quality`, `API integration` e `Required`, além do gate local reproduzível. A
@@ -105,12 +122,12 @@ Ferramentas e limiares operacionais de observabilidade continuam em PT-014.
 
 ## Pendências de bootstrap e migrations
 
-| ID técnico | Pendência | AT relacionada | Resultado esperado |
-|---|---|---|---|
-| PT-017 | interface, autorização e evidências da CLI de bootstrap | AT-008 | procedimento único, concorrente-seguro e não público |
-| PT-018 | procedimento de recuperação administrativa emergencial | AT-008 | fluxo offline, restrito, auditado e priorizando conta existente |
-| PT-019 | credenciais e fluxo operacional de migrations | AT-006–AT-008 | separação comprovada entre aplicação, migration e manutenção |
-| PT-020 | política de compatibilidade e recuperação de migrations | AT-007, AT-008 | validação prévia e resposta documentada a falha |
+| ID técnico | Pendência                                               | AT relacionada | Resultado esperado                                              |
+| ---------- | ------------------------------------------------------- | -------------- | --------------------------------------------------------------- |
+| PT-017     | interface, autorização e evidências da CLI de bootstrap | AT-008         | procedimento único, concorrente-seguro e não público            |
+| PT-018     | procedimento de recuperação administrativa emergencial  | AT-008         | fluxo offline, restrito, auditado e priorizando conta existente |
+| PT-019     | credenciais e fluxo operacional de migrations           | AT-006–AT-008  | separação comprovada entre aplicação, migration e manutenção    |
+| PT-020     | política de compatibilidade e recuperação de migrations | AT-007, AT-008 | validação prévia e resposta documentada a falha                 |
 
 PT-017 possui evidências implementadas de interface, autorização, execução única,
 concorrência e reconciliação da CLI no procedimento de bootstrap e em testes
@@ -125,14 +142,14 @@ recuperação ainda não foram aprovados; estes últimos também permanecem em P
 
 ## Pendências técnicas herdadas da especificação funcional
 
-| PEN | Situação após as ATs | Trabalho ainda necessário |
-|---|---|---|
-| PEN-022 — armazenamento da auditoria | AT-006 aprova PostgreSQL, append-only e separação de credenciais | formato físico, índices, volume e eventual particionamento |
-| PEN-023 — consistência mutação/auditoria | AT-003 aprova transação única e rollback integral | provar comportamento com Prisma/PostgreSQL e falhas reais |
-| PEN-024 — adulteração | AT-006 aprova privilégios restritos e reconhece limite contra administrador do banco | desenhar papéis, grants e verificação operacional |
-| PEN-025 — expiração após 24 meses | AT-006 aprova expurgo automático controlado | escolher mecanismo, agendamento e interação com backups |
-| PEN-026 — falhas e indisponibilidade | AT-003 aprova rollback, repetição limitada e reconciliação | classificar erros, limites e procedimento de commit indeterminado |
-| PEN-027 — desempenho e consulta | AT-006 preserva consultas funcionais aprovadas | índices, paginação, capacidade e consultas SQL justificadas |
+| PEN                                      | Situação após as ATs                                                                 | Trabalho ainda necessário                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| PEN-022 — armazenamento da auditoria     | AT-006 aprova PostgreSQL, append-only e separação de credenciais                     | formato físico, índices, volume e eventual particionamento        |
+| PEN-023 — consistência mutação/auditoria | AT-003 aprova transação única e rollback integral                                    | provar comportamento com Prisma/PostgreSQL e falhas reais         |
+| PEN-024 — adulteração                    | AT-006 aprova privilégios restritos e reconhece limite contra administrador do banco | desenhar papéis, grants e verificação operacional                 |
+| PEN-025 — expiração após 24 meses        | AT-006 aprova expurgo automático controlado                                          | escolher mecanismo, agendamento e interação com backups           |
+| PEN-026 — falhas e indisponibilidade     | AT-003 aprova rollback, repetição limitada e reconciliação                           | classificar erros, limites e procedimento de commit indeterminado |
+| PEN-027 — desempenho e consulta          | AT-006 preserva consultas funcionais aprovadas                                       | índices, paginação, capacidade e consultas SQL justificadas       |
 
 As ATs definem a direção arquitetural dessas pendências, mas a evidência de implementação e os parâmetros não aprovados continuam abertos.
 

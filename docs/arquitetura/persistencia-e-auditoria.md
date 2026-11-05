@@ -6,11 +6,11 @@ Este documento detalha [AT-003](decisoes-tecnicas.md#at-003--consistência-trans
 
 ## Responsabilidades de Prisma e PostgreSQL
 
-| Componente | Responsabilidade |
-|---|---|
-| Prisma | acesso tipado padrão, contexto transacional, migrations administrativas e operações comuns |
-| PostgreSQL | atomicidade, isolamento, restrições, bloqueios, persistência, privilégios e recuperação |
-| SQL parametrizado | complemento localizado para bloqueios, recursos específicos ou desempenho comprovado |
+| Componente        | Responsabilidade                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| Prisma            | acesso tipado padrão, contexto transacional, migrations administrativas e operações comuns |
+| PostgreSQL        | atomicidade, isolamento, restrições, bloqueios, persistência, privilégios e recuperação    |
+| SQL parametrizado | complemento localizado para bloqueios, recursos específicos ou desempenho comprovado       |
 
 Prisma não substitui garantias do banco. SQL específico deve permanecer encapsulado no módulo responsável, parametrizado, testado com PostgreSQL real e executado no mesmo contexto transacional quando fizer parte da operação.
 
@@ -46,10 +46,10 @@ por suposição.
 
 ### Recuperação de senha da F1-B.4.5
 
-O contrato está aprovado. A fundação física da F1-B.4.5.1 e as operações da
-F1-B.4.5.2 foram publicadas; os demais casos de uso continuam pendentes. A
-persistência é específica do domínio de recuperação e não antecipa outbox
-genérica.
+O contrato está aprovado. A fundação física da F1-B.4.5.1, as operações da
+F1-B.4.5.2 e a admissão/capacidade da F1-B.4.5.3 foram publicadas; os demais
+casos de uso continuam pendentes. A persistência é específica do domínio de
+recuperação e não antecipa outbox genérica.
 
 #### Relações e estados
 
@@ -188,6 +188,135 @@ requests, tentativas, tokens ou operações de reset. Os acessos existentes
 necessários ao login não são removidos neste incremento. SQL parametrizado,
 transação única e testes PostgreSQL reais permanecem obrigatórios.
 
+#### Contrato formalizado da F1-B.4.5.4
+
+A estrutura publicada permite registrar e classificar a solicitação sem nova
+coluna: `password_recovery_request` já possui `recovery_request_id`, `account_id`
+nullable, `state`, `received_at`, `updated_at`, `terminal_at`,
+`current_attempt_number` e `cancelled_operation_id`; as constraints aceitam
+`RECEIVED`, `PENDING` e `SUPPRESSED`; e o índice
+`(account_id, received_at DESC, recovery_request_id)` sustenta a consulta por
+conta e tempo. Nenhum e-mail ou `email_key` é persistido.
+
+##### Interface e resultados
+
+A assinatura aprovada para o planejamento do incremento é:
+
+```text
+request_password_recovery(
+  recovery_request_id uuid,
+  audit_event_id uuid,
+  normalized_email_key text
+) RETURNS TABLE (outcome text)
+```
+
+Os dois IDs são UUID v4 não nulos reservados pelo NestJS e validados antes de
+qualquer efeito, repetindo a política das funções publicadas. O parâmetro `text`
+é fisicamente compatível com `account.email_key VARCHAR(254)`.
+`normalized_email_key` é a chave canônica produzida por
+`normalizeAccountEmail`, ou nulo para entrada não normalizável; o PostgreSQL não
+normaliza novamente nem aceita uma normalização alternativa. A função rejeita
+chave presente fora dos limites canônicos e nunca recebe e-mail bruto.
+`RECORDED` é o único resultado funcional: ele não revela conta, estado ou motivo.
+Argumento inválido, inconsistência e indisponibilidade usam erros internos
+estáveis e minimizados.
+
+A função insere `RECEIVED` com o instante do PostgreSQL e, sem sair da transação,
+classifica para `PENDING` ou `SUPPRESSED`. `SUPPRESSED` preenche `terminal_at`;
+`PENDING` preserva `terminal_at` nulo. Ambos mantêm
+`current_attempt_number = 0` e `cancelled_operation_id` nulo. Conta inexistente
+fica com `account_id` nulo; quando a conta é localizada, `account_id` é preservado
+inclusive na supressão, sem ser devolvido ao caller.
+
+Para resultado de commit indeterminado, a assinatura observacional aprovada é:
+
+```text
+reconcile_password_recovery_request(
+  recovery_request_id uuid
+) RETURNS TABLE (outcome text)
+```
+
+`RECORDED` exige um request fisicamente coerente e, para `PENDING`, exatamente um
+evento `AUTH_PASSWORD_RECOVERY_REQUESTED` coerente; para `SUPPRESSED`, exige
+ausência desse evento. Evidência parcial ou contraditória é `INCONSISTENT`.
+Request ausente, falha de consulta ou evidência insuficiente é `UNKNOWN`, porque
+ausência não prova rollback nem autoriza repetição. A reconciliação é somente
+leitura e não transforma `RECEIVED`, não classifica nem cria auditoria.
+
+`recovery_request_id` funciona como chave de idempotência e reconciliação. Uma
+repetição da função mutável com ID existente não refaz classificação, cooldown ou
+contagem: retorna `RECORDED` apenas quando o conjunto já persistido é coerente e,
+caso contrário, sinaliza `RECONCILIATION_REQUIRED`. Depois de commit possivelmente
+enviado, o caller executa a função observacional antes de qualquer nova mutação.
+O argumento da reconciliação também é UUID v4 não nulo e é validado antes da
+consulta.
+
+Na fronteira NestJS, falha anterior ao envio ou rollback comprovado restitui a
+reserva. `RECORDED` consome a reserva. Se a operação foi enviada e a reconciliação
+permanece `UNKNOWN`, a reserva também é consumida, o resultado externo permanece
+indisponível e nenhuma mutação é repetida. Esse consumo é proteção de admissão,
+não evidência de commit nem sucesso funcional.
+
+##### Classificação e concorrência
+
+Entrada nula ou que não resolve `account.email_key` termina `SUPPRESSED` com
+`account_id` nulo. Para conta candidata, a consulta inicial é apenas otimista. A
+função então adquire o advisory lock derivado da conta e segue a ordem global:
+
+1. conta;
+2. credencial;
+3. requests por `recovery_request_id`;
+4. tokens por `password_reset_token_id`; e
+5. auditoria, depois da inserção do novo request.
+
+O advisory lock vem antes dos row locks. Classes não tocadas são omitidas, nunca
+reordenadas. A conta e a credencial são revalidadas após o lock. Conta não
+`ACTIVE`, sem `email_verified_at`, com `deactivated_at`, sem credencial, em
+cooldown, com request pendente ou com três tokens ativos termina `SUPPRESSED`.
+Request pendente é `PENDING`, `PREPARING`, `PREPARED` ou `SENDING`. Token ativo
+tem `expires_at` futuro e `consumed_at` e `invalidated_at` nulos. Os conjuntos são
+bloqueados por UUID antes da decisão; writers futuros de token obedecem ao mesmo
+advisory lock, impedindo ultrapassagem concorrente do teto.
+
+O cooldown de dez minutos usa o `received_at` do request mais recente que tenha
+alcançado `PENDING`. A prova física é a existência do evento
+`AUTH_PASSWORD_RECOVERY_REQUESTED` com `operation_id` e `correlation_id` iguais ao
+`recovery_request_id`, sequência `1` e conta coerente. O estado atual do request
+não é usado como atalho: `PREPARING`, `PREPARED`, `SENDING`, `SENT`, `FAILED`,
+`UNKNOWN` e `CANCELLED` continuam contando quando possuem essa prova; `RECEIVED`
+ou `SUPPRESSED` sem o evento não contam. Sob o advisory lock, o cooldown está
+ativo enquanto o instante único da transação for anterior à soma de `received_at`
+com dez minutos; na igualdade, expirou.
+
+Requests terminais somente são elegíveis à limpeza 30 dias depois de
+`terminal_at`, e a auditoria funcional possui retenção de 24 meses. Portanto, o
+request e sua prova permanecem fisicamente disponíveis durante toda a janela de
+dez minutos. A futura limpeza continua proibida de remover história ainda
+necessária ao cooldown.
+
+##### Auditoria e privilégios
+
+Somente `PENDING` cria um `audit_event` na mesma transação: evento reservado pelo
+caller, sequência `1`, `actor_account_id = NULL`, origem `HTTP_API`, escopo
+`SECURITY`, operação `AUTH_PASSWORD_RECOVERY_REQUESTED`, resultado `SUCCESS`,
+`entity_type = ACCOUNT` e `entity_id = account_id`. `operation_id` e
+`correlation_id` recebem `recovery_request_id`; `before_data`, `after_data` e
+`context` são nulos. `SUPPRESSED`, ausência ou inelegibilidade de conta, cooldown,
+request pendente e teto de tokens não geram evento. Qualquer falha desfaz request
+e auditoria em conjunto.
+
+As duas funções são `SECURITY DEFINER`, owned pelo migrator, com `search_path`
+fixado em `pg_catalog`, `public` e `pg_temp`, objetos qualificados e sem SQL
+dinâmico. A migration futura revoga `EXECUTE` de `PUBLIC`, runtime, bootstrap e
+manutenção e concede ao runtime somente `EXECUTE` nas assinaturas exatas. Nenhum
+novo `SELECT`, `INSERT`, `UPDATE` ou `DELETE` direto é concedido sobre conta,
+credencial, requests, tokens ou auditoria.
+
+Este contrato documental não cria migration, tabela, coluna, estado físico,
+outbox, token, tentativa, claim, lease, processamento ou acesso de provider. As
+assinaturas, o cooldown e a disposição da reserva diante de `UNKNOWN` estão
+formalizados; a implementação permanece não iniciada e requer autorização própria.
+
 #### Operações transacionais da F1-B.4.5.2
 
 ##### Escopo e interfaces
@@ -206,7 +335,7 @@ As interfaces conceituais aprovadas são:
   o lock transacional e integra a superfície mínima usada pelo runtime no login e
   nas operações protegidas;
 - `start_password_reset_operation(reset_operation_id uuid, audit_event_id uuid,
-  presented_token_hash bytea)` recebe IDs UUID v4 previamente reservados e o hash
+presented_token_hash bytea)` recebe IDs UUID v4 previamente reservados e o hash
   apresentado de 32 bytes, resolve o token sem expor o hash persistido, adquire o
   lock e repete as validações. Retorna `account_id` e estado quando houver conta:
   token não resolvido retorna zero linhas, sem marcador ou auditoria; token
@@ -219,7 +348,7 @@ As interfaces conceituais aprovadas são:
   não inventa `expected_changed_operation_id` e não o classifica como
   `INCONSISTENT` persistente;
 - `complete_password_reset_operation(reset_operation_id uuid, audit_event_id
-  uuid, new_password_hash text)` recebe somente a operação iniciada, o novo PHC
+uuid, new_password_hash text)` recebe somente a operação iniciada, o novo PHC
   Argon2id no perfil aprovado e o ID reservado do evento, revalida todo o estado
   pelo marcador e retorna `COMPLETED` ou `REJECTED`, além das quatro contagens,
   quando houver conclusão funcional determinada; e
@@ -599,4 +728,3 @@ As consultas funcionais seguem DEC-010 e RN-113–RN-115: ordem cronológica dec
 - **Feed:** BEL-031; DEC-009; RN-026–RN-031 e RN-110–RN-112.
 - **Auditoria:** BEL-032; DEC-010; RN-032–RN-038, RN-095–RN-097 e RN-113–RN-130.
 - **Pendências de origem:** PEN-022–PEN-027 e PEN-037.
-

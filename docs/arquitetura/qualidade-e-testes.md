@@ -6,13 +6,13 @@ Este documento detalha [AT-010](decisoes-tecnicas.md#at-010--observabilidade-tes
 
 ## Estratégia de testes
 
-| Nível | Objetivo principal |
-|---|---|
-| unitário | regras de negócio, políticas, validações e transições isoladas |
-| integração | Prisma/PostgreSQL, transações, privilégios, auditoria e concorrência reais |
-| componente Angular | estados, interações, acessibilidade e apresentação autorizada |
-| E2E | fluxos essenciais atravessando frontend, backend e PostgreSQL |
-| recuperação | backup, WAL, restauração e metas operacionais |
+| Nível              | Objetivo principal                                                         |
+| ------------------ | -------------------------------------------------------------------------- |
+| unitário           | regras de negócio, políticas, validações e transições isoladas             |
+| integração         | Prisma/PostgreSQL, transações, privilégios, auditoria e concorrência reais |
+| componente Angular | estados, interações, acessibilidade e apresentação autorizada              |
+| E2E                | fluxos essenciais atravessando frontend, backend e PostgreSQL              |
+| recuperação        | backup, WAL, restauração e metas operacionais                              |
 
 A cobertura global mínima é 90% e precisa gerar relatório. Esse número não substitui os cenários críticos nem autoriza omitir testes por serem difíceis.
 
@@ -55,9 +55,10 @@ tentativa, preserva verificação negativa, `401` genérico e auditoria funciona
 ### Matriz obrigatória da F1-B.4.5
 
 O contrato de recuperação está aprovado, e a fundação PostgreSQL da F1-B.4.5.1 e
-as operações da F1-B.4.5.2 foram publicadas. Casos de uso, admissão da
-recuperação, processamento, HTTP e demais testes continuam pendentes. A entrega
-completa deve cobrir:
+as operações da F1-B.4.5.2 foram publicadas. A admissão e a capacidade
+compartilhada da F1-B.4.5.3 também foram publicadas. Casos de uso,
+classificação persistente, processamento, HTTP e demais testes continuam
+pendentes. A entrega completa deve cobrir:
 
 - unitários: DTOs exatos, normalização, Base64URL canônica, hash com separação de
   domínio, transições, leases, cooldown, quotas, três tentativas, três tokens
@@ -168,7 +169,9 @@ criados pela própria execução.
 
 #### Critérios específicos da F1-B.4.5.3
 
-A F1-B.4.5.3 é aceita somente com testes determinísticos que comprovem:
+A F1-B.4.5.3 foi publicada no commit
+`47a6ae033f42d40b56c24bad82b454af0616e2ec`, após testes determinísticos que
+comprovaram:
 
 - capacidade `3` e reposição de dez minutos para identidade ou sentinela da
   solicitação, `30` e um minuto para seu IP e `60` e cinco segundos para o IP do
@@ -197,6 +200,67 @@ Permanecem obrigatórios lint, typecheck, testes unitários, build, cobertura m�
 de 90% em lines, statements, functions e branches por aplicação e consolidado e
 os jobs `Quality`, `API integration` e `Required`. Esta evidência cobre somente o
 recorte de admissão/capacidade e não encerra a PT-008 integralmente.
+
+#### Critérios formalizados da F1-B.4.5.4
+
+A implementação futura exige evidências separadas por camada.
+
+Testes unitários NestJS, com mocks estritos e relógio controlado, devem comprovar:
+
+- identidade canônica e uso da sentinela somente na admissão, sem persistência ou
+  exposição de e-mail bruto;
+- reserva antes do acesso ao banco, commit em `RECORDED`, refund idempotente
+  somente após ausência de efeito comprovada e nenhuma chamada posterior quando a
+  pré-admissão rejeitar;
+- resultado interno opaco e comportamento indistinguível para identidade válida e
+  elegível, inexistente, inválida, conta inelegível, cooldown, request pendente e
+  teto de tokens;
+- falha determinada, rollback confirmado, commit indeterminado e reconciliação,
+  sem repetição automática nem decisão dupla da reserva; `UNKNOWN` persistente
+  consome a reserva, retorna indisponibilidade e não é sucesso funcional; e
+- ausência de processamento, token, e-mail, endpoint e alteração dos contratos de
+  login.
+
+Testes em PostgreSQL `18.6` real, comprovadamente descartável, devem validar:
+
+- estrutura `RECEIVED` seguida de `PENDING` ou `SUPPRESSED` na mesma transação,
+  constraints e instantes do banco, sem estado intermediário confirmado;
+- conta elegível; conta inexistente; conta inativa, não verificada, desativada ou
+  sem credencial; cooldown; request pendente; e zero, dois e três tokens ativos;
+- cooldown desde `received_at` do request mais recente com evento correlacionado
+  `AUTH_PASSWORD_RECOVERY_REQUESTED`, incluindo todos os estados posteriores,
+  ativo imediatamente antes de dez minutos e expirado na igualdade, sem depender
+  do estado atual; e teto de tokens com os predicados de expiração, consumo e
+  invalidação;
+- duas solicitações concorrentes da mesma conta serializadas pelo advisory lock,
+  sem dois `PENDING`; contas distintas sem serialização global indevida; locks por
+  UUID e ausência de deadlock;
+- rollback forçado no insert, classificação e auditoria, sem request ou evento
+  parcial;
+- exatamente um `AUTH_PASSWORD_RECOVERY_REQUESTED` para `PENDING`, sequência e
+  campos aprovados, e nenhum evento para `SUPPRESSED` ou cenários inelegíveis;
+- reconciliação `RECORDED`, `INCONSISTENT` e `UNKNOWN`, incluindo commit
+  indeterminado, auditoria ausente/duplicada e ausência de falso sucesso ou falsa
+  prova de rollback;
+- validação sem efeitos de UUID v4 não nulo para `recovery_request_id` e
+  `audit_event_id`, chave canônica produzida pela normalização existente e nulo
+  exclusivo para identidade não normalizável;
+- owner, `SECURITY DEFINER`, `search_path`, objetos qualificados, ausência de SQL
+  dinâmico, grants mínimos e negação de `EXECUTE` a `PUBLIC`, bootstrap e
+  manutenção; e
+- runtime sem `SELECT` ou DML direto em conta, credencial, requests, tokens e
+  auditoria.
+
+Testes de integração NestJS/PostgreSQL devem comprovar o encadeamento completo da
+fronteira interna: normalização, reserva, chamada protegida, classificação,
+commit/refund, reconciliação e anti-enumeração, além da compatibilidade com
+F1-B.4.5.1–F1-B.4.5.3. Não há teste de provider, outbox, envio ou HTTP neste
+incremento.
+
+Promises e relógios são coordenados, sem sleeps arbitrários. O gate preserva
+90% em lines, statements, functions e branches por aplicação e consolidado,
+regressão de autenticação/admissão e os jobs `Quality`, `API integration` e
+`Required`.
 
 ## Integração com PostgreSQL real
 
@@ -263,4 +327,3 @@ Uma entrega somente está pronta quando houver evidência de:
 - ênfase em BEL-010, BEL-032, BEL-036 e BEL-038;
 - DEC-003, DEC-007, DEC-010, DEC-016 e DEC-020;
 - RN-007–RN-010, RN-032–RN-038, RN-057–RN-059 e RN-126–RN-130.
-

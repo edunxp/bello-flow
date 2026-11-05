@@ -147,16 +147,16 @@ Erros internos não são serializados diretamente. Corpos de erro não contêm
 identificador de operação ou sessão, token, cookie, senha, credencial nem
 detalhe operacional sensível.
 
-| HTTP | Código externo | Aplicação |
-|---:|---|---|
-| `400` | `INVALID_REQUEST` | falha estrutural da requisição HTTP |
-| `401` | `AUTHENTICATION_FAILED` | rejeição determinada no login |
-| `401` | `UNAUTHENTICATED` | ausência de sessão autenticada válida |
-| `403` | `REQUEST_FORBIDDEN` | rejeição dos controles de origem ou CSRF |
-| `415` | `UNSUPPORTED_MEDIA_TYPE` | media type incompatível com o corpo JSON exigido |
-| `429` | `RATE_LIMITED` | admissão do login rejeitada pelos limites aprovados da PT-008 |
-| `503` | `SERVICE_UNAVAILABLE` | falha operacional ou resultado ainda indeterminado |
-| `500` | `INTERNAL_ERROR` | falha interna não classificada |
+|  HTTP | Código externo           | Aplicação                                                     |
+| ----: | ------------------------ | ------------------------------------------------------------- |
+| `400` | `INVALID_REQUEST`        | falha estrutural da requisição HTTP                           |
+| `401` | `AUTHENTICATION_FAILED`  | rejeição determinada no login                                 |
+| `401` | `UNAUTHENTICATED`        | ausência de sessão autenticada válida                         |
+| `403` | `REQUEST_FORBIDDEN`      | rejeição dos controles de origem ou CSRF                      |
+| `415` | `UNSUPPORTED_MEDIA_TYPE` | media type incompatível com o corpo JSON exigido              |
+| `429` | `RATE_LIMITED`           | admissão do login rejeitada pelos limites aprovados da PT-008 |
+| `503` | `SERVICE_UNAVAILABLE`    | falha operacional ou resultado ainda indeterminado            |
+| `500` | `INTERNAL_ERROR`         | falha interna não classificada                                |
 
 O mesmo `AUTHENTICATION_FAILED` cobre identidade inexistente, senha incorreta,
 conta inelegível e demais rejeições determinadas da credencial. O `401` não
@@ -271,10 +271,10 @@ ou processamento produtivo de e-mails.
 
 A admissão usa dois token buckets independentes e exige orçamento em ambos:
 
-| Chave | Capacidade | Reposição | Sucesso confirmado |
-|---|---:|---:|---|
-| identidade normalizada | 5 tokens | 1 token a cada 180 segundos | remove ou reseta o bucket |
-| IP confiável | 60 tokens | 1 token a cada 5 segundos | preserva o débito |
+| Chave                  | Capacidade |                   Reposição | Sucesso confirmado        |
+| ---------------------- | ---------: | --------------------------: | ------------------------- |
+| identidade normalizada |   5 tokens | 1 token a cada 180 segundos | remove ou reseta o bucket |
+| IP confiável           |  60 tokens |   1 token a cada 5 segundos | preserva o débito         |
 
 A identidade usa exatamente a normalização de e-mail do serviço existente. O
 bucket é criado da mesma forma para identidades existentes ou inexistentes, sem
@@ -311,13 +311,13 @@ próximo instante de reposição.
 Cada reserva possui identidade própria. Restituição é idempotente, ocorre no
 máximo uma vez e nunca eleva o bucket além de sua capacidade. Os resultados são:
 
-| Conclusão | Identidade | IP |
-|---|---|---|
-| rejeição determinada da credencial | confirma o consumo | confirma o consumo |
-| autenticação confirmada | remove ou reseta o bucket | confirma o consumo |
-| falha operacional | restitui a reserva | restitui a reserva |
-| resultado indeterminado | restitui sem repetir automaticamente | restitui sem repetir automaticamente |
-| falha antes do início da autenticação | restitui a reserva | restitui a reserva |
+| Conclusão                             | Identidade                           | IP                                   |
+| ------------------------------------- | ------------------------------------ | ------------------------------------ |
+| rejeição determinada da credencial    | confirma o consumo                   | confirma o consumo                   |
+| autenticação confirmada               | remove ou reseta o bucket            | confirma o consumo                   |
+| falha operacional                     | restitui a reserva                   | restitui a reserva                   |
+| resultado indeterminado               | restitui sem repetir automaticamente | restitui sem repetir automaticamente |
+| falha antes do início da autenticação | restitui a reserva                   | restitui a reserva                   |
 
 ### Resposta de limite
 
@@ -422,8 +422,9 @@ de 90% em lines, statements, functions e branches.
 ## Recuperação de senha — contrato aprovado da F1-B.4.5
 
 O contrato abaixo está aprovado para implementação. A fundação PostgreSQL da
-F1-B.4.5.1 e a camada transacional F1-B.4.5.2 foram publicadas, mas casos de uso,
-processamento, HTTP e disponibilidade produtiva ainda não foram implementados.
+F1-B.4.5.1, a camada transacional F1-B.4.5.2 e a admissão/capacidade da
+F1-B.4.5.3 foram publicadas, mas casos de uso, processamento, HTTP e
+disponibilidade produtiva ainda não foram implementados.
 Ele detalha AT-001, AT-003 e AT-009, resolve normativamente a PT-007 e o recorte
 de recuperação da PT-008 e preserva a PT-009 aberta.
 
@@ -450,7 +451,7 @@ de recuperação da PT-008 e preserva a PT-009 aberta.
   `application/json`, antes do caso de uso;
 - usa somente `request.ip` após a configuração de proxy confiável;
 - estrutura, campo adicional, ausência ou tipo incorreto retornam `400
-  INVALID_REQUEST`;
+INVALID_REQUEST`;
 - e-mail string semanticamente inválido não retorna `400` e segue a resposta
   anti-enumeração;
 - solicitação admitida e persistida ou reconciliada retorna `202 Accepted` sem
@@ -458,7 +459,7 @@ de recuperação da PT-008 e preserva a PT-009 aberta.
   ou com três tokens ativos;
 - limite de admissão retorna `429 RATE_LIMITED` com `Retry-After`;
 - falha operacional ou resultado ainda indeterminado retorna `503
-  SERVICE_UNAVAILABLE`.
+SERVICE_UNAVAILABLE`.
 
 ### `POST /api/auth/password-reset`
 
@@ -481,11 +482,11 @@ PHC, link e identificadores internos nunca integram respostas.
 
 ### Quotas e capacidade
 
-| Endpoint e chave | Capacidade | Reposição |
-|---|---:|---:|
-| solicitação por identidade normalizada ou sentinela | 3 | 1 token a cada 10 minutos |
-| solicitação por IP confiável | 30 | 1 token por minuto |
-| reset por IP confiável | 60 | 1 token a cada 5 segundos |
+| Endpoint e chave                                    | Capacidade |                 Reposição |
+| --------------------------------------------------- | ---------: | ------------------------: |
+| solicitação por identidade normalizada ou sentinela |          3 | 1 token a cada 10 minutos |
+| solicitação por IP confiável                        |         30 |        1 token por minuto |
+| reset por IP confiável                              |         60 | 1 token a cada 5 segundos |
 
 - A solicitação reserva simultaneamente identidade/sentinela e IP antes do banco;
   não há débito parcial.
@@ -504,8 +505,9 @@ PHC, link e identificadores internos nunca integram respostas.
 
 ### F1-B.4.5.3 — admissão e capacidade compartilhada
 
-Este incremento está formalizado para planejamento e ainda não foi implementado.
-Ele materializa somente as quotas efêmeras já aprovadas e a capacidade Argon2id
+Este incremento foi implementado e publicado pelo commit
+`47a6ae033f42d40b56c24bad82b454af0616e2ec`, com CI `42050631222` aprovado. Ele
+materializa somente as quotas efêmeras já aprovadas e a capacidade Argon2id
 global, sem expor endpoint ou executar caso de uso, PostgreSQL, outbox ou e-mail.
 
 - A admissão de solicitação reserva identidade normalizada ou sentinela e IP em
@@ -533,6 +535,67 @@ global, sem expor endpoint ou executar caso de uso, PostgreSQL, outbox ou e-mail
 
 A F1-B.4.5.3 não define persistência, cooldown, classificação funcional,
 processamento, provider ou resposta HTTP da recuperação e não encerra a PT-008.
+
+### F1-B.4.5.4 — solicitação e classificação planejadas
+
+Este contrato técnico, incluindo D1–D3, está formalizado. A implementação não foi
+iniciada nem autorizada por este registro. O incremento termina na classificação
+persistente e não expõe endpoint, gera token, cria tentativa de entrega ou chama
+provider.
+
+#### Ordem e anti-enumeração
+
+1. A fronteira interna aceita apenas a string de identidade e o IP já determinado
+   pela infraestrutura confiável. Validação estrutural pode falhar; invalidade
+   semântica do e-mail continua no fluxo anti-enumeração.
+2. A identidade é normalizada pela regra canônica existente. Identidade não
+   normalizável usa a sentinela apenas na admissão; o PostgreSQL recebe chave
+   normalizada ou nulo, nunca e-mail bruto nem a sentinela.
+3. A reserva conjunta de identidade/sentinela e IP ocorre antes de qualquer
+   `await`. Rejeição por quota ou saturação termina antes do PostgreSQL.
+4. A função protegida registra e classifica a solicitação em uma transação. O
+   resultado interno confirmado é apenas `RECORDED`; existência da conta,
+   `PENDING`, `SUPPRESSED`, cooldown, request pendente e teto de tokens não são
+   expostos ao consumidor.
+5. Registro confirmado confirma a reserva; falha anterior ao envio da operação
+   ou rollback confirmado a restitui uma única vez. Commit indeterminado exige
+   reconciliação pelo mesmo `recovery_request_id`, sem repetição automática. Se o
+   resultado continuar `UNKNOWN` depois dela, a reserva é consumida e o caller
+   recebe indisponibilidade; isso não declara sucesso funcional.
+
+O futuro contrato HTTP já aprovado continua uniforme: identidade inexistente,
+inválida ou inelegível, cooldown, request pendente, teto de tokens e supressão
+confirmada resultam no mesmo `202` sem corpo. Somente admissão rejeitada pode
+produzir `429`; saturação, falha operacional ou indeterminação produzem `503`.
+Nenhum resultado, erro, log ou métrica contém e-mail, `email_key`, sentinela,
+`account_id`, motivo de supressão ou contagens internas.
+
+#### Segurança da persistência e auditoria
+
+- O runtime invoca somente funções `SECURITY DEFINER` de assinatura exata. O
+  owner é o migrator; `search_path` é fixo; objetos são qualificados; SQL
+  dinâmico é proibido; `PUBLIC`, bootstrap e manutenção não recebem `EXECUTE`.
+  Não há DML nem leitura sensível direta do runtime.
+- Uma consulta otimista por `email_key` pode descobrir a conta candidata, mas não
+  decide elegibilidade. Conta conhecida é serializada pelo advisory lock comum e
+  revalidada sob row locks na ordem global. Conta inexistente não recebe lock
+  artificial nem identificador persistido.
+- Somente a transição elegível a `PENDING` grava
+  `AUTH_PASSWORD_RECOVERY_REQUESTED`, atomicamente com o request. Como a chamada
+  é anônima, `actor_account_id` é nulo; a conta conhecida aparece somente como
+  `entity_id`. O request ID ocupa `operation_id` e `correlation_id`, sequência
+  `1`; `context`, `before_data` e `after_data` são nulos.
+- `RECEIVED`, `SUPPRESSED`, quota, saturação, conta inexistente ou inelegível,
+  cooldown, request pendente, teto de tokens, rollback e falha operacional não
+  geram evento funcional. Rollback nunca deixa request ou auditoria parcial.
+
+O cooldown de dez minutos usa `received_at` do request mais recente que tenha o
+evento correlacionado `AUTH_PASSWORD_RECOVERY_REQUESTED`, prova de que alcançou
+`PENDING`. O estado atual não substitui essa prova: estados posteriores,
+inclusive terminais, permanecem no cálculo. A verificação ocorre sob o advisory
+lock da conta; a janela está ativa antes de `received_at + 10 minutes` e expira na
+igualdade. A retenção operacional de 30 dias não remove a prova dentro dessa
+janela.
 
 ### Token, link e disponibilidade
 
@@ -687,13 +750,13 @@ retry estão em
 
 ## Escopos de autorização
 
-| Escopo | Exemplos de autoridade | Não concede automaticamente |
-|---|---|---|
-| Global | administrar contas e atribuição de Administrador Global | participação em Workspace, quadro ou auditoria de conteúdo |
-| Workspace | participantes, papéis, fuso, etiquetas globais e governança autorizada de quadros | listas, cartões, comentários, feed ou auditoria de conteúdo |
-| Governança de quadro | dados básicos, visibilidade, participantes, papéis e arquivamento | conteúdo sem participação explícita |
-| Conteúdo de quadro | listas, cartões e colaboração conforme papel | administração global ou do Workspace |
-| Auditoria | consulta do escopo administrativo ou de conteúdo autorizado | dados fora do contexto e da permissão atuais |
+| Escopo               | Exemplos de autoridade                                                            | Não concede automaticamente                                 |
+| -------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Global               | administrar contas e atribuição de Administrador Global                           | participação em Workspace, quadro ou auditoria de conteúdo  |
+| Workspace            | participantes, papéis, fuso, etiquetas globais e governança autorizada de quadros | listas, cartões, comentários, feed ou auditoria de conteúdo |
+| Governança de quadro | dados básicos, visibilidade, participantes, papéis e arquivamento                 | conteúdo sem participação explícita                         |
+| Conteúdo de quadro   | listas, cartões e colaboração conforme papel                                      | administração global ou do Workspace                        |
+| Auditoria            | consulta do escopo administrativo ou de conteúdo autorizado                       | dados fora do contexto e da permissão atuais                |
 
 Essas fronteiras implementam DEC-006, DEC-007 e DEC-008, além de RN-083–RN-085 e RN-124.
 
@@ -752,4 +815,3 @@ na [PT-009](pendencias-tecnicas.md#pendências-operacionais).
 - [BEL-026–BEL-032, BEL-035, BEL-036 e BEL-038](../produto/requisitos-funcionais.md)
 - [DEC-006–DEC-010, DEC-017, DEC-020 e DEC-021](../produto/decisoes-funcionais.md)
 - [RN-007–RN-009, RN-017–RN-025, RN-083–RN-097 e RN-116–RN-129](../produto/regras-de-negocio.md)
-

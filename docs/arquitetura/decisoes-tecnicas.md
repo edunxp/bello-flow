@@ -227,7 +227,7 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
   `{ token, newPassword }` e `204` sem corpo. Ambos aplicam PT-005. Respostas de
   solicitação não distinguem existência, elegibilidade, cooldown ou limite de
   tokens da conta; tokens determinados como inválidos usam `401
-  AUTHENTICATION_FAILED` uniforme.
+AUTHENTICATION_FAILED` uniforme.
 - **Abuso:** a solicitação usa buckets simultâneos por identidade normalizada ou
   sentinela, com capacidade 3 e reposição de um token a cada 10 minutos, e por IP
   confiável, com capacidade 30 e reposição de um token por minuto. O reset usa
@@ -406,10 +406,11 @@ campos de auditoria estão em
 e os limites de segurança estão em
 [segurança e autorização](seguranca-e-autorizacao.md#fronteira-postgresql-da-f1-b452).
 
-### Planejamento formalizado — F1-B.4.5.3 Admissão e Capacidade Compartilhada
+### F1-B.4.5.3 — Admissão e Capacidade Compartilhada
 
-- **Estado:** Planejamento formalizado; implementação ainda não iniciada. Esta
-  formalização não autoriza implementação, commit ou publicação.
+- **Estado:** Implementada e publicada pelo commit
+  `47a6ae033f42d40b56c24bad82b454af0616e2ec`; CI `42050631222` aprovado em
+  `Quality`, `API integration` e `Required`.
 - **Data de formalização:** 2026-11-05.
 - **Escopo:** controles efêmeros de admissão da solicitação de recuperação e da
   conclusão do reset, além da separação da capacidade Argon2id para uso global por
@@ -456,10 +457,155 @@ e os limites de segurança estão em
   ausência de vazamento por identidade e regressão do login, preservando 90% em
   lines, statements, functions e branches por aplicação e consolidado.
 - **Pendências preservadas:** a F1-B.4.5.3 não encerra PT-008 integralmente. PT-009,
-  terminalização de intenções abandonadas e assinaturas/privilégios da futura
-  fronteira SQL não são dependências diretas e continuam abertos.
+  terminalização de intenções abandonadas e a futura fronteira SQL não eram
+  dependências diretas e permaneceram fora do incremento. A fronteira SQL é
+  formalizada abaixo para a F1-B.4.5.4, sem implementação.
 
-A sequência F1-B.4.5.4–F1-B.4.5.11 permanece somente proposta de planejamento,
+### Contrato formalizado — F1-B.4.5.4 Solicitação e Classificação da Recuperação
+
+- **Estado:** planejamento técnico formalizado, com D1–D3 consolidadas. A
+  implementação ainda não foi iniciada e exige autorização própria; esta decisão
+  não cria migration, commit ou publicação.
+- **Objetivo:** integrar a admissão da F1-B.4.5.3 à persistência da F1-B.4.5.1,
+  classificar a solicitação sob serialização por conta e emitir a auditoria já
+  aprovada, sem expor a existência ou a elegibilidade da conta.
+- **Incluído:** fronteira interna NestJS, normalização canônica, reserva de
+  admissão, registro `RECEIVED`, classificação `PENDING`/`SUPPRESSED`, cooldown de
+  dez minutos, teto de três tokens ativos, advisory lock, resultado interno
+  opaco, reconciliação de commit, auditoria
+  `AUTH_PASSWORD_RECOVERY_REQUESTED` e privilégios mínimos.
+- **Excluído:** token bruto ou hash, tentativa de entrega, outbox, processador,
+  e-mail, provider, endpoint HTTP, frontend, conclusão do reset, terminalização
+  de operações abandonadas, retenção e qualquer alteração do login.
+
+#### Fronteiras formalizadas
+
+1. O NestJS valida a estrutura interna permitida, normaliza a string com a regra
+   canônica existente e reserva simultaneamente identidade ou sentinela e IP
+   antes de qualquer acesso ao PostgreSQL. `429` e saturação `503` terminam o
+   fluxo antes do banco e não produzem auditoria funcional.
+2. Para entrada semanticamente inválida, a fronteira recebe chave nula; para
+   entrada válida, recebe somente `email_key`. E-mail bruto nunca atravessa a
+   fronteira de persistência nem integra request, resultado, erro, log ou métrica.
+3. Uma única operação PostgreSQL protegida registra `RECEIVED` e, na mesma
+   transação, termina em `PENDING` ou `SUPPRESSED`. `RECEIVED` é transição interna
+   e não é confirmado isoladamente por este incremento.
+4. A localização otimista por `account.email_key` descobre apenas a conta
+   candidata. Conta conhecida exige o advisory lock compartilhado, seguido de
+   lock e revalidação da conta e da credencial. Requests e tokens consultados são
+   bloqueados por UUID na ordem global já aprovada.
+5. Conta inexistente produz `SUPPRESSED` com `account_id` nulo. Conta conhecida
+   mas inativa, não verificada, desativada, sem credencial, em cooldown, com
+   request pendente ou no teto de tokens produz `SUPPRESSED` sem auditoria.
+   Somente a conta elegível produz `PENDING` e exatamente um evento funcional.
+6. O retorno funcional ao NestJS é opaco e comprova apenas que a solicitação foi
+   registrada de forma coerente. Não devolve `account_id`, existência,
+   elegibilidade, estado, motivo de supressão, cooldown ou contagem de tokens.
+7. Falha comprovadamente anterior à execução ou rollback confirmado autorizam
+   restituição idempotente. Registro confirmado autoriza commit da reserva.
+   Resultado ainda indeterminado não autoriza repetição automática da operação.
+
+A fronteira interna NestJS recebe a string de e-mail e o IP confiável, não retém
+o valor bruto depois da normalização e devolve somente `RECORDED`,
+`RATE_LIMITED` com `retryAfterSeconds` ou `SERVICE_UNAVAILABLE`. `RECORDED` não
+significa conta existente nem envio futuro. Cancelamento anterior à persistência
+segue a reserva da F1-B.4.5.3; depois de a operação SQL ser enviada, cancelamento
+do caller não prova rollback e segue a matriz de indeterminação.
+
+#### Interface PostgreSQL formalizada
+
+A assinatura aprovada para o planejamento do incremento é:
+
+```text
+request_password_recovery(
+  recovery_request_id uuid,
+  audit_event_id uuid,
+  normalized_email_key text
+) RETURNS TABLE (outcome text)
+```
+
+Os UUIDs são v4 reservados pelo caller; `normalized_email_key` é nulo para a
+sentinela e, quando presente, já está canônico. O único resultado funcional é
+`RECORDED`. Erros de argumento ou incoerência usam códigos internos estáveis, sem
+identidade ou estado da conta. Instantes vêm do PostgreSQL.
+
+Para commit indeterminado, a interface observacional é:
+
+```text
+reconcile_password_recovery_request(
+  recovery_request_id uuid
+) RETURNS TABLE (outcome text)
+```
+
+Ela retorna `RECORDED`, `INCONSISTENT` ou `UNKNOWN`. `RECORDED` exige request
+coerente e, em `PENDING`, exatamente uma auditoria coerente; em `SUPPRESSED`,
+exige ausência da auditoria funcional. Linha ausente, falha de consulta ou
+evidência insuficiente é `UNKNOWN`, nunca prova automática de não execução. A
+reconciliação não altera estado nem cria auditoria.
+
+O `recovery_request_id` é a chave de idempotência e reconciliação, não autorização
+para reaplicar a classificação. Nova invocação com ID já existente não reavalia
+conta, cooldown ou tokens: retorna o resultado genérico somente se a evidência já
+for coerente; caso contrário falha com `RECONCILIATION_REQUIRED`. Depois de
+resultado possivelmente enviado, o NestJS chama primeiro a reconciliação e nunca
+repete a função de mutação por suposição.
+
+As funções são `SECURITY DEFINER`, pertencem ao migrator, fixam `search_path` em
+`pg_catalog, public, pg_temp`, qualificam objetos e não usam SQL dinâmico. Antes
+do `GRANT`, revogam `EXECUTE` de `PUBLIC`, runtime, bootstrap e manutenção; depois
+concedem ao runtime somente `EXECUTE` nas assinaturas exatas. Não se concede
+`SELECT`, `INSERT`, `UPDATE` ou `DELETE` direto em conta, credencial, requests,
+tokens ou auditoria.
+
+#### Transação, cooldown e auditoria
+
+- A operação usa um único instante transacional. Para conta conhecida, aplica a
+  ordem: advisory lock; conta; credencial; requests por
+  `recovery_request_id`; tokens por `password_reset_token_id`; inserção do
+  request; auditoria. Classes não acessadas são omitidas sem inversão.
+- Token ativo conserva o predicado publicado: não expirado, não consumido e não
+  invalidado. A contagem e a classificação ocorrem sob o advisory lock, que deve
+  ser obedecido por todo futuro writer de token.
+- Request pendente, para este recorte, é `PENDING`, `PREPARING`, `PREPARED` ou
+  `SENDING`. Estados terminais e `UNKNOWN` não são reclassificados como pendentes;
+  o teto de tokens preserva tokens potencialmente entregues.
+- A transição elegível grava, na mesma transação, exatamente um evento de
+  sequência `1`, operação `AUTH_PASSWORD_RECOVERY_REQUESTED`, resultado
+  `SUCCESS`, origem `HTTP_API`, escopo `SECURITY`, `entity_type = ACCOUNT`,
+  `entity_id = account_id` e `actor_account_id = NULL`. `operation_id` e
+  `correlation_id` recebem `recovery_request_id`. `context`, `before_data` e
+  `after_data` são nulos; o request ID já está na correlação.
+- Rollback remove request e auditoria conjuntamente. `RECEIVED`, `SUPPRESSED`,
+  conta inexistente ou inelegível, cooldown, request pendente e teto de tokens
+  não produzem auditoria imutável.
+
+#### Decisões D1–D3 consolidadas
+
+- **D1 — cooldown:** a janela permanece em dez minutos e começa em `received_at`
+  da solicitação mais recente que tenha alcançado `PENDING`. A prova de passagem
+  por `PENDING` é o evento atômico `AUTH_PASSWORD_RECOVERY_REQUESTED` correlacionado
+  ao request, não seu estado atual. Estados posteriores, inclusive terminais,
+  permanecem no cálculo. Sob o advisory lock da conta, o cooldown está ativo
+  enquanto o instante transacional for anterior à soma de `received_at` com dez
+  minutos; na igualdade, a janela expirou. `SUPPRESSED` e `RECEIVED` sem o evento
+  não iniciam cooldown.
+- **D2 — commit indeterminado:** falha comprovadamente anterior ao envio da
+  operação ou rollback confirmado autoriza refund idempotente. `RECORDED`
+  confirmado consome a reserva. Depois do envio, `UNKNOWN` que permaneça após a
+  reconciliação também consome a reserva, mas retorna indisponibilidade e não é
+  sucesso funcional. A operação não é repetida automaticamente; o mesmo
+  `recovery_request_id` permanece a chave de idempotência e reconciliação.
+- **D3 — fronteira PostgreSQL:** ficam aprovadas para o incremento as assinaturas
+  completas de `request_password_recovery` e
+  `reconcile_password_recovery_request` apresentadas na seção anterior. A mutação
+  expõe somente `RECORDED`; a reconciliação é observacional e expõe somente
+  `RECORDED`, `INCONSISTENT` ou `UNKNOWN`. Ambos os IDs da mutação e o ID da
+  reconciliação são UUID v4 válidos; a chave, quando não nula, vem exclusivamente
+  da normalização canônica existente. Permanecem obrigatórios `SECURITY DEFINER`,
+  owner migrator, `search_path` protegido, grants mínimos, ausência de acesso
+  sensível direto e atomicidade de request, classificação e auditoria aplicável.
+
+A sequência F1-B.4.5.5–F1-B.4.5.11 permanece somente proposta de planejamento,
 sem identificadores normativos aprovados ou autorização automática.
 
 ## AT-002 — Autorização centralizada
@@ -770,15 +916,17 @@ sem identificadores normativos aprovados ou autorização automática.
 
 ## Histórico
 
-| Data | Alteração |
-|---|---|
-| 2026-11-05 | Planejamento da F1-B.4.5.3 formalizado para admissão efêmera da recuperação e capacidade Argon2id global compartilhada, preservando integralmente o login e mantendo casos de uso, PostgreSQL, e-mail, HTTP, frontend, PT-009 e terminalização fora do incremento. |
+| Data       | Alteração                                                                                                                                                                                                                                                                                                                                     |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-05 | D1–D3 da F1-B.4.5.4 consolidadas: cooldown desde `received_at` do request que alcançou `PENDING`, consumo da reserva em `UNKNOWN` persistente sem sucesso funcional ou repetição, e assinaturas SQL protegidas aprovadas para o planejamento; implementação permanece não iniciada.                                                           |
+| 2026-11-05 | Publicação da F1-B.4.5.3 consolidada pelo commit `47a6ae033f42d40b56c24bad82b454af0616e2ec` e CI `42050631222`; contrato técnico da F1-B.4.5.4 proposto para solicitação e classificação protegidas.                                                                                                                                          |
+| 2026-11-05 | Planejamento da F1-B.4.5.3 formalizado para admissão efêmera da recuperação e capacidade Argon2id global compartilhada, preservando integralmente o login e mantendo casos de uso, PostgreSQL, e-mail, HTTP, frontend, PT-009 e terminalização fora do incremento.                                                                            |
 | 2026-11-04 | Contrato da F1-B.4.5.2 aprovado para implementação, restringindo o incremento a intenção, conclusão, reconciliação observacional, advisory lock compartilhado, grants e testes PostgreSQL; fechamento autorizado de intenções abandonadas permanece futuro, sem declarar implementação e preservando PT-003, PT-007, PT-008 e PT-009 abertas. |
-| 2026-11-04 | Contrato da F1-B.4.5 aprovado para implementação, formalizando recuperação de senha, HTTP, admissão, token, outbox específica, concorrência, reconciliação, retenção, privilégios e testes, sem declarar implementação ou disponibilidade produtiva e mantendo PT-009 aberta. |
-| 2026-11-03 | Subconjunto de login da PT-008 aprovado para planejamento, com token buckets, memória limitada, saturação segura e concorrência Argon2id, sem declarar implementação; recuperação, transações e e-mail permanecem pendentes. |
-| 2026-11-03 | D1–D5 aprovadas para os contratos HTTP de autenticação da F1-B.4, sem declarar implementação e preservando PT-005 e PT-008. |
-| 2026-11-03 | PT-005 resolvida como complemento aprovado de AT-001 e AT-005, definindo topologia same-origin, cookie, origem, CORS e proteção CSRF da camada HTTP sem declarar implementação. |
-| 2026-10-30 | AT-001 a AT-010 consolidadas como aprovadas pelo responsável pelo produto. |
+| 2026-11-04 | Contrato da F1-B.4.5 aprovado para implementação, formalizando recuperação de senha, HTTP, admissão, token, outbox específica, concorrência, reconciliação, retenção, privilégios e testes, sem declarar implementação ou disponibilidade produtiva e mantendo PT-009 aberta.                                                                 |
+| 2026-11-03 | Subconjunto de login da PT-008 aprovado para planejamento, com token buckets, memória limitada, saturação segura e concorrência Argon2id, sem declarar implementação; recuperação, transações e e-mail permanecem pendentes.                                                                                                                  |
+| 2026-11-03 | D1–D5 aprovadas para os contratos HTTP de autenticação da F1-B.4, sem declarar implementação e preservando PT-005 e PT-008.                                                                                                                                                                                                                   |
+| 2026-11-03 | PT-005 resolvida como complemento aprovado de AT-001 e AT-005, definindo topologia same-origin, cookie, origem, CORS e proteção CSRF da camada HTTP sem declarar implementação.                                                                                                                                                               |
+| 2026-10-30 | AT-001 a AT-010 consolidadas como aprovadas pelo responsável pelo produto.                                                                                                                                                                                                                                                                    |
 
 ## Política de alteração
 
