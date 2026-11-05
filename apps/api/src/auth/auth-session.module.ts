@@ -12,6 +12,8 @@ import {
 } from './login-admission.config.js';
 import { LoginAdmissionService } from './login-admission.service.js';
 import { PasswordRecoveryAdmissionService } from './password-recovery-admission.service.js';
+import { PasswordRecoveryRequestPersistence } from './password-recovery-request.persistence.js';
+import { PasswordRecoveryRequestService } from './password-recovery-request.service.js';
 
 @Module({
   imports: [PrismaModule],
@@ -22,6 +24,8 @@ import { PasswordRecoveryAdmissionService } from './password-recovery-admission.
     Argon2ExecutionService,
     LoginAdmissionService,
     PasswordRecoveryAdmissionService,
+    PasswordRecoveryRequestPersistence,
+    PasswordRecoveryRequestService,
     PasswordCredentialService,
     {
       provide: LOGIN_ADMISSION_CONFIG,

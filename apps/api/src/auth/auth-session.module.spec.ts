@@ -10,6 +10,8 @@ import { Argon2ExecutionService } from './argon2-execution.service.js';
 import { LoginAdmissionConfigurationError } from './login-admission.config.js';
 import { LoginAdmissionService } from './login-admission.service.js';
 import { PasswordRecoveryAdmissionService } from './password-recovery-admission.service.js';
+import { PasswordRecoveryRequestPersistence } from './password-recovery-request.persistence.js';
+import { PasswordRecoveryRequestService } from './password-recovery-request.service.js';
 
 @Injectable()
 class ConsumerProbe {
@@ -43,6 +45,17 @@ class AdmissionConsumerProbe {
   providers: [AdmissionConsumerProbe],
 })
 class AdmissionConsumerModule {}
+
+@Injectable()
+class RecoveryRequestConsumerProbe {
+  constructor(readonly recovery: PasswordRecoveryRequestService) {}
+}
+
+@Module({
+  imports: [AuthSessionModule],
+  providers: [RecoveryRequestConsumerProbe],
+})
+class RecoveryRequestConsumerModule {}
 
 describe('AuthSessionModule', () => {
   it('keeps the persistence component resolvable inside the module', async () => {
@@ -92,6 +105,15 @@ describe('AuthSessionModule', () => {
     ).rejects.toThrow(/AdmissionConsumerProbe/);
   });
 
+  it('keeps the password recovery request use case internal', async () => {
+    await expect(
+      Test.createTestingModule({ imports: [RecoveryRequestConsumerModule] })
+        .overrideProvider(PrismaService)
+        .useValue({})
+        .compile(),
+    ).rejects.toThrow(/RecoveryRequestConsumerProbe/);
+  });
+
   it('rejects invalid admission configuration during module startup', async () => {
     const original = process.env.BELLO_LOGIN_IDENTITY_BUCKETS_MAX;
     process.env.BELLO_LOGIN_IDENTITY_BUCKETS_MAX = '0';
@@ -138,6 +160,16 @@ describe('AuthSessionModule', () => {
         .select(AuthSessionModule)
         .get(PasswordRecoveryAdmissionService, { strict: true }),
     ).toBeInstanceOf(PasswordRecoveryAdmissionService);
+    expect(
+      context
+        .select(AuthSessionModule)
+        .get(PasswordRecoveryRequestPersistence, { strict: true }),
+    ).toBeInstanceOf(PasswordRecoveryRequestPersistence);
+    expect(
+      context
+        .select(AuthSessionModule)
+        .get(PasswordRecoveryRequestService, { strict: true }),
+    ).toBeInstanceOf(PasswordRecoveryRequestService);
     expect(
       context
         .select(AuthSessionModule)
