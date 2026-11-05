@@ -218,6 +218,7 @@ jobs:
           ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:password-recovery-foundation --workspace=@bello/api
           ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:password-recovery-physical-lock --workspace=@bello/api
           ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:password-reset-start --workspace=@bello/api
+          ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:password-reset-complete --workspace=@bello/api
 
   required:
     name: Required
