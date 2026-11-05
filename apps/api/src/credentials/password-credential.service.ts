@@ -31,7 +31,7 @@ export type NegativePasswordVerificationResult =
     }
   | { readonly status: 'OPERATIONAL_FAILURE' };
 
-function hasApprovedPhcProfile(encodedHash: string): boolean {
+export function hasApprovedPasswordHashProfile(encodedHash: string): boolean {
   const match = APPROVED_PHC_PATTERN.exec(encodedHash);
   if (!match) {
     return false;
@@ -75,7 +75,7 @@ export class PasswordCredentialService {
 
     if (
       typeof encodedHash !== 'string' ||
-      !hasApprovedPhcProfile(encodedHash)
+      !hasApprovedPasswordHashProfile(encodedHash)
     ) {
       return { status: 'INVALID_STORED_HASH' };
     }

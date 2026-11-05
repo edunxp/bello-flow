@@ -14,6 +14,8 @@ import { LoginAdmissionService } from './login-admission.service.js';
 import { PasswordRecoveryAdmissionService } from './password-recovery-admission.service.js';
 import { PasswordRecoveryRequestPersistence } from './password-recovery-request.persistence.js';
 import { PasswordRecoveryRequestService } from './password-recovery-request.service.js';
+import { PasswordResetPersistence } from './password-reset.persistence.js';
+import { PasswordResetService } from './password-reset.service.js';
 
 @Module({
   imports: [PrismaModule],
@@ -26,6 +28,8 @@ import { PasswordRecoveryRequestService } from './password-recovery-request.serv
     PasswordRecoveryAdmissionService,
     PasswordRecoveryRequestPersistence,
     PasswordRecoveryRequestService,
+    PasswordResetPersistence,
+    PasswordResetService,
     PasswordCredentialService,
     {
       provide: LOGIN_ADMISSION_CONFIG,

@@ -12,6 +12,8 @@ import { LoginAdmissionService } from './login-admission.service.js';
 import { PasswordRecoveryAdmissionService } from './password-recovery-admission.service.js';
 import { PasswordRecoveryRequestPersistence } from './password-recovery-request.persistence.js';
 import { PasswordRecoveryRequestService } from './password-recovery-request.service.js';
+import { PasswordResetPersistence } from './password-reset.persistence.js';
+import { PasswordResetService } from './password-reset.service.js';
 
 @Injectable()
 class ConsumerProbe {
@@ -56,6 +58,17 @@ class RecoveryRequestConsumerProbe {
   providers: [RecoveryRequestConsumerProbe],
 })
 class RecoveryRequestConsumerModule {}
+
+@Injectable()
+class PasswordResetConsumerProbe {
+  constructor(readonly reset: PasswordResetService) {}
+}
+
+@Module({
+  imports: [AuthSessionModule],
+  providers: [PasswordResetConsumerProbe],
+})
+class PasswordResetConsumerModule {}
 
 describe('AuthSessionModule', () => {
   it('keeps the persistence component resolvable inside the module', async () => {
@@ -112,6 +125,15 @@ describe('AuthSessionModule', () => {
         .useValue({})
         .compile(),
     ).rejects.toThrow(/RecoveryRequestConsumerProbe/);
+  });
+
+  it('keeps the password reset use case internal', async () => {
+    await expect(
+      Test.createTestingModule({ imports: [PasswordResetConsumerModule] })
+        .overrideProvider(PrismaService)
+        .useValue({})
+        .compile(),
+    ).rejects.toThrow(/PasswordResetConsumerProbe/);
   });
 
   it('rejects invalid admission configuration during module startup', async () => {
@@ -173,6 +195,16 @@ describe('AuthSessionModule', () => {
     expect(
       context
         .select(AuthSessionModule)
+        .get(PasswordResetPersistence, { strict: true }),
+    ).toBeInstanceOf(PasswordResetPersistence);
+    expect(
+      context
+        .select(AuthSessionModule)
+        .get(PasswordResetService, { strict: true }),
+    ).toBeInstanceOf(PasswordResetService);
+    expect(
+      context
+        .select(AuthSessionModule)
         .get(Argon2ExecutionService, { strict: true }),
     ).toBeInstanceOf(Argon2ExecutionService);
     const loginAdmission = context
@@ -181,6 +213,16 @@ describe('AuthSessionModule', () => {
       readonly argon2Execution: Argon2ExecutionService;
     };
     expect(loginAdmission.argon2Execution).toBe(
+      context
+        .select(AuthSessionModule)
+        .get(Argon2ExecutionService, { strict: true }),
+    );
+    const passwordReset = context
+      .select(AuthSessionModule)
+      .get(PasswordResetService, { strict: true }) as unknown as {
+      readonly argon2Execution: Argon2ExecutionService;
+    };
+    expect(passwordReset.argon2Execution).toBe(
       context
         .select(AuthSessionModule)
         .get(Argon2ExecutionService, { strict: true }),
