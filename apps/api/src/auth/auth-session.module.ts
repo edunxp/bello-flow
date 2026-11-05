@@ -12,6 +12,16 @@ import {
 } from './login-admission.config.js';
 import { LoginAdmissionService } from './login-admission.service.js';
 import { PasswordRecoveryAdmissionService } from './password-recovery-admission.service.js';
+import {
+  ControlledPasswordRecoveryDeliveryAdapter,
+  PASSWORD_RECOVERY_DELIVERY_ADAPTER,
+} from './password-recovery-delivery.adapter.js';
+import {
+  loadPasswordRecoveryDeliveryConfig,
+  PASSWORD_RECOVERY_DELIVERY_CONFIG,
+} from './password-recovery-delivery.config.js';
+import { PasswordRecoveryDeliveryPersistence } from './password-recovery-delivery.persistence.js';
+import { PasswordRecoveryDeliveryProcessor } from './password-recovery-delivery.processor.js';
 import { PasswordRecoveryRequestPersistence } from './password-recovery-request.persistence.js';
 import { PasswordRecoveryRequestService } from './password-recovery-request.service.js';
 import { PasswordResetPersistence } from './password-reset.persistence.js';
@@ -26,6 +36,9 @@ import { PasswordResetService } from './password-reset.service.js';
     Argon2ExecutionService,
     LoginAdmissionService,
     PasswordRecoveryAdmissionService,
+    ControlledPasswordRecoveryDeliveryAdapter,
+    PasswordRecoveryDeliveryPersistence,
+    PasswordRecoveryDeliveryProcessor,
     PasswordRecoveryRequestPersistence,
     PasswordRecoveryRequestService,
     PasswordResetPersistence,
@@ -38,6 +51,14 @@ import { PasswordResetService } from './password-reset.service.js';
     {
       provide: ADMISSION_TIME,
       useValue: SYSTEM_ADMISSION_TIME,
+    },
+    {
+      provide: PASSWORD_RECOVERY_DELIVERY_CONFIG,
+      useFactory: () => loadPasswordRecoveryDeliveryConfig(process.env),
+    },
+    {
+      provide: PASSWORD_RECOVERY_DELIVERY_ADAPTER,
+      useExisting: ControlledPasswordRecoveryDeliveryAdapter,
     },
   ],
   exports: [AuthenticationService],

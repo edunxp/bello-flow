@@ -10,6 +10,9 @@ import { Argon2ExecutionService } from './argon2-execution.service.js';
 import { LoginAdmissionConfigurationError } from './login-admission.config.js';
 import { LoginAdmissionService } from './login-admission.service.js';
 import { PasswordRecoveryAdmissionService } from './password-recovery-admission.service.js';
+import { PasswordRecoveryDeliveryConfigurationError } from './password-recovery-delivery.config.js';
+import { PasswordRecoveryDeliveryPersistence } from './password-recovery-delivery.persistence.js';
+import { PasswordRecoveryDeliveryProcessor } from './password-recovery-delivery.processor.js';
 import { PasswordRecoveryRequestPersistence } from './password-recovery-request.persistence.js';
 import { PasswordRecoveryRequestService } from './password-recovery-request.service.js';
 import { PasswordResetPersistence } from './password-reset.persistence.js';
@@ -155,6 +158,32 @@ describe('AuthSessionModule', () => {
     }
   });
 
+  it('rejects controlled delivery outside the test environment', async () => {
+    const originalMode = process.env.BELLO_PASSWORD_RECOVERY_DELIVERY_MODE;
+    const originalNodeEnvironment = process.env.NODE_ENV;
+    process.env.BELLO_PASSWORD_RECOVERY_DELIVERY_MODE = 'controlled';
+    process.env.NODE_ENV = 'production';
+    try {
+      await expect(
+        Test.createTestingModule({ imports: [AuthSessionModule] })
+          .overrideProvider(PrismaService)
+          .useValue({})
+          .compile(),
+      ).rejects.toThrow(PasswordRecoveryDeliveryConfigurationError);
+    } finally {
+      if (originalMode === undefined) {
+        delete process.env.BELLO_PASSWORD_RECOVERY_DELIVERY_MODE;
+      } else {
+        process.env.BELLO_PASSWORD_RECOVERY_DELIVERY_MODE = originalMode;
+      }
+      if (originalNodeEnvironment === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnvironment;
+      }
+    }
+  });
+
   it('initializes AppModule with one Prisma lifecycle', async () => {
     const onModuleInit = vi.fn();
     const onModuleDestroy = vi.fn();
@@ -202,6 +231,16 @@ describe('AuthSessionModule', () => {
         .select(AuthSessionModule)
         .get(PasswordResetService, { strict: true }),
     ).toBeInstanceOf(PasswordResetService);
+    expect(
+      context
+        .select(AuthSessionModule)
+        .get(PasswordRecoveryDeliveryPersistence, { strict: true }),
+    ).toBeInstanceOf(PasswordRecoveryDeliveryPersistence);
+    expect(
+      context
+        .select(AuthSessionModule)
+        .get(PasswordRecoveryDeliveryProcessor, { strict: true }),
+    ).toBeInstanceOf(PasswordRecoveryDeliveryProcessor);
     expect(
       context
         .select(AuthSessionModule)

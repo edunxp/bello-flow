@@ -425,8 +425,9 @@ de 90% em lines, statements, functions e branches.
 O contrato abaixo está aprovado para implementação. A fundação PostgreSQL da
 F1-B.4.5.1, a camada transacional F1-B.4.5.2, a admissão/capacidade da
 F1-B.4.5.3 e os casos de uso internos F1-B.4.5.4–F1-B.4.5.5 foram publicados.
-Processamento, provider, HTTP e disponibilidade produtiva ainda não foram
-implementados.
+O processamento da F1-B.4.5.6 possui implementação validada somente no working
+tree local, ainda sem commit ou publicação. Provider produtivo, HTTP e
+disponibilidade produtiva ainda não foram implementados.
 Ele detalha AT-001, AT-003 e AT-009, resolve normativamente a PT-007 e o recorte
 de recuperação da PT-008 e preserva a PT-009 aberta.
 
@@ -658,7 +659,8 @@ consumida e a classificação permanece conservadora.
 
 ### F1-B.4.5.6 — Processador de Entrega com Adapter Controlado
 
-O contrato deste incremento está aprovado, mas ainda não implementado. Ele liga
+O contrato deste incremento está aprovado e possui implementação validada somente
+no working tree local, ainda sem commit ou publicação. Ele liga
 somente solicitações `PENDING` ao processamento interno, ao token just-in-time e
 ao adapter técnico. Não cria endpoint, frontend, provider produtivo, fila externa,
 outbox genérica, retenção ou disponibilidade de recuperação em produção.

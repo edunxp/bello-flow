@@ -736,8 +736,8 @@ produtiva completa.
 
 ### Contrato aprovado — F1-B.4.5.6 Processador de Entrega com Adapter Controlado
 
-- **Estado:** aprovado normativamente; implementação, migration e testes ainda não
-  iniciados.
+- **Estado:** aprovado normativamente; implementação, migration e testes validados
+  somente no working tree local, ainda sem commit ou publicação.
 - **Data de aprovação:** 2026-11-05.
 - **Objetivo:** processar internamente solicitações persistidas de recuperação,
   gerar o token just-in-time, preparar o link e exercitar a entrega por adapter

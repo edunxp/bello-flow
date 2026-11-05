@@ -191,8 +191,9 @@ transação única e testes PostgreSQL reais permanecem obrigatórios.
 
 #### Operações protegidas da F1-B.4.5.6
 
-O contrato está aprovado, mas ainda não implementado. A F1-B.4.5.6 acrescentará
-somente cinco operações específicas de entrega. Elas são a única fronteira de
+O contrato está aprovado e as cinco operações possuem implementação validada
+somente no working tree local, ainda sem commit ou publicação. Elas são a única
+fronteira de
 mutação do processador: runtime não recebe `SELECT` amplo em `account` nem DML
 direto em request, tentativa, token ou auditoria.
 
@@ -249,6 +250,13 @@ invalidado por outra operação ou com correlação divergente é inconsistente 
 
 `NO_WORK` somente pode resultar de commit confirmado da função. Erro de conexão,
 timeout, cardinalidade inválida ou observação inconclusiva não são `NO_WORK`.
+A seleção otimista é refeita sob o advisory lock da conta. Se o candidato ficar
+obsoleto e houver trabalho em outra conta, a função encerra a transação com erro
+serializável para que o adapter repita a seleção em nova transação, com os mesmos
+identificadores e limite finito. Ela não acumula locks de contas diferentes.
+Request sem tentativa corrente, ordinal divergente, estado incompatível ou token
+obrigatório ausente retorna `INCONSISTENT`; essas condições não são ocultadas como
+ociosidade nem reparadas silenciosamente.
 
 ##### Preparação
 
@@ -336,6 +344,20 @@ evidência parcial é `INCONSISTENT` e falha de observação é `UNKNOWN`.
 retorna e-mail. Ela nunca concede autorização externa, renova lease, invalida
 token, corrige estado ou terminaliza tentativa. `OBSERVED` inclui apenas os IDs,
 estado, ownership e marcadores necessários à fronteira consultada.
+
+A observação valida o grafo completo aplicável. `SENT` exige a matriz exata de
+`AUTH_PASSWORD_RECOVERY_SEND_ACCEPTED`; `FAILED` exige failure class, token
+invalidado e correlação com a tentativa; `UNKNOWN` exige estados terminais e não
+admite invalidação atribuída à própria tentativa. Estados não terminais validam
+ordinal, ownership e presença ou ausência de token conforme a fronteira.
+Evidência parcial ou divergente retorna `INCONSISTENT`, enquanto falha da própria
+consulta continua `UNKNOWN`.
+
+O adapter de persistência executa mutações e observações em transação interna
+`READ COMMITTED`, com `lock_timeout` local de 2 segundos e `statement_timeout`
+local de 5 segundos. A transação termina antes de qualquer resultado ser exposto
+ao processador; os limites evitam shutdown indefinido sem transformar perda de
+conexão em rollback presumido.
 
 As cinco funções são `SECURITY DEFINER`, pertencem ao migrator, fixam
 `search_path` protegido, qualificam todos os objetos, validam argumentos e não

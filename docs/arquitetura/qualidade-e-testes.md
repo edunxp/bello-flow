@@ -341,8 +341,9 @@ functions e 92,56% de branches; o consolidado alcançou respectivamente 94,68%,
 
 #### Critérios específicos da F1-B.4.5.6
 
-O contrato está aprovado e a implementação ainda não foi iniciada. A aceitação
-exige testes unitários, integração NestJS e PostgreSQL `18.6` real em banco
+O contrato está aprovado e a implementação está validada somente no working tree
+local, ainda sem commit ou publicação. A aceitação exige testes unitários,
+integração NestJS e PostgreSQL `18.6` real em banco
 comprovadamente descartável para a seguinte matriz:
 
 | Grupo                     | Evidência obrigatória                                                                                                                                                                         |
@@ -397,6 +398,23 @@ podem aparecer em logs, snapshots, mensagens de erro ou auditoria. A cobertura
 permanece em no mínimo 90% em lines, statements, functions e branches para web,
 API e consolidado, sem exclusões para atingir o gate. `Quality`, `API integration`
 e `Required` continuam obrigatórios.
+
+As evidências locais incluem 99 testes focais de módulo, configuração, adapter,
+persistência e processador e 18 cenários PostgreSQL dirigidos para a F1-B.4.5.6.
+Eles cobrem revalidação do claim sob concorrência, grafos incoerentes,
+reconciliação terminal completa, fronteiras reais de commit e rollback, perdas de
+conexão simuladas na camada de persistência, corrida terminal nos dois sentidos,
+duas contas, elegibilidade e shutdown sob lock. A simulação de perda de conexão
+não é apresentada como prova de qual resultado um commit real indeterminado teve;
+a decisão permanece dependente da reconciliação persistida.
+
+As migrations foram aplicadas do zero em `bello_dev` e `bello_test` dentro do
+mesmo PostgreSQL `18.6` descartável e as regressões PostgreSQL aplicáveis foram
+executadas nesse ambiente. A suíte unitária completa da API executou 663 testes e
+alcançou 94,39% de statements, 91,94% de branches, 97,22% de functions e 94,64%
+de lines. Web permaneceu em 100% nas quatro métricas; o consolidado alcançou
+94,41% de statements, 92,00% de branches, 97,24% de functions e 94,64% de lines.
+Esses resultados são locais e não antecipam commit, publicação ou CI.
 
 ## Integração com PostgreSQL real
 

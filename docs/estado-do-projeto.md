@@ -7,22 +7,23 @@ aprovado ou um marco relevante for publicado.
 
 ## Fase atual
 
-- **Última entrega publicada:** F1-B.4.5.5 — Caso de Uso de Redefinição de Senha,
-  concluída pelo commit `9ac023961b769b9e52c53d6799501df300c4ce3e`.
+- **Último marco publicado:** contrato normativo da F1-B.4.5.6 — Processador de
+  Entrega com Adapter Controlado, publicado pelo commit
+  `366210c20484c6bfbdacdecabd09406c232fd74d`.
 - **Publicação e CI:** branch `main` sincronizada após a publicação; execução
-  [CI 42087770386](https://github.com/edunxp/bello-flow/actions/runs/42087770386)
+  [CI 42099304940](https://github.com/edunxp/bello-flow/actions/runs/42099304940)
   aprovada nos jobs `Quality`, `API integration` e `Required`.
 - **Estado da F1-B.4.5:** fundação PostgreSQL, camada transacional, admissão
   efêmera, executor Argon2id global compartilhado e solicitação/classificação
   persistente e o caso de uso interno de redefinição foram publicados. As
   reconciliações permanecem observacionais, a admissão e a anti-enumeração estão
-  integradas e a regressão do login foi preservada. A recuperação completa ainda
-  não está concluída: o contrato da F1-B.4.5.6 foi aprovado, mas sua implementação,
-  o provider produtivo, os endpoints HTTP e o frontend permanecem pendentes.
-- **Próximo objetivo:** F1-B.4.5.6 — Processador de Entrega com Adapter Controlado
-  possui contrato normativo aprovado e implementação ainda não iniciada. Este
-  registro não autoriza implementá-lo. F1-B.4.5.7–F1-B.4.5.11 permanecem somente
-  propostas de planejamento não aprovadas.
+  integradas e a regressão do login foi preservada. A F1-B.4.5.6 está implementada
+  e validada somente no working tree local, aguardando revisão e eventual
+  autorização separada de commit. Provider produtivo, endpoints HTTP e frontend
+  permanecem pendentes, sem disponibilidade produtiva declarada.
+- **Próximo objetivo operacional:** revisar o conjunto local da F1-B.4.5.6. Este
+  registro não autoriza commit nem publicação. F1-B.4.5.7–F1-B.4.5.11 permanecem
+  somente propostas de planejamento não aprovadas.
 - **Pendências:** PT-003, PT-007, PT-008 e PT-009 preservam o estado de seus
   documentos canônicos. Esta consolidação não as encerra nem declara a recuperação
   disponível em produção.
@@ -50,6 +51,7 @@ aprovado ou um marco relevante for publicado.
 | F1-B.4.5.3 — Admissão e Capacidade Compartilhada              | concluída e publicada; não implementa caso de uso, persistência ou HTTP                                                                                                           | [`PasswordRecoveryAdmissionService`](../apps/api/src/auth/password-recovery-admission.service.ts); [`Argon2ExecutionService`](../apps/api/src/auth/argon2-execution.service.ts); commit `47a6ae033f42d40b56c24bad82b454af0616e2ec`; [CI 42050631222](https://github.com/edunxp/bello-flow/actions/runs/42050631222)                                                                 |
 | F1-B.4.5.4 — Solicitação e Classificação da Recuperação       | concluída e publicada; não gera token, processa entrega, redefine senha ou expõe HTTP                                                                                             | [`PasswordRecoveryRequestService`](../apps/api/src/auth/password-recovery-request.service.ts); [migration](../apps/api/prisma/migrations/20261109000000_f1_b_4_5_4_password_recovery_request/migration.sql); commit `a57f718bf4efb74f2daa76c4b5127c9241d939be`; [CI 42069921440](https://github.com/edunxp/bello-flow/actions/runs/42069921440)                                     |
 | F1-B.4.5.5 — Caso de Uso de Redefinição de Senha              | implementada, publicada e validada; não gera ou entrega token e não expõe HTTP                                                                                                    | [`PasswordResetService`](../apps/api/src/auth/password-reset.service.ts); [`PasswordResetPersistence`](../apps/api/src/auth/password-reset.persistence.ts); [teste PostgreSQL](../apps/api/test/f1-b-4-5-5-password-reset-use-case.e2e-spec.ts); commit `9ac023961b769b9e52c53d6799501df300c4ce3e`; [CI 42083803500](https://github.com/edunxp/bello-flow/actions/runs/42083803500) |
+| F1-B.4.5.6 — Processador de Entrega com Adapter Controlado    | implementação e validação somente locais; ainda sem commit, publicação ou CI remoto                                                                                               | [processador](../apps/api/src/auth/password-recovery-delivery.processor.ts); [persistência](../apps/api/src/auth/password-recovery-delivery.persistence.ts); [migration](../apps/api/prisma/migrations/20261110000000_f1_b_4_5_6_password_recovery_delivery/migration.sql); [teste PostgreSQL](../apps/api/test/f1-b-4-5-6-password-recovery-delivery.e2e-spec.ts)                  |
 
 Os agrupamentos resumidos organizam evidências já existentes; não criam fases
 normativas nem alteram o estado de decisões ou pendências.
@@ -187,25 +189,35 @@ normativas nem alteram o estado de decisões ou pendências.
 - **Limite:** não gera nem entrega token, não processa e-mail, não expõe endpoint
   ou frontend e não encerra a F1-B.4.5, PT-008 ou PT-009.
 
-## Próximos incrementos
+## Incremento em validação local
 
-Nenhum próximo incremento está iniciado ou autorizado por este documento.
-
-### F1-B.4.5.6 — contrato aprovado, implementação não iniciada
+### F1-B.4.5.6 — implementação local validada, aguardando revisão
 
 O contrato normativo do **Processador de Entrega com Adapter Controlado** está
 aprovado como complemento de AT-001, AT-003 e AT-009. O recorte abrange somente
 processamento interno NestJS, operações PostgreSQL protegidas, token just-in-time,
 link controlado, adapter técnico e testes. Provider produtivo, HTTP público,
 frontend, fila externa, outbox genérica, retenção e incrementos posteriores estão
-excluídos. A implementação, as migrations e as evidências de teste ainda não foram
-iniciadas. PT-009 permanece aberta.
+excluídos. O working tree local contém o processador, adapter e configuração
+NestJS, a fronteira de persistência, a migration forward-only das cinco funções e
+testes unitários e PostgreSQL `18.6` descartável. A validação local cobre o fluxo
+nominal, falhas, leases, fronteiras transacionais, concorrência, privilégios,
+auditoria, regressões e cobertura. Perda de conexão é simulada e combinada com
+provas reais de visibilidade antes e depois de commit ou rollback; ela não é
+tratada como prova presumida do resultado do commit. Isso não equivale a commit,
+publicação ou CI remoto. PT-007 e PT-008
+permanecem abertas até consolidação posterior expressamente autorizada, e PT-009
+permanece integralmente aberta.
 
 O contrato está consolidado em
 [decisões técnicas](arquitetura/decisoes-tecnicas.md#contrato-aprovado--f1-b456-processador-de-entrega-com-adapter-controlado),
 [segurança](arquitetura/seguranca-e-autorizacao.md#f1-b456--processador-de-entrega-com-adapter-controlado),
 [persistência](arquitetura/persistencia-e-auditoria.md#operações-protegidas-da-f1-b456)
 e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b456).
+
+## Próximos incrementos
+
+Nenhum próximo incremento está iniciado ou autorizado por este documento.
 
 ### Sequência posterior proposta — não aprovada
 
