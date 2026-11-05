@@ -457,15 +457,15 @@ e os limites de segurança estão em
   ausência de vazamento por identidade e regressão do login, preservando 90% em
   lines, statements, functions e branches por aplicação e consolidado.
 - **Pendências preservadas:** a F1-B.4.5.3 não encerra PT-008 integralmente. PT-009,
-  terminalização de intenções abandonadas e a futura fronteira SQL não eram
-  dependências diretas e permaneceram fora do incremento. A fronteira SQL é
-  formalizada abaixo para a F1-B.4.5.4, sem implementação.
+  terminalização de intenções abandonadas e a fronteira SQL posterior não eram
+  dependências diretas e permaneceram fora do incremento. Essa fronteira foi
+  posteriormente publicada na F1-B.4.5.4.
 
 ### Contrato formalizado — F1-B.4.5.4 Solicitação e Classificação da Recuperação
 
-- **Estado:** planejamento técnico formalizado, com D1–D3 consolidadas. A
-  implementação ainda não foi iniciada e exige autorização própria; esta decisão
-  não cria migration, commit ou publicação.
+- **Estado:** implementada e publicada pelo commit
+  `a57f718bf4efb74f2daa76c4b5127c9241d939be`, com CI `42069921440` aprovado em
+  `Quality`, `API integration` e `Required`.
 - **Objetivo:** integrar a admissão da F1-B.4.5.3 à persistência da F1-B.4.5.1,
   classificar a solicitação sob serialização por conta e emitir a auditoria já
   aprovada, sem expor a existência ou a elegibilidade da conta.
@@ -605,8 +605,124 @@ tokens ou auditoria.
   owner migrator, `search_path` protegido, grants mínimos, ausência de acesso
   sensível direto e atomicidade de request, classificação e auditoria aplicável.
 
-A sequência F1-B.4.5.5–F1-B.4.5.11 permanece somente proposta de planejamento,
-sem identificadores normativos aprovados ou autorização automática.
+### Contrato formalizado — F1-B.4.5.5 Caso de Uso de Redefinição de Senha
+
+- **Estado:** planejamento técnico formalizado; implementação não iniciada.
+- **Objetivo:** ligar a fronteira NestJS às operações PostgreSQL publicadas de
+  intenção, conclusão e reconciliação, à admissão de reset, à política de senha e
+  ao executor Argon2id compartilhado, sem criar endpoint ou produzir token.
+- **Incluído:** validação canônica e hash separado do token apresentado; IDs
+  estáveis; intenção antes do Argon2id; PHC no perfil aprovado; conclusão e
+  reconciliação; resultados internos opacos; falhas determinadas e
+  indeterminadas; testes unitários, de integração e PostgreSQL real.
+- **Excluído:** geração e entrega de token, processador, provider, outbox,
+  endpoint, frontend, mudança da política de senha, terminalização de intenção
+  abandonada, retenção e alteração de migration ou função publicada.
+
+#### Fronteira interna e ordem
+
+1. A entrada interna contém `token`, `newPassword` e IP confiável. A validação
+   estrutural e a política publicada da senha — string Unicode bem formada de 12
+   a 128 code points — ocorrem antes de criar intenção ou executar Argon2id.
+2. A admissão síncrona reserva somente o bucket de reset por IP. `RATE_LIMITED`
+   e saturação terminam antes de PostgreSQL e Argon2id.
+3. Depois da admissão, o token deve ser exatamente Base64URL canônico sem padding
+   de 43 caracteres, decodificando para 32 bytes. Seu hash é
+   `SHA-256("bello-flow/password-reset/v1\0" || token_bytes)`; o valor bruto não
+   é persistido, retornado, auditado ou registrado.
+4. O caso de uso reserva `reset_operation_id` e os IDs de auditoria UUID v4 uma
+   única vez e chama `start_password_reset_operation`. Zero linhas ou `REJECTED`
+   são negativa funcional opaca; somente `STARTED` autoriza o hashing da senha.
+5. A intenção confirmada precede o Argon2id. Não permanece transação aberta
+   durante o cálculo. O mesmo `Argon2ExecutionService` usado pelo login envolve
+   `PasswordCredentialService.hashPassword`, preservando duas execuções globais,
+   fila FIFO de quatro e espera máxima de um segundo.
+6. O PHC aprovado é enviado a `complete_password_reset_operation` com o mesmo
+   `reset_operation_id` e o ID terminal reservado. Somente `COMPLETED` confirmado
+   ou reconciliado é sucesso; `REJECTED` é negativa funcional opaca.
+7. Falha possivelmente posterior ao envio de qualquer mutação exige
+   `reconcile_password_reset_operation` com o mesmo ID. Nenhuma mutação é
+   repetida enquanto o commit puder ter ocorrido.
+
+A política de senha pertence à validação inicial; a etapa posterior à intenção é
+somente o trabalho Argon2id. Essa ordem preserva o `400 INVALID_REQUEST` já
+aprovado sem gravar marcador para senha inválida e mantém a regra publicada de
+intenção confirmada antes do hashing caro.
+
+#### Resultados, idempotência e indeterminação
+
+- O adapter reproduz as assinaturas e resultados publicados, sem DML direto. O
+  caso de uso devolve somente `COMPLETED`, `AUTHENTICATION_FAILED`,
+  `RATE_LIMITED` com `retryAfterSeconds` ou `SERVICE_UNAVAILABLE`; não devolve
+  `account_id`, estado do token, PHC, contagens ou IDs.
+- Falha comprovadamente anterior ao envio pode encerrar sem reconciliação.
+  Rollback só é confirmado por evidência estreita; timeout, transporte, erro
+  genérico ou cancelamento depois do possível envio são indeterminados.
+- `COMPLETED` autoriza sucesso; `REJECTED` e token não resolvido autorizam apenas
+  a mesma negativa funcional; `NOT_FOUND`, `INCONSISTENT` e `UNKNOWN` são
+  indisponibilidade fail-closed. Reconciliação não repara nem terminaliza.
+- Retries transacionais já aprovados permanecem internos ao adapter, no máximo
+  duas novas tentativas para `40001`, `40P01` e `55P03` comprovadamente causado
+  por `lock_timeout` após rollback. Eles reutilizam todos os IDs e revalidam o
+  estado; não se cria política adicional.
+- Falha de aquisição/cancelamento anterior à vaga Argon2id não inicia hashing.
+  Depois de iniciado, o trabalho conserva a vaga até terminar; interrupção do
+  caller não prova cancelamento do trabalho nem autoriza conclusão concorrente.
+
+#### Segurança e limites
+
+- Os resultados internos são somente sucesso, negativa funcional,
+  `RATE_LIMITED` com espera e indisponibilidade. Token inexistente, expirado,
+  consumido, invalidado, conta inelegível e corrida determinada permanecem
+  indistinguíveis. O contrato HTTP futuro não é implementado por este incremento.
+- A conclusão SQL continua autoridade para consumo único, alteração atômica da
+  credencial, invalidações, cancelamentos, revogação de sessões e auditoria. O
+  NestJS não interpreta contagens como autorização nem acessa tabelas sensíveis.
+- Login, quotas, cookies, sessão HTTP, perfil Argon2id e privilégios publicados
+  permanecem inalterados. Não se cria executor, fila, grant ou função SQL.
+
+#### F1-B.4.5.5/D1 — disposição da reserva de admissão do reset
+
+A reserva representa uma tentativa de reset admitida, não sucesso funcional. Sua
+finalização é idempotente e ocorre exatamente uma vez:
+
+| Situação                                                               | Reserva | Resultado funcional                     |
+| ---------------------------------------------------------------------- | ------- | --------------------------------------- |
+| estrutura ou política rejeitada antes da admissão                      | ausente | erro de validação                       |
+| pré-admissão rejeitada                                                 | ausente | `RATE_LIMITED` ou `SERVICE_UNAVAILABLE` |
+| falha operacional comprovadamente anterior ao envio do start           | refund  | `SERVICE_UNAVAILABLE`                   |
+| rollback comprovado do start, sem `STARTED` confirmado                 | refund  | `SERVICE_UNAVAILABLE`                   |
+| token malformado após admissão ou start sem linha                      | commit  | `AUTHENTICATION_FAILED`                 |
+| start ou reconciliação determina `REJECTED`                            | commit  | `AUTHENTICATION_FAILED`                 |
+| start confirma `STARTED`                                               | commit  | prossegue para Argon2id                 |
+| fila, timeout, cancelamento pré-aquisição ou falha Argon2id após start | commit  | `SERVICE_UNAVAILABLE`                   |
+| complete ou reconciliação confirma `COMPLETED`                         | commit  | `COMPLETED`                             |
+| envio possivelmente realizado ou falha da reconciliação                | commit  | `SERVICE_UNAVAILABLE`                   |
+| reconciliação determina `NOT_FOUND`, `INCONSISTENT` ou `UNKNOWN`       | commit  | `SERVICE_UNAVAILABLE`, sem nova mutação |
+
+`STARTED` é o limite irreversível para a reserva efêmera: depois de confirmado,
+rollback de complete, falha do executor ou término do trabalho não autorizam
+refund. Antes dele, rollback só é comprovado por evidência estreita de que a
+transação de start não persistiu; tipo genérico de exceção, timeout, transporte,
+cancelamento ou perda de conexão nunca bastam. Se o start puder ter sido enviado,
+a reserva é consumida mesmo que a reconciliação permaneça inconclusiva.
+
+Rollback intermediário elegível ao retry transacional publicado não finaliza a
+reserva: ela permanece aberta enquanto o adapter repete a transação inteira com
+os mesmos IDs. O resultado conclusivo da política limitada decide commit ou
+refund uma única vez; esgotamento com rollback comprovado e sem possível efeito
+autoriza refund, enquanto qualquer indeterminação consome.
+
+O commit da reserva não declara token válido, conta existente, sucesso, auditoria
+ou commit PostgreSQL. Ele impede que tokens inválidos, falhas após intenção ou
+resultados indeterminados contornem a quota por repetição. O login conserva sua
+matriz própria, inclusive refunds operacionais; esta decisão não altera seu
+contrato.
+
+A sequência F1-B.4.5.6–F1-B.4.5.11 permanece somente proposta de planejamento,
+sem aprovação automática. PT-009 e terminalização de intenções não bloqueiam a
+formalização deste recorte, mas continuam necessárias para a disponibilidade
+produtiva completa.
 
 ## AT-002 — Autorização centralizada
 
@@ -918,6 +1034,7 @@ sem identificadores normativos aprovados ou autorização automática.
 
 | Data       | Alteração                                                                                                                                                                                                                                                                                                                                     |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-05 | Publicação da F1-B.4.5.4 consolidada pelo commit `a57f718bf4efb74f2daa76c4b5127c9241d939be` e CI `42069921440`; contrato interno da F1-B.4.5.5 formalizado sobre as operações SQL publicadas e decisão F1-B.4.5.5/D1 consolidada para commit/refund da reserva de reset.                                                                      |
 | 2026-11-05 | D1–D3 da F1-B.4.5.4 consolidadas: cooldown desde `received_at` do request que alcançou `PENDING`, consumo da reserva em `UNKNOWN` persistente sem sucesso funcional ou repetição, e assinaturas SQL protegidas aprovadas para o planejamento; implementação permanece não iniciada.                                                           |
 | 2026-11-05 | Publicação da F1-B.4.5.3 consolidada pelo commit `47a6ae033f42d40b56c24bad82b454af0616e2ec` e CI `42050631222`; contrato técnico da F1-B.4.5.4 proposto para solicitação e classificação protegidas.                                                                                                                                          |
 | 2026-11-05 | Planejamento da F1-B.4.5.3 formalizado para admissão efêmera da recuperação e capacidade Argon2id global compartilhada, preservando integralmente o login e mantendo casos de uso, PostgreSQL, e-mail, HTTP, frontend, PT-009 e terminalização fora do incremento.                                                                            |

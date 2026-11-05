@@ -47,9 +47,10 @@ por suposição.
 ### Recuperação de senha da F1-B.4.5
 
 O contrato está aprovado. A fundação física da F1-B.4.5.1, as operações da
-F1-B.4.5.2 e a admissão/capacidade da F1-B.4.5.3 foram publicadas; os demais
-casos de uso continuam pendentes. A persistência é específica do domínio de
-recuperação e não antecipa outbox genérica.
+F1-B.4.5.2, a admissão/capacidade da F1-B.4.5.3 e a solicitação/classificação da
+F1-B.4.5.4 foram publicadas; os demais casos de uso continuam pendentes. A
+persistência é específica do domínio de recuperação e não antecipa outbox
+genérica.
 
 #### Relações e estados
 
@@ -188,7 +189,7 @@ requests, tentativas, tokens ou operações de reset. Os acessos existentes
 necessários ao login não são removidos neste incremento. SQL parametrizado,
 transação única e testes PostgreSQL reais permanecem obrigatórios.
 
-#### Contrato formalizado da F1-B.4.5.4
+#### Contrato publicado da F1-B.4.5.4
 
 A estrutura publicada permite registrar e classificar a solicitação sem nova
 coluna: `password_recovery_request` já possui `recovery_request_id`, `account_id`
@@ -307,15 +308,122 @@ e auditoria em conjunto.
 
 As duas funções são `SECURITY DEFINER`, owned pelo migrator, com `search_path`
 fixado em `pg_catalog`, `public` e `pg_temp`, objetos qualificados e sem SQL
-dinâmico. A migration futura revoga `EXECUTE` de `PUBLIC`, runtime, bootstrap e
-manutenção e concede ao runtime somente `EXECUTE` nas assinaturas exatas. Nenhum
+dinâmico. A migration publicada revoga `EXECUTE` de `PUBLIC`, runtime, bootstrap
+e manutenção e concede ao runtime somente `EXECUTE` nas assinaturas exatas. Nenhum
 novo `SELECT`, `INSERT`, `UPDATE` ou `DELETE` direto é concedido sobre conta,
 credencial, requests, tokens ou auditoria.
 
-Este contrato documental não cria migration, tabela, coluna, estado físico,
-outbox, token, tentativa, claim, lease, processamento ou acesso de provider. As
-assinaturas, o cooldown e a disposição da reserva diante de `UNKNOWN` estão
-formalizados; a implementação permanece não iniciada e requer autorização própria.
+O recorte foi publicado no commit
+`a57f718bf4efb74f2daa76c4b5127c9241d939be`. Ele não cria outbox, token,
+tentativa, claim, lease, processamento ou acesso de provider.
+
+#### Contrato formalizado da F1-B.4.5.5
+
+O adapter NestJS da redefinição reutiliza, sem redefinir ou sobrecarregar, as três
+operações publicadas da F1-B.4.5.2:
+
+```text
+start_password_reset_operation(
+  reset_operation_id uuid,
+  audit_event_id uuid,
+  presented_token_hash bytea
+) RETURNS TABLE (account_id uuid, state text)
+
+complete_password_reset_operation(
+  reset_operation_id uuid,
+  audit_event_id uuid,
+  new_password_hash text
+) RETURNS TABLE (
+  account_id uuid,
+  state text,
+  revoked_session_count bigint,
+  invalidated_token_count bigint,
+  cancelled_request_count bigint,
+  cancelled_attempt_count bigint
+)
+
+reconcile_password_reset_operation(
+  reset_operation_id uuid
+) RETURNS text
+```
+
+`reset_operation_id` e os dois IDs de auditoria são UUID v4 reservados uma única
+vez por execução lógica. O hash do token possui 32 bytes; o PHC obedece exatamente
+ao perfil Argon2id `v=19`, `m=65536`, `t=3`, `p=1`, salt de 16 bytes e hash de
+32 bytes. A implementação valida esses valores antes do SQL e o PostgreSQL os
+revalida antes dos efeitos. O adapter pode usar `account_id`, estado e contagens
+somente para validar cardinalidade e contrato da função; eles não atravessam o
+caso de uso nem autorizam decisão fora do resultado normativo.
+
+##### Mapeamento e indeterminação
+
+- Intenção sem linha significa token não resolvido e negativa funcional sem
+  marcador ou auditoria. `STARTED` confirma a intenção e permite Argon2id;
+  `REJECTED` é negativa funcional determinada. Qualquer cardinalidade, estado ou
+  vínculo diferente é falha operacional.
+- Conclusão `COMPLETED` autoriza sucesso e `REJECTED` autoriza somente negativa
+  funcional. Ambas exigem uma linha e evidências comprovadas pela própria função.
+- Reconciliação expõe `COMPLETED`, `REJECTED`, `NOT_FOUND`, `INCONSISTENT` e
+  `UNKNOWN`. Somente `COMPLETED` é sucesso; `REJECTED` é negativa; os três demais
+  resultados são indisponibilidade fail-closed.
+- Falha anterior ao envio é determinada localmente. Rollback só é classificado
+  quando houver prova específica de que a instrução não foi efetivada. Timeout,
+  conexão, cancelamento, erro genérico ou falha depois do possível envio exigem
+  reconciliação e proíbem repetição automática.
+- Os retries PostgreSQL estreitos já aprovados reutilizam os mesmos IDs e a
+  transação completa. Não há retry novo no caso de uso nem nova tentativa de
+  token por suposição.
+
+O mapeamento por fase é:
+
+| Evidência protegida                                            | Decisão do caso de uso                  |
+| -------------------------------------------------------------- | --------------------------------------- |
+| start retorna zero linhas ou `REJECTED`                        | `AUTHENTICATION_FAILED`, sem Argon2id   |
+| start retorna `STARTED`                                        | executar Argon2id e tentar complete     |
+| complete retorna `COMPLETED`                                   | `COMPLETED`                             |
+| complete retorna `REJECTED`                                    | `AUTHENTICATION_FAILED`                 |
+| reconciliação retorna `COMPLETED`                              | `COMPLETED`                             |
+| reconciliação retorna `REJECTED`                               | `AUTHENTICATION_FAILED`                 |
+| reconciliação retorna `NOT_FOUND`, `INCONSISTENT` ou `UNKNOWN` | `SERVICE_UNAVAILABLE`, sem nova mutação |
+| falha de observação ou resultado fora do contrato              | `SERVICE_UNAVAILABLE`, sem nova mutação |
+
+Em indeterminação do start, o adapter reconcilia antes de qualquer Argon2id. Um
+marcador ainda `STARTED` é observado como `UNKNOWN` e, portanto, não autoriza o
+hashing nesta execução. Em indeterminação do complete, somente `COMPLETED`
+reconciliado autoriza sucesso. Esse mapeamento não revela se o token resolveu uma
+conta nem expõe o estado PostgreSQL ao consumidor.
+
+Uma intenção confirmada precede o cálculo Argon2id, que ocorre fora de transação.
+A conclusão usa o mesmo marcador e preserva a ordem global de locks. A função
+atômica continua responsável por consumo do token, credencial, invalidações,
+cancelamentos, sessões, auditoria e terminalização. O caso de uso não escreve nem
+lê diretamente essas tabelas e não produz reparação para `STARTED` ou `UNKNOWN`.
+
+As funções permanecem `SECURITY DEFINER`, owned pelo migrator, com `search_path`
+protegido e `EXECUTE` somente para `bello_runtime`; `PUBLIC`, bootstrap e
+manutenção continuam sem execução e nenhuma tabela sensível recebe grant novo.
+Este incremento não requer migration nem altera privilégios publicados.
+
+##### Reserva efêmera do reset
+
+A reserva é finalizada no primeiro limite conclusivo do caso de uso. Token
+malformado após admissão e start sem linha consomem a tentativa como negativa
+opaca. `REJECTED` consome como negativa determinada. `STARTED` consome a reserva
+antes da aquisição Argon2id; falha ou rollback posterior não a reabre.
+`COMPLETED` também permanece consumido.
+
+Falha comprovadamente anterior ao envio do start ou rollback confirmado dessa
+transação autoriza refund somente se `STARTED` não foi confirmado. Depois de
+possível envio, a reserva é consumida antes da reconciliação e permanece assim
+para `COMPLETED`, `REJECTED`, `NOT_FOUND`, `INCONSISTENT`, `UNKNOWN`, falha da
+observação ou resultado fora do contrato. A decisão é idempotente e não depende
+de exceção genérica. Consumo da quota não comprova efeito PostgreSQL nem sucesso
+funcional e não autoriza repetir mutação.
+
+Nos retries estreitos já publicados para a transação de start, rollback
+intermediário não finaliza a reserva. Ela permanece aberta e os mesmos IDs são
+reutilizados até o resultado conclusivo da política limitada. Somente então há
+um commit ou refund, nunca ambos.
 
 #### Operações transacionais da F1-B.4.5.2
 

@@ -55,10 +55,10 @@ tentativa, preserva verificação negativa, `401` genérico e auditoria funciona
 ### Matriz obrigatória da F1-B.4.5
 
 O contrato de recuperação está aprovado, e a fundação PostgreSQL da F1-B.4.5.1 e
-as operações da F1-B.4.5.2 foram publicadas. A admissão e a capacidade
-compartilhada da F1-B.4.5.3 também foram publicadas. Casos de uso,
-classificação persistente, processamento, HTTP e demais testes continuam
-pendentes. A entrega completa deve cobrir:
+as operações da F1-B.4.5.2, a admissão/capacidade da F1-B.4.5.3 e a
+solicitação/classificação da F1-B.4.5.4 foram publicadas. Redefinição,
+processamento, HTTP e
+demais testes continuam pendentes. A entrega completa deve cobrir:
 
 - unitários: DTOs exatos, normalização, Base64URL canônica, hash com separação de
   domínio, transições, leases, cooldown, quotas, três tentativas, três tokens
@@ -201,9 +201,11 @@ de 90% em lines, statements, functions e branches por aplicação e consolidado 
 os jobs `Quality`, `API integration` e `Required`. Esta evidência cobre somente o
 recorte de admissão/capacidade e não encerra a PT-008 integralmente.
 
-#### Critérios formalizados da F1-B.4.5.4
+#### Evidências publicadas da F1-B.4.5.4
 
-A implementação futura exige evidências separadas por camada.
+A implementação publicada no commit
+`a57f718bf4efb74f2daa76c4b5127c9241d939be`, com CI `42069921440` aprovado,
+preserva evidências separadas por camada.
 
 Testes unitários NestJS, com mocks estritos e relógio controlado, devem comprovar:
 
@@ -261,6 +263,69 @@ Promises e relógios são coordenados, sem sleeps arbitrários. O gate preserva
 90% em lines, statements, functions e branches por aplicação e consolidado,
 regressão de autenticação/admissão e os jobs `Quality`, `API integration` e
 `Required`.
+
+#### Critérios formalizados da F1-B.4.5.5
+
+Testes unitários NestJS, com mocks estritos e agendamento controlado, devem
+comprovar:
+
+- Base64URL canônica sem padding, tamanho decodificado de 32 bytes, rejeição de
+  variantes e hash SHA-256 com o domínio publicado, sem retenção ou vazamento do
+  token;
+- validação da política da senha antes da intenção e nenhuma execução Argon2id
+  para senha inválida, admissão rejeitada, token não resolvido ou `REJECTED`;
+- reserva de admissão antes de qualquer `await`, quota de reset por IP e matriz
+  F1-B.4.5.5/D1 de commit/refund, com exatamente uma decisão idempotente da
+  reserva;
+- mesma instância de `Argon2ExecutionService` entre login e reset, capacidade
+  máxima, FIFO, timeout, cancelamento pré-aquisição e liberação após término real;
+- mapeamento de falha anterior ao envio, rollback comprovado, commit
+  indeterminado e reconciliação, sem repetição automática e com os mesmos IDs; e
+- ausência de `account_id`, estado interno, token, hash, senha, PHC, contagens ou
+  identificadores em resultado, erro, log e métrica.
+
+A matriz F1-B.4.5.5/D1 exige testes dirigidos para:
+
+- nenhuma reserva em rejeição de pré-admissão;
+- refund em falha comprovadamente anterior ao envio do start e em rollback
+  comprovado dessa fase sem `STARTED`;
+- reserva ainda aberta durante retry transacional permitido, com os mesmos IDs,
+  e uma única finalização depois do resultado conclusivo;
+- commit para token malformado após admissão, start sem linha, `REJECTED` e
+  `STARTED`;
+- commit preservado em fila cheia, timeout, cancelamento pré-aquisição, falha
+  síncrona ou assíncrona do Argon2id e falha de complete depois de `STARTED`;
+- commit em `COMPLETED` e em reconciliação `COMPLETED`, `REJECTED`, `NOT_FOUND`,
+  `INCONSISTENT` ou `UNKNOWN`, inclusive quando a observação falhar;
+- nenhuma repetição automática ou refund após possível envio; e
+- concorrência coordenada entre finalização da reserva, aquisição Argon2id e
+  cancelamento, provando finalização única e regressão integral do login.
+
+Testes em PostgreSQL `18.6` real, comprovadamente descartável, reutilizam as
+suítes publicadas e acrescentam integração dirigida para:
+
+- start válido, token não resolvido, expirado, consumido, invalidado, conta
+  inelegível e corrida, verificando intenção antes do Argon2id;
+- complete válido e rejeitado, consumo único, alteração atômica da credencial,
+  invalidação dos demais tokens, cancelamentos, revogação de sessões, auditoria e
+  marcador terminal;
+- idempotência e concorrência para o mesmo token, mesma conta e contas distintas,
+  ordem de locks, ausência de bypass e nenhum efeito parcial;
+- rollback em start e complete; reconciliação observacional de `COMPLETED`,
+  `REJECTED`, `NOT_FOUND`, `INCONSISTENT` e `UNKNOWN`; e
+- owner, `SECURITY DEFINER`, `search_path`, assinaturas e `EXECUTE` mínimos, com
+  negação de `SELECT` e DML sensível direto pelo runtime.
+
+Testes de integração NestJS/PostgreSQL devem comprovar start → Argon2id →
+complete, rejeição antes do hashing quando aplicável, indeterminação e
+reconciliação em start e complete, mesmos IDs, ausência de repetição e efeitos
+parciais, compatibilidade do login e capacidade Argon2id global. Tokens, PHCs e
+senhas dos testes são sintéticos e nunca correspondem a credenciais reais.
+
+Não há teste de geração/entrega, provider, outbox, HTTP, frontend, terminalização
+ou retenção neste incremento. A cobertura permanece em no mínimo 90% para lines,
+statements, functions e branches por aplicação e consolidado, sem redução de
+gates; `Quality`, `API integration` e `Required` permanecem obrigatórios.
 
 ## Integração com PostgreSQL real
 

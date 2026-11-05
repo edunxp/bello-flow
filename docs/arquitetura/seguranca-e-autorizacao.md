@@ -163,7 +163,8 @@ conta inelegível e demais rejeições determinadas da credencial. O `401` não
 revela existência, elegibilidade ou estado da conta, e o `503` não revela a
 causa operacional. Para o login, limites, chaves, armazenamento, `Retry-After`
 e `429` estão definidos no subconjunto aprovado da PT-008. Recuperação de senha
-possui contrato separado na F1-B.4.5, ainda não implementado.
+possui contrato separado na F1-B.4.5, implementado apenas nos incrementos
+publicados F1-B.4.5.1–F1-B.4.5.4.
 
 ### `POST /api/auth/login`
 
@@ -536,12 +537,12 @@ global, sem expor endpoint ou executar caso de uso, PostgreSQL, outbox ou e-mail
 A F1-B.4.5.3 não define persistência, cooldown, classificação funcional,
 processamento, provider ou resposta HTTP da recuperação e não encerra a PT-008.
 
-### F1-B.4.5.4 — solicitação e classificação planejadas
+### F1-B.4.5.4 — solicitação e classificação publicadas
 
-Este contrato técnico, incluindo D1–D3, está formalizado. A implementação não foi
-iniciada nem autorizada por este registro. O incremento termina na classificação
-persistente e não expõe endpoint, gera token, cria tentativa de entrega ou chama
-provider.
+Este contrato técnico, incluindo D1–D3, foi implementado e publicado no commit
+`a57f718bf4efb74f2daa76c4b5127c9241d939be`, com CI `42069921440` aprovado. O
+incremento termina na classificação persistente e não expõe endpoint, gera token,
+cria tentativa de entrega ou chama provider.
 
 #### Ordem e anti-enumeração
 
@@ -596,6 +597,54 @@ inclusive terminais, permanecem no cálculo. A verificação ocorre sob o adviso
 lock da conta; a janela está ativa antes de `received_at + 10 minutes` e expira na
 igualdade. A retenção operacional de 30 dias não remove a prova dentro dessa
 janela.
+
+### F1-B.4.5.5 — fronteira interna de redefinição planejada
+
+O caso de uso interno futuro recebe token, nova senha e IP confiável, sem sessão.
+A estrutura e a política da senha são validadas antes da admissão e de qualquer
+efeito. A admissão reserva o bucket de reset por IP antes de `await`; `429` ou
+saturação terminam sem PostgreSQL, Argon2id ou auditoria funcional.
+
+Depois da admissão, o token aceita somente Base64URL canônica sem padding de 43
+caracteres que decodifique exatamente 32 bytes. O hash usa separação de domínio
+`SHA-256("bello-flow/password-reset/v1\0" || token_bytes)`. O token bruto e a
+nova senha permanecem apenas na memória necessária ao caso de uso; token, hash,
+senha e PHC não integram logs, erros, métricas, auditoria ou resultados.
+
+A intenção PostgreSQL deve estar confirmada em `STARTED` antes do trabalho
+Argon2id. Token não resolvido ou `REJECTED` retorna negativa funcional opaca sem
+hashing. O PHC usa exclusivamente o perfil publicado e o executor global do
+login: duas execuções, fila FIFO de quatro e espera máxima de um segundo. Timeout
+ou cancelamento antes da aquisição não inicia o hash; trabalho iniciado conserva
+a vaga até terminar e não promete cancelamento nativo.
+
+A conclusão protegida continua autoridade sobre consumo único, credencial,
+outros tokens, requests, tentativas, sessões e auditoria. Apenas `COMPLETED`
+comprovado — diretamente ou por reconciliação — autoriza sucesso. Token inválido,
+expirado, consumido, invalidado, conta inelegível, corrida determinada e
+`REJECTED` são a mesma negativa; `NOT_FOUND`, `INCONSISTENT`, `UNKNOWN` e falha de
+observação são indisponibilidade fail-closed. Nenhuma mutação é repetida depois de
+possível envio sem classificação conclusiva, e todos os retries permitidos
+reutilizam o mesmo `reset_operation_id` e IDs de auditoria.
+
+O adapter recebe somente `EXECUTE` nas funções já publicadas. Ele não lê tabelas,
+não expõe `account_id`, estados internos, contagens, hashes ou PHC e não amplia
+grants. O incremento não lê, emite ou limpa cookie; a revogação permanece efeito
+atômico do PostgreSQL e será observada posteriormente pelo fluxo de sessão.
+
+A reserva de reset possui disposição própria. Pré-admissão rejeitada não cria
+reserva. Falha comprovadamente anterior ao envio do start ou rollback comprovado
+dessa transação, sem `STARTED`, autoriza refund idempotente. Token malformado
+depois da admissão, token não resolvido, `REJECTED`, `STARTED`, falha de aquisição
+ou execução Argon2id depois do start, `COMPLETED` e qualquer resultado após
+possível envio confirmam o consumo.
+
+`NOT_FOUND`, `INCONSISTENT`, `UNKNOWN` ou falha da própria reconciliação consomem
+a reserva e retornam indisponibilidade, sem repetição automática. Exceção
+genérica, timeout, transporte, cancelamento ou perda de conexão não comprovam
+rollback. A reserva é finalizada uma única vez; commit significa tentativa
+admitida consumida, não sucesso, validade do token ou existência da conta. A
+matriz do login permanece inalterada.
 
 ### Token, link e disponibilidade
 
