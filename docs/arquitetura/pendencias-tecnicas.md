@@ -105,7 +105,8 @@ por API HTTPS, com configuração fail-fast, matriz fechada de respostas, mensag
 mínima, tracking desativado, observabilidade sanitizada e port preservado. A
 implementação foi publicada no commit
 `af392b32d9bd72f57f8375334079043ac85d3603`, com CI `42152502439` aprovado.
-F1-B.4.5.8 foi aprovada normativamente em 2026-11-06, ainda sem implementação;
+F1-B.4.5.8 foi aprovada normativamente em 2026-11-06 e está implementada e
+validada localmente na branch `work/f1-b-4-5-8`, ainda sem publicação ou CI remoto;
 F1-B.4.5.9–F1-B.4.5.11 continuam propostas não aprovadas.
 
 Essa aprovação resolve a escolha normativa de fornecedor e o desenho técnico, mas
@@ -132,7 +133,7 @@ seleção observacional distingue candidato, ociosidade e inconsistência; a fun
 mutável usa os locks e grants mínimos aprovados, sem DML direto. Não se criam
 lease, heartbeat, ownership, fencing numérico, role ou credencial. A reconciliação
 existente permanece observacional, `UNKNOWN` não é terminalizado e F1-B.4.5.8 não
-implementa retenção ou expurgo. A implementação ainda não foi iniciada; PT-003,
+implementa retenção ou expurgo. PT-003,
 PT-007, PT-008, PT-009 e PT-014 permanecem abertas e nenhuma disponibilidade
 produtiva é declarada.
 

@@ -225,6 +225,7 @@ jobs:
           ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:password-recovery-request --workspace=@bello/api
           ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:password-reset-use-case --workspace=@bello/api
           ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:password-recovery-delivery --workspace=@bello/api
+          ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:password-reset-terminalizer --workspace=@bello/api
 
   required:
     name: Required

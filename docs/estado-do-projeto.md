@@ -18,11 +18,12 @@ aprovado ou um marco relevante for publicado.
   persistente e o caso de uso interno de redefinição foram publicados. As
   reconciliações permanecem observacionais, a admissão e a anti-enumeração estão
   integradas e a regressão do login foi preservada. F1-B.4.5.6 e F1-B.4.5.7 estão
-  publicadas. F1-B.4.5.8 possui contrato D1–D8 aprovado, ainda sem implementação.
-  Validação operacional do provider, implementação da terminalização, endpoints
-  HTTP e frontend permanecem pendentes, sem disponibilidade produtiva declarada.
-- **Próximo objetivo operacional:** revisão do contrato documental da F1-B.4.5.8
-  antes de eventual autorização separada de implementação. F1-B.4.5.9–F1-B.4.5.11
+  publicadas. F1-B.4.5.8 está implementada e validada localmente na branch
+  `work/f1-b-4-5-8`, ainda sem commit ou publicação. Validação operacional do
+  provider, endpoints HTTP e frontend permanecem pendentes, sem disponibilidade
+  produtiva declarada.
+- **Próximo objetivo operacional:** consolidar o commit local da F1-B.4.5.8 e,
+  mediante autorização posterior, publicar a branch de trabalho. F1-B.4.5.9–F1-B.4.5.11
   permanecem propostas de planejamento não aprovadas.
 - **Pendências:** PT-003, PT-007, PT-008 e PT-009 preservam o estado de seus
   documentos canônicos. Esta consolidação não as encerra nem declara a recuperação
@@ -244,11 +245,13 @@ O contrato está consolidado em
 [persistência](arquitetura/persistencia-e-auditoria.md#f1-b457--ausência-de-nova-persistência)
 e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b457).
 
-## Incremento aprovado normativamente, não implementado
+## Incremento implementado e validado localmente
 
 ### F1-B.4.5.8 — Terminalização de Intenções Abandonadas
 
-- **Estado:** contrato D1–D8 aprovado em 2026-11-06; implementação não iniciada.
+- **Estado:** contrato D1–D8 aprovado em 2026-11-06; implementação e validação
+  local concluídas na branch `work/f1-b-4-5-8`, ainda sem commit, push, CI remoto
+  ou integração na `main`.
 - **Escopo:** terminalização exclusiva `STARTED → NOT_FOUND` depois da expiração
   do token, ausência completa de efeitos e auditoria e revalidação sob os locks
   PostgreSQL aprovados. `UNKNOWN` permanece intocado.
@@ -257,9 +260,13 @@ e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b4
   ownership, fencing numérico, role ou credencial.
 - **Executor:** worker interno desabilitado por padrão, polling de 60 segundos,
   lote dez e paralelismo um, sem fila ou scheduler externo.
-- **Limite:** aprovação normativa não equivale a implementação, publicação ou
-  disponibilidade produtiva. PT-009 e PT-014 permanecem abertas, e retenção física
-  pertence à F1-B.4.5.9 ainda não aprovada.
+- **Evidência local:** migration incremental, adapter e worker interno, 34 testes
+  unitários específicos, 42 cenários PostgreSQL específicos e 202 testes na
+  regressão local de F1-B.4.5.1–.8. O gate `quality:local` foi aprovado com API e
+  consolidado acima de 90% nas quatro métricas.
+- **Limite:** a implementação local não equivale a publicação, CI remoto,
+  integração ou disponibilidade produtiva. PT-009 e PT-014 permanecem abertas, e
+  retenção física pertence à F1-B.4.5.9 ainda não aprovada.
 
 O contrato está consolidado em
 [decisões técnicas](arquitetura/decisoes-tecnicas.md#contrato-aprovado--f1-b458-terminalização-de-intenções-abandonadas),
@@ -280,8 +287,8 @@ autorização de implementação ou aprovação automática:
 2. F1-B.4.5.10 — Endpoints HTTP de Recuperação; e
 3. F1-B.4.5.11 — Frontend e Prontidão Ponta a Ponta.
 
-PT-009 permanece aberta. A aprovação normativa da F1-B.4.5.8 não implementa o
-terminalizador nem aprova automaticamente os incrementos posteriores.
+PT-009 permanece aberta. A implementação local da F1-B.4.5.8 não aprova
+automaticamente os incrementos posteriores nem declara disponibilidade produtiva.
 
 Qualquer operação de versionamento, publicação ou próximo incremento exige
 autorização específica. As rotas, formatos de resposta e decisões D1–D5

@@ -29,6 +29,12 @@ import { PasswordRecoveryRequestPersistence } from './password-recovery-request.
 import { PasswordRecoveryRequestService } from './password-recovery-request.service.js';
 import { PasswordResetPersistence } from './password-reset.persistence.js';
 import { PasswordResetService } from './password-reset.service.js';
+import {
+  loadPasswordResetTerminalizerConfig,
+  PASSWORD_RESET_TERMINALIZER_CONFIG,
+} from './password-reset-terminalizer.config.js';
+import { PasswordResetTerminalizerPersistence } from './password-reset-terminalizer.persistence.js';
+import { PasswordResetTerminalizerProcessor } from './password-reset-terminalizer.processor.js';
 
 @Module({
   imports: [PrismaModule],
@@ -45,7 +51,13 @@ import { PasswordResetService } from './password-reset.service.js';
     PasswordRecoveryRequestService,
     PasswordResetPersistence,
     PasswordResetService,
+    PasswordResetTerminalizerPersistence,
+    PasswordResetTerminalizerProcessor,
     PasswordCredentialService,
+    {
+      provide: PASSWORD_RESET_TERMINALIZER_CONFIG,
+      useFactory: () => loadPasswordResetTerminalizerConfig(process.env),
+    },
     {
       provide: LOGIN_ADMISSION_CONFIG,
       useFactory: () => loadLoginAdmissionConfig(process.env),

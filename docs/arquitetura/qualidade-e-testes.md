@@ -532,6 +532,14 @@ mapeamentos operacionais. A cobertura permanece em no mínimo 90% para lines,
 statements, functions e branches em API, Web e consolidado, sem exclusão
 artificial. `Quality`, `API integration` e `Required` permanecem obrigatórios.
 
+Evidência local da implementação: 34 testes unitários específicos e 42 cenários
+PostgreSQL 18.6 específicos foram aprovados. A regressão serial de F1-B.4.5.1–.8
+aprovou 202 cenários; a suíte E2E geral aprovou 37 e a prova transacional, dois.
+O `quality:local` aprovou 770 testes unitários da API e quatro do Web, formatação,
+lint, typecheck e builds. A cobertura foi: API 93,79% statements, 91,15% branches,
+97,25% functions e 94,30% lines; Web 100% nas quatro métricas; consolidado 93,81%,
+91,21%, 97,26% e 94,31%, respectivamente. São evidências locais, sem CI remoto.
+
 ## Integração com PostgreSQL real
 
 Testes críticos não devem substituir o PostgreSQL por implementação em memória. Devem validar:

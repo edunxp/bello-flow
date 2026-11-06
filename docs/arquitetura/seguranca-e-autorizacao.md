@@ -1034,6 +1034,12 @@ link, IP bruto, payload, credencial, `reset_operation_id` e demais identificador
 sensíveis. A janela de 30 dias começa apenas no `terminal_at` confirmado; este
 incremento não remove dados nem altera a PT-009 ou a disponibilidade produtiva.
 
+Implementação local: a migration F1-B.4.5.8 aplica `SECURITY DEFINER`, owner do
+migrator, `search_path` protegido, objetos qualificados, revogação de `PUBLIC`,
+bootstrap e manutenção e `EXECUTE` exclusivo do runtime nas três interfaces. O
+runtime continua sem DML direto. Essa evidência foi validada em PostgreSQL 18.6
+descartável, mas ainda não foi publicada nem validada por CI remoto.
+
 ## Fluxo de uma requisição protegida
 
 1. Validar transporte seguro e o header obrigatório; em operação mutável,

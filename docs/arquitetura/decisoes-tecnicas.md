@@ -1002,7 +1002,8 @@ necessários. Nenhuma disponibilidade produtiva é declarada por este contrato.
 
 ### Contrato aprovado — F1-B.4.5.8 Terminalização de Intenções Abandonadas
 
-- **Estado:** aprovado normativamente; implementação não iniciada.
+- **Estado:** aprovado normativamente; implementação validada localmente na branch
+  `work/f1-b-4-5-8`, ainda sem publicação ou CI remoto.
 - **Data de aprovação:** 2026-11-06.
 - **Objetivo:** terminalizar de forma monotônica uma intenção de reset que permaneça
   `STARTED` depois de encerrada a possibilidade normativa de sucesso do token,
@@ -1436,6 +1437,7 @@ implementação, publicação ou disponibilidade produtiva.
 
 | Data       | Alteração                                                                                                                                                                                                                                                                                                                                     |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-06 | F1-B.4.5.8 implementada e validada localmente na branch `work/f1-b-4-5-8`: três funções PostgreSQL protegidas, executor interno opt-in, observabilidade sanitizada e testes unitários/PostgreSQL 18.6; ainda sem commit, push, CI remoto ou integração, preservando PT-009 e PT-014. |
 | 2026-11-05 | Contrato D1–D7 da F1-B.4.5.7 aprovado para Resend por API HTTPS, configuração fail-fast, matriz conservadora, mensagem e tracking, testes, observabilidade e port estável; implementação não iniciada, ativação condicionada e PT-009 preservada.                                                                                             |
 | 2026-11-05 | F1-B.4.5.6 implementada e publicada pelo commit `601c92ab8f3922b5f0e2a03c432de5fc74c6258d`, com CI `42117321177` aprovado nos jobs `Quality`, `API integration` e `Required`, sem provider produtivo ou encerramento de PT-009.                                                                                                               |
 | 2026-11-05 | F1-B.4.5.5 implementada e publicada pelo commit `9ac023961b769b9e52c53d6799501df300c4ce3e`, com CI `42083803500` aprovado; caso de uso NestJS, adapter das três operações SQL, D1, reconciliação e testes PostgreSQL reais validados, sem iniciar F1-B.4.5.6 nem encerrar PT-008 ou PT-009.                                                   |

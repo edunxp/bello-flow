@@ -22,6 +22,7 @@ import { PasswordRecoveryRequestPersistence } from './password-recovery-request.
 import { PasswordRecoveryRequestService } from './password-recovery-request.service.js';
 import { PasswordResetPersistence } from './password-reset.persistence.js';
 import { PasswordResetService } from './password-reset.service.js';
+import { PasswordResetTerminalizerConfigurationError } from './password-reset-terminalizer.config.js';
 
 @Injectable()
 class ConsumerProbe {
@@ -186,6 +187,23 @@ describe('AuthSessionModule', () => {
       } else {
         process.env.NODE_ENV = originalNodeEnvironment;
       }
+    }
+  });
+
+  it('rejects an invalid terminalizer mode during module startup', async () => {
+    const original = process.env.BELLO_PASSWORD_RESET_TERMINALIZER_MODE;
+    process.env.BELLO_PASSWORD_RESET_TERMINALIZER_MODE = 'enabled';
+    try {
+      await expect(
+        Test.createTestingModule({ imports: [AuthSessionModule] })
+          .overrideProvider(PrismaService)
+          .useValue({})
+          .compile(),
+      ).rejects.toThrow(PasswordResetTerminalizerConfigurationError);
+    } finally {
+      if (original === undefined)
+        delete process.env.BELLO_PASSWORD_RESET_TERMINALIZER_MODE;
+      else process.env.BELLO_PASSWORD_RESET_TERMINALIZER_MODE = original;
     }
   });
 
