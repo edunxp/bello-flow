@@ -25,11 +25,83 @@ alterar a precedência das fontes normativas.
 
 ## Responsabilidades
 
-- O usuário estabelece objetivos, prioridades, limites e autorizações.
+- O único responsável pelo repositório estabelece objetivos, prioridades, limites
+  e autorizações e é a única pessoa com acesso ao repositório.
 - O ChatGPT consolida escopo, arquitetura, restrições, critérios de aceite e
   decisões que precisam retornar ao usuário.
 - O Codex inspeciona, implementa, valida e apresenta evidências dentro do escopo
   e da modalidade de autorização recebidos.
+- A revisão independente é uma etapa distinta da implementação, baseada no diff,
+  nas fontes primárias e nas evidências produzidas. Pode ser realizada pelo
+  responsável ou por um agente que não tenha produzido a alteração revisada; não
+  exige segundo mantenedor nem concede acesso adicional ao repositório.
+- O responsável aprova ou rejeita a integração. Essa aprovação não concede por si
+  só autorização operacional para commit, push ou merge.
+
+## Modelo operacional
+
+O fluxo alvo organiza cada incremento nesta sequência:
+
+1. O ChatGPT define objetivo, escopo, riscos e critérios de aceite com base na
+   autorização da atividade e nas fontes normativas aplicáveis.
+2. O Codex executa autonomamente implementação, testes, correções técnicas
+   rotineiras e documentação dentro do escopo autorizado.
+3. O CI executa os gates obrigatórios e produz evidência vinculada ao SHA.
+4. Uma revisão independente analisa diff, evidências, riscos e aderência
+   normativa.
+5. O responsável aprova a integração.
+6. A integração é verificada pelo SHA exato, incluindo branch, estado remoto e
+   CI aplicável.
+7. O ciclo é encerrado com um resumo curto e a próxima ação.
+
+As autorizações operacionais continuam separadas: planejar ou revisar não
+autoriza implementar; implementar não autoriza commit; commit não autoriza push;
+e aprovação de integração não autoriza merge. O
+[Procedimento de Git e publicação](git-e-publicacao.md) permanece obrigatório.
+
+## Risco e proporcionalidade
+
+| Risco     | Exemplos                                                                                  | Tratamento mínimo                                                                                              |
+| --------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Baixo** | documentação e ajustes isolados                                                           | validação proporcional, inspeção do diff e evidência das fontes alteradas                                      |
+| **Médio** | funcionalidades de aplicação e regras de negócio comuns                                   | testes aplicáveis, cobertura vigente, revisão de contratos e evidências do CI                                  |
+| **Alto**  | autenticação, senhas, tokens, auditoria, privilégios, migrations sensíveis e concorrência | revisão independente e evidências técnicas específicas, inclusive PostgreSQL real descartável quando aplicável |
+
+A classificação considera o maior risco material do conjunto alterado. Ela
+define profundidade de evidência e revisão, não concede autorização adicional nem
+reduz gates normativos.
+
+## Autonomia e interrupções
+
+Dentro de uma implementação autorizada, o Codex pode investigar, corrigir
+problemas técnicos rotineiros, repetir testes afetados e manter a documentação
+coerente sem solicitar autorização a cada iteração. A correção precisa permanecer
+no objetivo, nos critérios de aceite, na arquitetura e nos privilégios aprovados.
+
+Interrompa a parte afetada e solicite decisão diante de:
+
+- conflito normativo;
+- ampliação material do escopo;
+- risco de segurança não mitigável;
+- acesso ou alteração de banco persistente;
+- mudança de privilégios não autorizada; ou
+- dependência externa ou custo não aprovado.
+
+Atividades independentes podem continuar quando permanecerem seguras e dentro do
+escopo. Commit, push e merge nunca são autorizados automaticamente.
+
+## Confiabilidade das evidências
+
+Use exclusivamente **VERIFICADO**, **RELATADO**, **INFERIDO** e
+**NÃO VERIFICADO**, com os significados definidos no
+[AGENTS.md](../../AGENTS.md#relatório). Não crie classificações paralelas.
+
+Código e contratos são fontes primárias de comportamento; logs, estado Git e CI
+são fontes primárias das respectivas execuções e estados. Uma síntese pode
+orientar a inspeção, mas não transforma conteúdo **RELATADO** em **VERIFICADO**.
+Declarações de segurança, aprovação ou CI baseadas exclusivamente em sínteses
+precisam manter a classificação correspondente à evidência disponível e declarar
+essa limitação.
 
 ## Preparação — escopo e inspeção
 
@@ -59,9 +131,9 @@ alterar a precedência das fontes normativas.
    para decisão explícita antes da parte afetada. Atividades independentes podem
    continuar quando permanecerem seguras e autorizadas.
 
-O resultado desta preparação deve distinguir fatos confirmados, inferências e
-pendências. Planejamento não equivale a autorização de implementação, commit ou
-push.
+O resultado desta preparação deve classificar as afirmações relevantes como
+**VERIFICADO**, **RELATADO**, **INFERIDO** ou **NÃO VERIFICADO**. Planejamento não
+equivale a autorização de implementação, commit ou push.
 
 ## Etapa 1 — Implementação
 
@@ -91,12 +163,14 @@ abstrações ou funcionalidades futuras.
 4. Evidências ainda válidas são reutilizadas; baterias completas não são repetidas
    sem mudança ou risco que as justifique.
 
-## Etapa 3 — Revisão e correções
+## Etapa 3 — Revisão e correções locais
 
 1. O Codex entrega relatório objetivo, com comandos executados, resultados e
    referências verificáveis.
 2. O ChatGPT avalia aderência normativa, segurança, integridade, testes,
-   cobertura, concorrência, riscos e limites do escopo.
+   cobertura, concorrência, riscos e limites do escopo. Essa avaliação durante a
+   implementação não substitui a revisão independente exigida antes da
+   integração no modelo alvo.
 3. Quando a revisão depender do conteúdo exato, deve solicitar ou examinar diff,
    patch, arquivos e linhas relevantes.
 4. Problemas locais e independentes podem ser reunidos em uma rodada consolidada
@@ -123,9 +197,10 @@ relatórios extensos sem impacto na decisão.
 
 ## Etapa 5 — Revisão final
 
-1. O ChatGPT revisa em conjunto código, testes, documentação, evidências e estado
-   Git.
-2. Somente após aprovação final é preparada autorização específica para o commit.
+1. Código, testes, documentação, evidências e estado Git são revisados em
+   conjunto, com independência proporcional ao risco.
+2. Somente após parecer favorável e decisão do responsável pode ser emitida
+   autorização específica para o commit ou para a integração aplicável.
 3. Achado remanescente retorna à etapa aplicável sem ampliar automaticamente o
    escopo.
 
@@ -170,21 +245,37 @@ relatórios extensos sem impacto na decisão.
 
 ## Relatório padronizado do Codex
 
-O relatório deve ser proporcional à atividade e conter, quando aplicável:
+O relatório é curto por padrão e contém: resultado; arquivos alterados; testes e
+cobertura; riscos e achados; evidências; estado Git; e próxima ação. Commit, push,
+merge e CI aparecem somente quando aplicáveis e com a autorização e a evidência
+correspondentes.
 
-A. objetivo e escopo executado;
-B. arquivos criados, modificados ou removidos;
-C. decisões técnicas e justificativas;
-D. testes, cobertura e comandos executados;
-E. evidências relevantes e referências de arquivos e linhas;
-F. riscos, bloqueios e pendências;
-G. estado Git inicial e final;
-H. commit, push e CI, quando autorizados; e
-I. parecer sobre conclusão e próxima etapa.
+Relatório extenso é reservado a risco alto, falha ou decisão material. Contratos
+inteiros não são reproduzidos; use referências e registre apenas o impacto no
+incremento. As afirmações relevantes seguem as classificações de confiabilidade
+deste documento.
 
-Itens não aplicáveis podem ser identificados de forma breve, sem inventar
-evidência. O relatório deve separar claramente o que foi confirmado, inferido e
-permanece pendente.
+## Estratégia Git proposta
+
+Considerando que existe um único responsável com acesso ao repositório, propõe-se
+uma branch de curta duração por incremento. O Codex teria autonomia técnica
+delimitada ao escopo aprovado; cada commit e cada push na branch exigiriam a
+autorização de escopo específica definida pelo procedimento futuro. O CI seria
+obrigatório na branch antes da integração, e a revisão independente examinaria o
+diff, as fontes primárias, os riscos e as evidências do SHA candidato.
+
+A integração na `main` dependeria de autorização expressa do responsável. Pull
+request seria opcional, e a estratégia não dependeria obrigatoriamente de recursos
+pagos de proteção de branch. Após a integração, a sincronização, o SHA exato e o
+CI aplicável seriam verificados.
+
+Essa estratégia ainda não está vigente. Sua adoção depende de aprovação
+posterior explícita, verificação dos gatilhos do GitHub Actions, definição do
+procedimento de integração e sincronização e confirmação dos checks e da
+verificação do SHA exato. Até essas condições serem cumpridas, permanecem válidas
+as etapas 6 a 8 deste documento e o procedimento atual de commit e publicação em
+`main`. Esta proposta não autoriza criar branch, pull request, integração, merge,
+commit ou push.
 
 ## Diretrizes permanentes
 

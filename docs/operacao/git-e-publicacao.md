@@ -24,10 +24,41 @@ separada e explícita para push. Uma autorização apenas para commit permanece 
 segunda modalidade e não permite push. Expressões ambíguas como “vamos em frente”,
 “continue” ou equivalentes não selecionam a modalidade de publicação.
 
-Qualquer falha de escopo, validação, staging, divergência, autenticação,
-publicação ou CI interrompe o fluxo e deve ser reportada. A autorização original
-não permite corrigir automaticamente a falha, criar commits adicionais nem
-ampliar o escopo.
+Durante a implementação, problemas técnicos rotineiros podem ser corrigidos e
+revalidados autonomamente nos limites da autorização recebida. Após cada correção,
+os gates afetados precisam ser reexecutados. Qualquer falha em validação
+obrigatória que não tenha sido corrigida e revalidada impede staging e commit. Não
+é permitido ignorar falhas para concluir a atividade nem reduzir testes,
+cobertura ou verificações para obter aprovação. Bloqueios devem ser relatados com
+a evidência disponível.
+
+Depois da aprovação do commit ou durante publicação e CI, qualquer falha de
+escopo, staging, divergência, autenticação, publicação ou CI interrompe a etapa e
+deve ser reportada: a autorização de commit ou publicação não permite criar
+correção, commit adicional, novo push, reexecução ou ampliação de escopo.
+
+## Estratégia futura de branch curta
+
+Considerando que existe um único responsável com acesso ao repositório, propõe-se
+uma branch de curta duração por incremento. O Codex teria autonomia técnica
+delimitada ao escopo aprovado. Cada commit e cada push na branch exigiriam
+autorização de escopo específica, e os jobs `Quality`, `API integration` e
+`Required` precisariam concluir com sucesso na branch antes da integração.
+
+A revisão independente seria uma etapa baseada no diff, nas fontes primárias, nos
+riscos e nas evidências do SHA candidato, sem exigir segundo mantenedor. A
+integração na `main` dependeria de autorização expressa do responsável. Pull
+request seria opcional, e a estratégia não dependeria obrigatoriamente de recursos
+pagos de proteção de branch. O SHA integrado e o CI aplicável seriam verificados
+depois da integração.
+
+A proposta não está autorizada por este documento. Sua entrada em vigor depende
+de aprovação posterior explícita, verificação dos gatilhos do GitHub Actions,
+definição do procedimento de integração e sincronização e confirmação dos checks
+e da verificação do SHA exato. Até lá, permanece integralmente vigente o
+procedimento abaixo para commit local e publicação controlada em `main`. Nenhum
+texto desta seção autoriza criar branch, pull request, integração, merge, commit
+ou push.
 
 ## Preparação
 

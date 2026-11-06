@@ -140,6 +140,11 @@ sem nova aprovação humana de escopo:
 - remover somente os recursos temporários criados e identificados pela própria
   atividade.
 
+Essa autorização inclui diagnosticar e corrigir problemas técnicos rotineiros,
+reexecutar as validações afetadas e atualizar a documentação aplicável enquanto
+a correção permanecer no objetivo, no contrato e nos riscos já aprovados. Não é
+necessária uma nova rodada de autorização para cada correção desse tipo.
+
 Cada atividade adota uma das seguintes modalidades de autorização:
 
 - **Implementação:** autoriza somente as alterações e validações previstas. Não
@@ -160,6 +165,12 @@ arquiteturais aprovadas, regras de negócio, contratos normativos ou políticas 
 segurança; ampliar materialmente o escopo; introduzir dependência de produção não
 aprovada; ou alterar privilégios permanentes fora do escopo expressamente
 autorizado.
+
+Interrompa a parte afetada diante de conflito normativo, ampliação material de
+escopo, risco de segurança não mitigável, acesso ou alteração de banco
+persistente, mudança de privilégios não autorizada ou dependência externa ou
+custo não aprovado. Continue somente atividades independentes que permaneçam
+seguras e autorizadas.
 
 Exigem autorização específica e separada: commit e publicação conforme as
 modalidades acima; reescrita de histórico Git; acesso ou alteração de bancos
@@ -302,23 +313,38 @@ de CI, consulte e siga o
 
 ## Relatório
 
-Ao concluir uma atividade, informe objetivamente:
+O relatório é curto por padrão e informa objetivamente:
 
+- resultado;
 - arquivos criados, alterados ou removidos;
-- decisões AT, DEC, RN e pendências relevantes;
-- validações e testes executados, com resultados;
-- cobertura quando aplicável;
-- riscos, limitações e decisões ainda necessárias;
-- estado final do Git;
-- confirmação sobre commit e push.
+- testes, cobertura e demais validações aplicáveis;
+- riscos e achados;
+- evidências relevantes;
+- estado final do Git; e
+- próxima ação, incluindo a confirmação sobre commit e push.
 
-Separe claramente:
+Amplie o relatório somente quando risco, falha ou decisão material exigir. Não
+reproduza contratos inteiros: referencie a fonte normativa e registre apenas o
+impacto pertinente ao incremento.
 
-- **CONFIRMADO**: comprovado por código, migration, teste ou documento normativo;
+Classifique afirmações relevantes pela melhor evidência disponível:
+
+- **VERIFICADO**: examinado diretamente na fonte primária correspondente, como
+  código, contrato normativo, log, estado Git ou execução de CI;
+- **RELATADO**: informado por terceiro ou síntese, sem conferência direta da fonte
+  primária;
 - **INFERIDO**: interpretação técnica ainda não comprovada;
-- **PENDENTE**: decisão ou evidência ainda necessária.
+- **NÃO VERIFICADO**: sem evidência suficiente ou sem acesso à fonte necessária.
 
-Não declare sucesso sem evidência correspondente.
+Não declare aprovação com base exclusiva em conteúdo **RELATADO** sem explicitar
+a limitação. Não reclassifique conteúdo **RELATADO** como **VERIFICADO** sem
+examinar diretamente a fonte primária correspondente. Declarações de segurança,
+aprovação ou CI baseadas exclusivamente em sínteses devem permanecer
+**RELATADO** ou **NÃO VERIFICADO**, conforme a evidência disponível, e explicitar
+essa limitação. Código e contratos são fontes primárias de comportamento; logs,
+Git e CI são fontes primárias de suas respectivas execuções e estados. Decisões e
+evidências ainda necessárias devem aparecer como riscos, achados ou próxima ação,
+sem criar uma classificação paralela.
 
 ## Instruções específicas da atividade
 
