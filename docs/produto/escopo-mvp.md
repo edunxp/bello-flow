@@ -6,21 +6,50 @@ Validar um Kanban colaborativo completo em que participantes organizam trabalho 
 
 O escopo é funcional. Não determina arquitetura, stack, persistência ou infraestrutura.
 
+## Marcos de validação e entrega
+
+O **primeiro Kanban utilizável para validação interna** é um marco intermediário:
+permite exercitar autenticação, Workspace, quadro, listas, cartões, ordenação e
+movimentação com usuários controlados. Ele não pode ser declarado como MVP
+normativo concluído nem reduzir requisitos aprovados.
+
+O **MVP normativo completo** continua composto pelos 28 requisitos essenciais
+deste documento. Sua entrega inclui colaboração, participação e papéis, ciclo de
+vida, sincronização, feed, auditoria, identidade e prontidão operacional, além do
+núcleo Kanban.
+
+A sequência recomendada de entregas verticais é:
+
+1. autenticação utilizável;
+2. Workspace e quadro;
+3. listas e cartões;
+4. ordenação e movimentação;
+5. participação e colaboração;
+6. sincronização por WebSocket;
+7. ciclo de vida e movimentação entre quadros; e
+8. feed, auditoria consultável e prontidão operacional.
+
+A ordem organiza execução e validação incremental; não renumera requisitos, não
+transforma o marco interno em MVP e não autoriza antecipar funcionalidades de uma
+entrega posterior. Cada entrega inclui, quando aplicável, interface Angular, API
+NestJS, persistência PostgreSQL, autorização, auditoria e feed, testes
+automatizados e critérios verificáveis de aceitação.
+
 ## Requisitos essenciais
 
 O MVP contém 28 requisitos essenciais:
 
-| Grupo | Requisitos | Resultado esperado |
-|---|---|---|
-| estrutura | BEL-001–BEL-005 | Workspace → Quadro → Lista → Cartão íntegro e utilizável |
-| ordenação e fluxo | BEL-006–BEL-008, BEL-010, BEL-011 | ordem concorrente consistente; cartão movido entre listas e quadros do mesmo Workspace |
-| ciclo de vida | BEL-012–BEL-014 | cartões, listas e quadros arquiváveis/restauráveis |
-| colaboração | BEL-021–BEL-024 | responsáveis, etiquetas, comentários e datas/conclusão |
-| participantes e papéis | BEL-026–BEL-028, BEL-030 | participação explícita; Administrador, Membro e Observador; autorização de conteúdo e comentários |
-| rastreabilidade | BEL-031, BEL-032 | feed de cartão/quadro e auditoria formal independente com retenção de 24 meses |
-| Workspaces | BEL-034–BEL-036 | criação e edição, participantes, administrador mínimo e governança sem acesso automático ao conteúdo |
-| visibilidade | BEL-029 | privado por padrão; descoberta controlada sem acesso implícito ao conteúdo |
-| identidade | BEL-038 | contas administradas, e-mail imutável após criação, login, verificação, recuperação, desativação e preservação histórica |
+| Grupo                  | Requisitos                        | Resultado esperado                                                                                                       |
+| ---------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| estrutura              | BEL-001–BEL-005                   | Workspace → Quadro → Lista → Cartão íntegro e utilizável                                                                 |
+| ordenação e fluxo      | BEL-006–BEL-008, BEL-010, BEL-011 | ordem concorrente consistente; cartão movido entre listas e quadros do mesmo Workspace                                   |
+| ciclo de vida          | BEL-012–BEL-014                   | cartões, listas e quadros arquiváveis/restauráveis                                                                       |
+| colaboração            | BEL-021–BEL-024                   | responsáveis, etiquetas, comentários e datas/conclusão                                                                   |
+| participantes e papéis | BEL-026–BEL-028, BEL-030          | participação explícita; Administrador, Membro e Observador; autorização de conteúdo e comentários                        |
+| rastreabilidade        | BEL-031, BEL-032                  | feed de cartão/quadro e auditoria formal independente com retenção de 24 meses                                           |
+| Workspaces             | BEL-034–BEL-036                   | criação e edição, participantes, administrador mínimo e governança sem acesso automático ao conteúdo                     |
+| visibilidade           | BEL-029                           | privado por padrão; descoberta controlada sem acesso implícito ao conteúdo                                               |
+| identidade             | BEL-038                           | contas administradas, e-mail imutável após criação, login, verificação, recuperação, desativação e preservação histórica |
 
 BEL-035, BEL-036 e BEL-038 são essenciais. Inicialização da primeira conta, Administração Global, criação de quadros, papéis do Workspace, fronteira governança/conteúdo e matriz mínima de auditoria estão aprovados. Permanece aberta apenas a aplicabilidade futura de convites pendentes em PEN-034; a inclusão direta do MVP está definida.
 
@@ -32,23 +61,23 @@ Não restam requisitos classificados como candidatos: BEL-014 foi aprovado como 
 
 ## Funcionalidades posteriores
 
-| Requisito | Funcionalidade |
-|---|---|
-| BEL-009 | ordenação em massa por critérios |
-| BEL-016 | arquivamento em massa de cartões da lista |
-| BEL-017 | cópia de cartão |
-| BEL-018 | cópia de lista |
-| BEL-019 | cópia de quadro |
-| BEL-025 | checklists |
-| BEL-033 | integrações e notificações externas |
+| Requisito | Funcionalidade                            |
+| --------- | ----------------------------------------- |
+| BEL-009   | ordenação em massa por critérios          |
+| BEL-016   | arquivamento em massa de cartões da lista |
+| BEL-017   | cópia de cartão                           |
+| BEL-018   | cópia de lista                            |
+| BEL-019   | cópia de quadro                           |
+| BEL-025   | checklists                                |
+| BEL-033   | integrações e notificações externas       |
 
 ## Funcionalidades que necessitam decisão
 
-| Requisito | Decisão necessária |
-|---|---|
-| BEL-015 | exclusão permanente e recuperação — decisão futura |
-| BEL-020 | matriz de preservação de cópias e movimento de listas — decisão futura; movimento de cartão resolvido por DEC-018 |
-| BEL-037 | existência futura de convidado — decisão futura |
+| Requisito | Decisão necessária                                                                                                |
+| --------- | ----------------------------------------------------------------------------------------------------------------- |
+| BEL-015   | exclusão permanente e recuperação — decisão futura                                                                |
+| BEL-020   | matriz de preservação de cópias e movimento de listas — decisão futura; movimento de cartão resolvido por DEC-018 |
+| BEL-037   | existência futura de convidado — decisão futura                                                                   |
 
 ## Decisões aprovadas que governam o MVP
 
@@ -174,4 +203,3 @@ Lacunas residuais serão acrescentadas somente após decisões específicas. Pen
 - regras: [regras-de-negocio.md](regras-de-negocio.md);
 - decisões: [decisoes-funcionais.md](decisoes-funcionais.md);
 - origem: [reverse-engineering/docs](../../reverse-engineering/docs/00-index.md).
-

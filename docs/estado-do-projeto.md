@@ -1,30 +1,36 @@
 # Estado do projeto Bello Flow
 
-Este documento é um resumo informativo para continuidade entre sessões. Ele não
-substitui AT, DEC, RN, BEL ou pendências, não altera seus estados e não autoriza
-implementação por si só. Deve ser atualizado somente quando um novo objetivo for
-aprovado ou um marco relevante for publicado.
+Este documento é a fonte única do **estado factual corrente** dos incrementos para
+continuidade entre sessões. Ele registra marcos, SHA, branch, publicação e CI sem
+substituir AT, DEC, RN, BEL ou pendências, sem alterar contratos normativos e sem
+autorizar implementação por si só. Documentos arquiteturais preservam decisões,
+invariantes, justificativas e referências; quando precisarem mencionar situação
+corrente, devem apontar para este registro em vez de duplicar o estado operacional.
 
 ## Fase atual
 
-- **Último marco publicado:** implementação da F1-B.4.5.7 publicada pelo commit
-  `af392b32d9bd72f57f8375334079043ac85d3603`.
-- **Publicação e CI:** branch `main` sincronizada; execução
-  [CI 42152502439](https://github.com/edunxp/bello-flow/actions/runs/42152502439)
-  aprovada nos jobs `Quality`, `API integration` e `Required` para o SHA mais
-  recente.
+- **Último marco publicado:** F1-B.4.5.8 — Terminalização de Intenções
+  Abandonadas, integrada por fast-forward na `main` no commit
+  `3a25547755a361a343755b09511b83bdc3e68ac4`.
+- **Publicação e CI:** branch de trabalho validada pela execução
+  [CI 42254538285](https://github.com/edunxp/bello-flow/actions/runs/42254538285)
+  e `main` validada pela execução
+  [CI 42255249588](https://github.com/edunxp/bello-flow/actions/runs/42255249588),
+  ambas com `Quality`, `API integration` e `Required` aprovados.
 - **Estado da F1-B.4.5:** fundação PostgreSQL, camada transacional, admissão
   efêmera, executor Argon2id global compartilhado e solicitação/classificação
   persistente e o caso de uso interno de redefinição foram publicados. As
   reconciliações permanecem observacionais, a admissão e a anti-enumeração estão
   integradas e a regressão do login foi preservada. F1-B.4.5.6 e F1-B.4.5.7 estão
-  publicadas. F1-B.4.5.8 está implementada e validada localmente na branch
-  `work/f1-b-4-5-8`, ainda sem commit ou publicação. Validação operacional do
-  provider, endpoints HTTP e frontend permanecem pendentes, sem disponibilidade
-  produtiva declarada.
-- **Próximo objetivo operacional:** consolidar o commit local da F1-B.4.5.8 e,
-  mediante autorização posterior, publicar a branch de trabalho. F1-B.4.5.9–F1-B.4.5.11
-  permanecem propostas de planejamento não aprovadas.
+  publicadas. F1-B.4.5.8 está concluída, integrada, publicada e validada. A
+  validação operacional do provider, os endpoints HTTP, a interface Angular, a
+  retenção operacional e a prontidão ponta a ponta permanecem pendentes, sem
+  disponibilidade produtiva declarada.
+- **Próximo objetivo proposto:** expor os endpoints HTTP da recuperação e tornar
+  autenticação e recuperação utilizáveis no Angular antes da automação de
+  retenção. F1-B.4.5.9–F1-B.4.5.11 preservam seus identificadores históricos e
+  continuam propostas sem contrato específico aprovado; a sequência de execução
+  abaixo não os renumera.
 - **Pendências:** PT-003, PT-007, PT-008 e PT-009 preservam o estado de seus
   documentos canônicos. Esta consolidação não as encerra nem declara a recuperação
   disponível em produção.
@@ -53,6 +59,8 @@ aprovado ou um marco relevante for publicado.
 | F1-B.4.5.4 — Solicitação e Classificação da Recuperação       | concluída e publicada; não gera token, processa entrega, redefine senha ou expõe HTTP                                                                                             | [`PasswordRecoveryRequestService`](../apps/api/src/auth/password-recovery-request.service.ts); [migration](../apps/api/prisma/migrations/20261109000000_f1_b_4_5_4_password_recovery_request/migration.sql); commit `a57f718bf4efb74f2daa76c4b5127c9241d939be`; [CI 42069921440](https://github.com/edunxp/bello-flow/actions/runs/42069921440)                                                                                                                                                        |
 | F1-B.4.5.5 — Caso de Uso de Redefinição de Senha              | implementada, publicada e validada; não gera ou entrega token e não expõe HTTP                                                                                                    | [`PasswordResetService`](../apps/api/src/auth/password-reset.service.ts); [`PasswordResetPersistence`](../apps/api/src/auth/password-reset.persistence.ts); [teste PostgreSQL](../apps/api/test/f1-b-4-5-5-password-reset-use-case.e2e-spec.ts); commit `9ac023961b769b9e52c53d6799501df300c4ce3e`; [CI 42083803500](https://github.com/edunxp/bello-flow/actions/runs/42083803500)                                                                                                                    |
 | F1-B.4.5.6 — Processador de Entrega com Adapter Controlado    | implementação publicada e validada pelo CI remoto; provider produtivo permanece fora do recorte                                                                                   | [processador](../apps/api/src/auth/password-recovery-delivery.processor.ts); [persistência](../apps/api/src/auth/password-recovery-delivery.persistence.ts); [migration](../apps/api/prisma/migrations/20261110000000_f1_b_4_5_6_password_recovery_delivery/migration.sql); [teste PostgreSQL](../apps/api/test/f1-b-4-5-6-password-recovery-delivery.e2e-spec.ts); commit `601c92ab8f3922b5f0e2a03c432de5fc74c6258d`; [CI 42117321177](https://github.com/edunxp/bello-flow/actions/runs/42117321177) |
+| F1-B.4.5.7 — Provider Produtivo e Configuração Operacional    | implementação publicada e validada; ativação produtiva continua condicionada à PT-009                                                                                             | commit `af392b32d9bd72f57f8375334079043ac85d3603`; [CI 42152502439](https://github.com/edunxp/bello-flow/actions/runs/42152502439)                                                                                                                                                                                                                                                                                                                                                                     |
+| F1-B.4.5.8 — Terminalização de Intenções Abandonadas          | concluída, integrada por fast-forward, publicada e validada; não implementa retenção física                                                                                       | commit `3a25547755a361a343755b09511b83bdc3e68ac4`; [CI da branch 42254538285](https://github.com/edunxp/bello-flow/actions/runs/42254538285); [CI da main 42255249588](https://github.com/edunxp/bello-flow/actions/runs/42255249588)                                                                                                                                                                                                                                                                  |
 
 Os agrupamentos resumidos organizam evidências já existentes; não criam fases
 normativas nem alteram o estado de decisões ou pendências.
@@ -211,7 +219,7 @@ O contrato está consolidado em
 [persistência](arquitetura/persistencia-e-auditoria.md#operações-protegidas-da-f1-b456)
 e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b456).
 
-## Incremento publicado mais recente
+## Incrementos publicados recentes
 
 ### F1-B.4.5.7 — Provider Produtivo e Configuração Operacional
 
@@ -245,13 +253,14 @@ O contrato está consolidado em
 [persistência](arquitetura/persistencia-e-auditoria.md#f1-b457--ausência-de-nova-persistência)
 e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b457).
 
-## Incremento implementado e validado localmente
-
 ### F1-B.4.5.8 — Terminalização de Intenções Abandonadas
 
-- **Estado:** contrato D1–D8 aprovado em 2026-11-06; implementação e validação
-  local concluídas na branch `work/f1-b-4-5-8`, ainda sem commit, push, CI remoto
-  ou integração na `main`.
+- **Estado:** contrato D1–D8 aprovado; implementação concluída, integrada por
+  fast-forward, publicada e validada no commit
+  `3a25547755a361a343755b09511b83bdc3e68ac4`.
+- **CI:** execução da branch `42254538285` e execução final da `main`
+  `42255249588`, ambas aprovadas nos jobs `Quality`, `API integration` e
+  `Required`.
 - **Escopo:** terminalização exclusiva `STARTED → NOT_FOUND` depois da expiração
   do token, ausência completa de efeitos e auditoria e revalidação sob os locks
   PostgreSQL aprovados. `UNKNOWN` permanece intocado.
@@ -260,13 +269,13 @@ e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b4
   ownership, fencing numérico, role ou credencial.
 - **Executor:** worker interno desabilitado por padrão, polling de 60 segundos,
   lote dez e paralelismo um, sem fila ou scheduler externo.
-- **Evidência local:** migration incremental, adapter e worker interno, 34 testes
+- **Evidência:** migration incremental, adapter e worker interno, 34 testes
   unitários específicos, 42 cenários PostgreSQL específicos e 202 testes na
-  regressão local de F1-B.4.5.1–.8. O gate `quality:local` foi aprovado com API e
-  consolidado acima de 90% nas quatro métricas.
-- **Limite:** a implementação local não equivale a publicação, CI remoto,
-  integração ou disponibilidade produtiva. PT-009 e PT-014 permanecem abertas, e
-  retenção física pertence à F1-B.4.5.9 ainda não aprovada.
+  regressão de F1-B.4.5.1–.8. O gate local e os CIs da branch e da `main` foram
+  aprovados com cobertura acima de 90% nas quatro métricas.
+- **Limite:** conclusão técnica não equivale a disponibilidade produtiva. PT-009
+  e PT-014 permanecem abertas, e retenção física pertence à F1-B.4.5.9 ainda não
+  aprovada.
 
 O contrato está consolidado em
 [decisões técnicas](arquitetura/decisoes-tecnicas.md#contrato-aprovado--f1-b458-terminalização-de-intenções-abandonadas),
@@ -278,7 +287,7 @@ e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b4
 
 Nenhum próximo incremento está iniciado ou autorizado por este documento.
 
-### Sequência posterior proposta — não aprovada
+### Identificadores históricos propostos — não aprovados
 
 Os identificadores abaixo organizam o planejamento e não constituem contrato,
 autorização de implementação ou aprovação automática:
@@ -287,13 +296,54 @@ autorização de implementação ou aprovação automática:
 2. F1-B.4.5.10 — Endpoints HTTP de Recuperação; e
 3. F1-B.4.5.11 — Frontend e Prontidão Ponta a Ponta.
 
-PT-009 permanece aberta. A implementação local da F1-B.4.5.8 não aprova
-automaticamente os incrementos posteriores nem declara disponibilidade produtiva.
+### Sequência recomendada de execução — não aprovada como contrato específico
+
+1. endpoints HTTP da recuperação de senha, preservando os contratos publicados;
+2. interface Angular de autenticação e recuperação;
+3. validação ponta a ponta e operacional do e-mail;
+4. retenção operacional por mecanismo administrativo simples; e
+5. prontidão produtiva e regressões finais.
+
+Essa ordem não renumera os identificadores históricos. A F1-B.4.5.9 continua sem
+contrato específico aprovado. Uma CLI administrativa, executada por agendamento
+simples com credencial de manutenção segregada, é a alternativa arquitetural
+preferencial para planejamento, não uma implementação autorizada. Não se aprova
+worker permanente, polling contínuo, scheduler distribuído, nova credencial ou
+novo serviço por esta orientação.
+
+A retenção normativa de 30 dias após `terminal_at`, a proteção de estados ativos,
+`UNKNOWN` e operações reconciliáveis, a ordem de limpeza e os lotes controlados
+permanecem obrigatórios. PT-009 continua aberta até validação operacional do
+provider. Os contratos HTTP existentes permanecem inalterados, e nenhuma etapa é
+declarada disponível em produção antecipadamente.
 
 Qualquer operação de versionamento, publicação ou próximo incremento exige
 autorização específica. As rotas, formatos de resposta e decisões D1–D5
 permanecem em
-[segurança e autorização](arquitetura/seguranca-e-autorizacao.md#contratos-http-de-autenticação--d1d5).
+[segurança e autorização](arquitetura/seguranca-e-autorizacao.md#contratos-http-de-autenticação--d1d5),
+e os endpoints de recuperação permanecem no
+[contrato aprovado da F1-B.4.5](arquitetura/seguranca-e-autorizacao.md#recuperação-de-senha--contrato-aprovado-da-f1-b45).
+
+## Roadmap recomendado do Kanban
+
+O **primeiro Kanban utilizável para validação interna** é um marco intermediário,
+não o MVP concluído. O **MVP normativo completo** preserva os 28 requisitos
+essenciais de [escopo do MVP](produto/escopo-mvp.md#requisitos-essenciais).
+
+A sequência recomendada é:
+
+1. autenticação utilizável;
+2. Workspace e quadro;
+3. listas e cartões;
+4. ordenação e movimentação;
+5. participação e colaboração;
+6. sincronização por WebSocket;
+7. ciclo de vida e movimentação entre quadros; e
+8. feed, auditoria consultável e prontidão operacional.
+
+Cada entrega vertical inclui, quando aplicável, Angular, API NestJS, PostgreSQL,
+autorização, auditoria e feed, testes automatizados e critérios verificáveis de
+aceitação. A sequência não autoriza antecipar requisitos de entregas posteriores.
 
 ## Decisão técnica relevante
 

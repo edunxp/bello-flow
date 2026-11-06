@@ -8,18 +8,43 @@ A especificação funcional continua sendo a fonte normativa para comportamento,
 
 ## Stack aprovada
 
-| Responsabilidade | Escolha aprovada |
-|---|---|
-| Frontend | Angular e TypeScript |
-| Backend | NestJS sobre Node.js e TypeScript |
-| Persistência | Prisma como ORM principal e PostgreSQL |
-| Infraestrutura inicial | Docker Compose em servidor único |
-| Arquitetura | monólito modular |
-| Mutações | API HTTP |
-| Atualizações colaborativas | WebSocket integrado ao NestJS |
-| Escala inicial | uma instância do backend |
+| Responsabilidade           | Escolha aprovada                       |
+| -------------------------- | -------------------------------------- |
+| Frontend                   | Angular e TypeScript                   |
+| Backend                    | NestJS sobre Node.js e TypeScript      |
+| Persistência               | Prisma como ORM principal e PostgreSQL |
+| Infraestrutura inicial     | Docker Compose em servidor único       |
+| Arquitetura                | monólito modular                       |
+| Mutações                   | API HTTP                               |
+| Atualizações colaborativas | WebSocket integrado ao NestJS          |
+| Escala inicial             | uma instância do backend               |
 
 SQL PostgreSQL parametrizado pode complementar o Prisma quando bloqueios, funcionalidades específicas ou desempenho medido o justificarem. Essa possibilidade não transforma SQL direto no mecanismo padrão de persistência.
+
+## Premissa de escala e proporcionalidade
+
+O cenário inicial aprovado é de aproximadamente **5 a 10 usuários em produção**,
+sem expectativa de crescimento significativo no curto ou médio prazo. Essa
+premissa orienta escolhas proporcionais, mas não reduz requisitos funcionais,
+segurança, integridade, autorização, auditoria, recuperação ou qualidade.
+
+A arquitetura inicial prioriza baixo custo operacional, manutenção sustentável e
+entregas verticais utilizáveis. Angular, NestJS, monólito modular, PostgreSQL como
+fonte da verdade, Prisma com SQL localizado quando justificado, uma instância de
+backend, topologia same-origin e Docker Compose permanecem adequados ao cenário.
+Evolução de capacidade deve ocorrer por evidência observada, preservando
+compatibilidade e fronteiras modulares, sem implementar antecipadamente
+infraestrutura de escala futura.
+
+Negação por padrão, transações íntegras, auditoria obrigatória, cobertura mínima
+de 90% e CI obrigatório não são flexibilizados pela escala reduzida. Simplicidade
+operacional não autoriza reduzir segurança, integridade, rastreabilidade ou
+prontidão.
+
+Cada incremento funcional deve atravessar, quando aplicável, interface Angular,
+API NestJS, persistência PostgreSQL, autorização, auditoria e feed, testes e
+critérios verificáveis de aceitação. Subtarefas técnicas pertencem à mesma entrega
+vertical e não constituem, por si, funcionalidades ou fases futuras.
 
 ## Diretrizes arquiteturais
 
@@ -34,16 +59,16 @@ SQL PostgreSQL parametrizado pode complementar o Prisma quando bloqueios, funcio
 
 ## Fronteiras do monólito modular
 
-| Módulo | Responsabilidade principal | Limite de acesso |
-|---|---|---|
-| Identidade e Administração Global | contas, autenticação, sessões, recuperação e papéis globais | não concede conteúdo de Workspace ou quadro |
-| Workspaces | configuração, participantes, papéis, fuso e catálogo de etiquetas | governança não implica conteúdo dos quadros |
-| Quadros | configuração, visibilidade, participantes, papéis, arquivamento e restauração | distingue governança de acesso operacional |
-| Kanban | listas, cartões, posições, movimentos e arquivamento | exige participação e papel de quadro adequados |
-| Colaboração | responsáveis, etiquetas aplicadas, datas, conclusão e comentários | segue autorização do cartão e do quadro |
-| Notificações | e-mails, Central de Notificações e sinais em tempo real | não amplia acesso ao recurso de origem |
-| Feed | atividades colaborativas autorizadas | não expõe dados exclusivos da auditoria |
-| Auditoria | registro obrigatório, consulta protegida, redação e retenção | escopos global, administrativo e de conteúdo separados |
+| Módulo                            | Responsabilidade principal                                                    | Limite de acesso                                       |
+| --------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Identidade e Administração Global | contas, autenticação, sessões, recuperação e papéis globais                   | não concede conteúdo de Workspace ou quadro            |
+| Workspaces                        | configuração, participantes, papéis, fuso e catálogo de etiquetas             | governança não implica conteúdo dos quadros            |
+| Quadros                           | configuração, visibilidade, participantes, papéis, arquivamento e restauração | distingue governança de acesso operacional             |
+| Kanban                            | listas, cartões, posições, movimentos e arquivamento                          | exige participação e papel de quadro adequados         |
+| Colaboração                       | responsáveis, etiquetas aplicadas, datas, conclusão e comentários             | segue autorização do cartão e do quadro                |
+| Notificações                      | e-mails, Central de Notificações e sinais em tempo real                       | não amplia acesso ao recurso de origem                 |
+| Feed                              | atividades colaborativas autorizadas                                          | não expõe dados exclusivos da auditoria                |
+| Auditoria                         | registro obrigatório, consulta protegida, redação e retenção                  | escopos global, administrativo e de conteúdo separados |
 
 Cada módulo deve expor casos de uso e contratos explícitos. Controladores não acessam diretamente estruturas internas de outros módulos. Infraestrutura compartilhada deve permanecer pequena e não concentrar regras de negócio.
 
@@ -74,7 +99,10 @@ O Docker Compose descreve conceitualmente serviços separados para aplicação e
 - Redis;
 - filas externas;
 - Kubernetes;
+- scheduler distribuído;
 - múltiplas instâncias do backend;
+- particionamento sem evidência de volume;
+- plataforma complexa de observabilidade;
 - orquestração distribuída sem necessidade comprovada;
 - API externa e conectores previstos para entregas posteriores na [DEC-019](../produto/decisoes-funcionais.md#dec-019--integrações-externas).
 
@@ -110,4 +138,3 @@ As decisões aprovadas estão registradas integralmente em [decisoes-tecnicas.md
 - [regras de negócio](../produto/regras-de-negocio.md)
 - [decisões funcionais](../produto/decisoes-funcionais.md)
 - [escopo do MVP](../produto/escopo-mvp.md)
-

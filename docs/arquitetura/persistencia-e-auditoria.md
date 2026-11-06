@@ -46,11 +46,9 @@ por suposição.
 
 ### Recuperação de senha da F1-B.4.5
 
-O contrato está aprovado. A fundação física da F1-B.4.5.1, as operações da
-F1-B.4.5.2, a admissão/capacidade da F1-B.4.5.3 e a solicitação/classificação da
-F1-B.4.5.4 e o caso de uso de redefinição F1-B.4.5.5 foram publicados; os demais
-incrementos continuam pendentes. A persistência é específica do domínio de
-recuperação e não antecipa outbox genérica.
+O contrato está aprovado. A persistência é específica do domínio de recuperação
+e não antecipa outbox genérica. O estado factual corrente dos incrementos fica no
+[estado do projeto](../estado-do-projeto.md#fase-atual).
 
 #### Relações e estados
 
@@ -1094,7 +1092,7 @@ funcional. `terminal_at` confirmado inicia a janela existente de 30 dias.
 `STARTED` não terminalizado, `UNKNOWN` e operações reconciliáveis continuam
 protegidos. Nenhuma exclusão física pertence à F1-B.4.5.8.
 
-Na implementação local, a migration incremental
+Na materialização técnica, a migration incremental
 `20261111000000_f1_b_4_5_8_abandoned_reset_terminalizer` materializa exatamente
 as três interfaces acima. O adapter NestJS fixa `lock_timeout` em dois segundos e
 `statement_timeout` em cinco segundos nas transações de seleção, probe, mutação e
@@ -1102,8 +1100,9 @@ reconciliação, limita as repetições confirmadamente recuperáveis e reconcil
 resultados indeterminados sem repetição cega. O worker permanece `disabled` por
 padrão, sequencial e limitado a dez itens.
 PostgreSQL 18.6 descartável comprovou transição única sob duas instâncias,
-idempotência, ausência de auditoria funcional e privilégios mínimos. O estado é
-local, ainda sem publicação ou CI remoto.
+idempotência, ausência de auditoria funcional e privilégios mínimos. O estado
+factual corrente e as evidências de publicação ficam no
+[estado do projeto](../estado-do-projeto.md#f1-b458--terminalização-de-intenções-abandonadas).
 
 ## Isolamento, bloqueios e repetição
 

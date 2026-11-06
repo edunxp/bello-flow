@@ -59,6 +59,19 @@ autoriza implementar; implementar não autoriza commit; commit não autoriza pus
 e aprovação de integração não autoriza merge. O
 [Procedimento de Git e publicação](git-e-publicacao.md) permanece obrigatório.
 
+### Entregas verticais
+
+O planejamento prioriza resultados utilizáveis que atravessem, quando aplicável,
+Angular, API NestJS, PostgreSQL, autorização, auditoria e feed, testes e critérios
+de aceitação. Uma branch curta representa uma entrega; subtarefas técnicas e
+correções rotineiras permanecem no mesmo ciclo enquanto não alterarem escopo,
+contrato ou risco aprovado.
+
+Fundação horizontal é limitada ao que a entrega atual exige. Infraestrutura,
+abstrações e mecanismos de escala futura não são antecipados sem necessidade
+demonstrada. Evidências válidas são reutilizadas, e relatórios registram somente
+decisões, achados e resultados materiais.
+
 ## Risco e proporcionalidade
 
 | Risco     | Exemplos                                                                                  | Tratamento mínimo                                                                                              |
@@ -194,6 +207,10 @@ relatórios extensos sem impacto na decisão.
 4. Documentação, código, testes e configurações estritamente necessárias formam o
    mesmo conjunto revisável e, quando aprovados, o mesmo commit.
 5. Contratos normativos existentes são referenciados, não duplicados.
+6. `docs/estado-do-projeto.md` concentra o estado factual corrente dos incrementos,
+   incluindo SHA, branch, publicação e CI. Documentos normativos preservam
+   decisões, invariantes, contratos, justificativas e referências sem replicar
+   esses dados operacionais.
 
 ## Etapa 5 — Revisão final
 
@@ -215,7 +232,8 @@ relatórios extensos sem impacto na decisão.
 ## Etapa 7 — Publicação
 
 1. Em atividade posterior e mediante autorização separada, o Codex confirma o
-   commit aprovado, atualiza as referências remotas e executa push normal.
+   commit aprovado, atualiza as referências remotas e executa push normal somente
+   da branch autorizada.
 2. Antes do push, confirma branch, SHA, escopo, árvore limpa e divergência com
    `origin/main`.
 3. Force push, force-with-lease, merge, rebase, pull e correções automáticas de
@@ -255,13 +273,14 @@ inteiros não são reproduzidos; use referências e registre apenas o impacto no
 incremento. As afirmações relevantes seguem as classificações de confiabilidade
 deste documento.
 
-## Preparação e ativação da branch curta
+## Ciclo em branch curta
 
-Para o único responsável pelo repositório, a modalidade preparada usa uma branch
+Para o único responsável pelo repositório, a modalidade usa uma branch
 `work/<incremento>` por ciclo, criada a partir da `main` sincronizada. O
 `BASE_MAIN_SHA` é registrado antes da criação. Uma autorização explícita de ciclo
-delimita objetivo, escopo e branch e, depois da ativação da modalidade, permite ao
-Codex criar commits locais e realizar pushes normais somente nessa branch. Pull
+delimita objetivo, escopo, riscos e branch e permite ao Codex alterar e validar o
+escopo autorizado. Commit, push normal da branch e integração fast-forward
+continuam etapas separadas, cada uma dependente de autorização específica. Pull
 request permanece opcional.
 
 Durante o ciclo, correções técnicas rotineiras, testes e documentação seguem com
@@ -283,21 +302,13 @@ pode ser removida após encerramento validado e autorização de limpeza.
 
 ### Estado de adoção
 
-- **Preparação:** os gatilhos do CI e os procedimentos estão alterados localmente,
-  mas ainda não publicados; a modalidade não possui vigência operacional.
-- **Ativação:** exige publicação deste preparo, CI aprovado na `main` e teste real
-  bem-sucedido de uma branch `work/**`, com os três jobs no SHA exato. Depois
-  dessas evidências, a ativação precisa ser formalizada explicitamente.
+Os pré-requisitos técnicos de ativação estão satisfeitos conforme o
+[estado do projeto](../estado-do-projeto.md). A ativação é formalizada por esta
+revisão e passa a valer somente após a publicação e o CI desta própria
+formalização na `main`; até lá, permanecem as modalidades vigentes.
 
-O teste real usa autorização específica e controlada: cria
-`work/validacao-<identificador>` diretamente no SHA publicado da `main`, executa
-um push normal sem novo commit e verifica o CI desse mesmo SHA. O teste não
-autoriza alterações, integração ou ativação automática; sua limpeza exige
-autorização posterior.
-
-Até a ativação, permanecem inalteradas as etapas 6 a 8 e as modalidades vigentes
-para trabalho direto na `main`. Este preparo não autoriza criar branch, commit,
-push, integração ou limpeza.
+A ativação não concede autorização automática. Cada ciclo e cada etapa de commit,
+push, integração ou limpeza continuam dependendo da autorização aplicável.
 
 ## Diretrizes permanentes
 

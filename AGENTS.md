@@ -69,6 +69,10 @@ bloqueie atividades independentes sem justificativa.
 
 ## Manutenção documental e marcos
 
+- `docs/estado-do-projeto.md` é a fonte única do estado factual corrente dos
+  incrementos. Os demais documentos preservam decisões, regras, invariantes,
+  contratos, justificativas e referências sem duplicar branch, SHA, publicação,
+  execução de CI ou último incremento concluído.
 - A documentação deve acompanhar o estado real da implementação sem confundir
   decisão aprovada, alteração local, commit local, publicação e validação do CI.
 - Código, testes e documentação aplicável integram o mesmo ciclo. Antes do commit,
@@ -81,8 +85,8 @@ bloqueie atividades independentes sem justificativa.
   consolidação periódica autorizada.
 - Mudanças de comportamento devem revisar os documentos técnicos e as pendências
   afetadas, sem encerrar ou reclassificar uma pendência sem aprovação explícita.
-- Registre nos documentos de estado os commits e as evidências de teste
-  relevantes, preservando a rastreabilidade até as decisões aplicáveis.
+- Registre no documento de estado os commits e as evidências de teste relevantes,
+  preservando a rastreabilidade até as decisões aplicáveis.
 - Não declare um incremento concluído e publicado antes das confirmações
   correspondentes. Uma implementação apenas local deve ser descrita como tal.
 - Alteração, commit e publicação seguem a modalidade de autorização explícita da
@@ -155,24 +159,24 @@ uma das seguintes modalidades de autorização:
 - **Publicação controlada:** autoriza somente o push normal de commit local já
   aprovado e a verificação remota correspondente. Não autoriza novo commit.
 
-A modalidade **Ciclo em branch curta** está preparada, mas não está ativa. Ela só
-entra em vigor após a publicação deste preparo, a aprovação do CI correspondente,
-um teste real bem-sucedido em `work/**` e a formalização explícita de sua
-ativação. Até lá, aplicam-se exclusivamente as modalidades vigentes acima.
-
-Depois da publicação do preparo e do CI aprovado na `main`, uma atividade
-específica pode autorizar o **Teste controlado de ativação**. Ele permite somente
-criar `work/validacao-<identificador>` no SHA publicado da `main`, executar um
-push normal dessa referência e verificar o CI no mesmo SHA. Não autoriza alterar
-arquivos, criar commit, integrar na `main`, publicar outra branch nem ativar a
-modalidade por si só. A limpeza posterior permanece separadamente autorizada.
+A modalidade **Ciclo em branch curta** possui os pré-requisitos técnicos de
+ativação satisfeitos conforme o
+[estado do projeto](docs/estado-do-projeto.md). A ativação é formalizada por esta
+direção arquitetural e entra em vigor somente depois de sua publicação e do CI
+correspondente na `main`. Até lá, aplicam-se exclusivamente as modalidades
+vigentes acima.
 
 Depois da ativação, uma autorização explícita de ciclo deve identificar objetivo,
-escopo, branch `work/<incremento>` e `BASE_MAIN_SHA`. Essa autorização permitirá
-criar a branch a partir da `main` sincronizada e, dentro do mesmo ciclo, criar
-commits locais e executar pushes normais somente nessa branch. Correções técnicas
-rotineiras e a reexecução dos gates afetados permanecerão autônomas dentro do
-escopo.
+escopo, riscos, branch `work/<incremento>` e `BASE_MAIN_SHA`. Essa autorização
+permite criar a branch a partir da `main` sincronizada, modificar somente o escopo
+aprovado e executar as validações necessárias. Subtarefas técnicas, correções
+rotineiras e documentação aplicável permanecem na mesma entrega vertical.
+
+Commit local, push normal da branch e integração fast-forward na `main` continuam
+exigindo autorizações específicas e separadas. Autorização do ciclo não autoriza
+commit ou push; autorização de commit não autoriza push; push da branch não
+autoriza integração. O CI da branch precisa aprovar o SHA final antes da revisão e
+da decisão de integração.
 
 A autorização de ciclo não permitirá integrar na `main`, alterar outra branch,
 usar force push, executar rebase automático, modificar contratos aprovados,
@@ -186,9 +190,8 @@ No fluxo vigente e em qualquer operação direta na `main`, a publicação ocorr
 atividade posterior ao commit e somente quando o pedido autoriza explicitamente
 publicar ou realizar push. Expressões ambíguas como “vamos em frente”, “continue”
 ou equivalentes não autorizam push. Autorização para commit nunca implica
-autorização para publicação. Depois da ativação, somente a autorização explícita
-de ciclo reúne commits e pushes normais na branch `work/<incremento>`; ela não
-alcança integração ou push na `main`.
+autorização para publicação. Depois da ativação, a branch curta reúne a entrega e
+suas subtarefas, mas não reúne as autorizações de commit, push e integração.
 
 Essa autonomia não elimina confirmações técnicas exigidas pelo sandbox. Antes de
 prosseguir, solicite aprovação humana quando for necessário modificar decisões
@@ -331,9 +334,10 @@ passar.
   autorização inequívoca.
 - Não inclua arquivos temporários, gerados, relatórios de cobertura, builds ou
   secrets.
-- Não execute `git commit` fora da modalidade **Implementação com commit**.
-- Não execute `git push` sem a modalidade **Publicação controlada** explicitamente
-  autorizada para a atividade.
+- Não execute `git commit` fora da modalidade **Implementação com commit** vigente
+  ou sem autorização específica de commit da branch curta depois da ativação.
+- Não execute `git push` sem a modalidade **Publicação controlada** vigente ou sem
+  autorização específica de push da branch curta depois da ativação.
 - Autorização para commit não implica autorização para push. A publicação trata
   somente commit local já aprovado e permanece condicionada ao
   [Procedimento de Git e publicação](docs/operacao/git-e-publicacao.md).

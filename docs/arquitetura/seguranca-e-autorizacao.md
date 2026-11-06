@@ -422,15 +422,10 @@ de 90% em lines, statements, functions e branches.
 
 ## Recuperação de senha — contrato aprovado da F1-B.4.5
 
-O contrato abaixo está aprovado para implementação. A fundação PostgreSQL da
-F1-B.4.5.1, a camada transacional F1-B.4.5.2, a admissão/capacidade da
-F1-B.4.5.3 e os casos de uso internos F1-B.4.5.4–F1-B.4.5.5 foram publicados.
-O processamento da F1-B.4.5.6 foi implementado e publicado no commit
-`601c92ab8f3922b5f0e2a03c432de5fc74c6258d`, com CI `42117321177` aprovado. A
-F1-B.4.5.7 possui contrato normativo e implementação publicados, mas validação
-operacional do provider, HTTP e disponibilidade produtiva permanecem pendentes.
-Ele detalha AT-001, AT-003 e AT-009, resolve normativamente a PT-007 e o recorte
-de recuperação da PT-008 e preserva a PT-009 aberta.
+O contrato abaixo está aprovado para implementação. Ele detalha AT-001, AT-003 e
+AT-009, resolve normativamente a PT-007 e o recorte de recuperação da PT-008 e
+preserva a PT-009 aberta. O estado factual corrente dos incrementos fica no
+[estado do projeto](../estado-do-projeto.md#fase-atual).
 
 ### Identidade e anti-enumeração
 
@@ -1034,11 +1029,12 @@ link, IP bruto, payload, credencial, `reset_operation_id` e demais identificador
 sensíveis. A janela de 30 dias começa apenas no `terminal_at` confirmado; este
 incremento não remove dados nem altera a PT-009 ou a disponibilidade produtiva.
 
-Implementação local: a migration F1-B.4.5.8 aplica `SECURITY DEFINER`, owner do
+Na materialização técnica, a migration F1-B.4.5.8 aplica `SECURITY DEFINER`, owner do
 migrator, `search_path` protegido, objetos qualificados, revogação de `PUBLIC`,
 bootstrap e manutenção e `EXECUTE` exclusivo do runtime nas três interfaces. O
-runtime continua sem DML direto. Essa evidência foi validada em PostgreSQL 18.6
-descartável, mas ainda não foi publicada nem validada por CI remoto.
+runtime continua sem DML direto. Essa garantia foi validada em PostgreSQL 18.6
+descartável. O estado factual corrente fica no
+[estado do projeto](../estado-do-projeto.md#f1-b458--terminalização-de-intenções-abandonadas).
 
 ## Fluxo de uma requisição protegida
 

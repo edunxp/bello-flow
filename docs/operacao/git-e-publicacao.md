@@ -9,10 +9,10 @@ regras permanentes de segurança e autorização do
 
 Nenhuma etapa deste documento concede autorização por si só. Enquanto a
 modalidade de branch curta não estiver ativa, a atividade precisa selecionar
-explicitamente uma das modalidades abaixo. Depois da ativação, um ciclo pode
-selecionar explicitamente a modalidade preparada na seção correspondente. Não
-execute merge, rebase, pull, reset, force push ou reescrita de histórico
-automaticamente.
+explicitamente uma das modalidades abaixo. Depois da ativação, um ciclo segue a
+seção correspondente, mantendo autorizações separadas para commit, push da branch
+e integração. Não execute merge, rebase, pull, reset, force push ou reescrita de
+histórico automaticamente.
 
 ## Modalidades de autorização
 
@@ -26,9 +26,9 @@ Nas modalidades vigentes e em qualquer operação direta na `main`, a publicaç�
 ocorre em atividade posterior ao commit e exige autorização separada e explícita
 para push. Uma autorização apenas para commit permanece na segunda modalidade e
 não permite push. Expressões ambíguas como “vamos em frente”, “continue” ou
-equivalentes não selecionam a modalidade de publicação. Depois da ativação,
-somente a autorização explícita de ciclo reúne commits e pushes normais na branch
-`work/<incremento>`; integração e push na `main` continuam separados.
+equivalentes não selecionam a modalidade de publicação. Depois da ativação, o
+ciclo reúne a entrega na branch `work/<incremento>`, mas commit, push normal da
+branch e integração permanecem autorizações específicas e separadas.
 
 Durante a implementação, problemas técnicos rotineiros podem ser corrigidos e
 revalidados autonomamente nos limites da autorização recebida. Após cada correção,
@@ -43,44 +43,15 @@ escopo, staging, divergência, autenticação, publicação ou CI interrompe a e
 deve ser reportada: a autorização de commit ou publicação não permite criar
 correção, commit adicional, novo push, reexecução ou ampliação de escopo.
 
-## Modalidade preparada — ciclo em branch curta
+## Ciclo em branch curta
 
 ### Estado de adoção
 
-Esta modalidade está em **preparação**: o CI aceita localmente pushes em
-`work/**`, e o contrato operacional está documentado, mas essas alterações ainda
-não foram publicadas nem validadas em uma branch real. Ela não concede autoridade
-operacional nesta etapa.
-
-A **ativação** exige cumulativamente:
-
-1. publicação deste preparo na `main` pelo procedimento vigente;
-2. CI da publicação aprovado nos jobs `Quality`, `API integration` e `Required`;
-3. teste real autorizado em uma branch `work/**`, criada a partir da `main`
-   publicada;
-4. os três jobs aprovados no evento `push` e no SHA final exato dessa branch; e
-5. formalização explícita de que a modalidade foi ativada.
-
-Até a ativação, permanecem exclusivamente vigentes as modalidades e os
-procedimentos atuais para trabalho direto na `main`. Esta seção não autoriza criar
-branch, commit, push, integração ou limpeza.
-
-### Teste controlado de ativação
-
-Depois da publicação deste preparo e do CI aprovado na `main`, uma autorização
-específica de teste pode permitir somente:
-
-1. confirmar `main`, `origin/main`, árvore e índice limpos e registrar o SHA
-   publicado;
-2. criar `work/validacao-<identificador>` apontando diretamente para esse SHA;
-3. executar um único push normal dessa branch, sem alteração ou novo commit;
-4. localizar o workflow pelo evento `push`, pela branch e pelo mesmo SHA; e
-5. exigir `completed/success` para o workflow, `Quality`, `API integration` e
-   `Required`.
-
-Esse teste não autoriza modificar arquivos, criar commit, integrar ou publicar na
-`main`, publicar outra branch nem declarar a modalidade ativa. A remoção da branch
-de validação exige autorização posterior e alvos exatos.
+Os pré-requisitos técnicos de ativação estão satisfeitos conforme o
+[estado do projeto](../estado-do-projeto.md). A ativação é formalizada por esta
+revisão e entra em vigor somente quando esta formalização for publicada e seu CI
+na `main` for aprovado. Até lá, permanecem as modalidades vigentes para trabalho
+direto na `main`.
 
 ### Autorização do ciclo após a ativação
 
@@ -91,10 +62,10 @@ Uma única autorização explícita de ciclo deve registrar:
 - `BASE_MAIN_SHA`, obtido da `main` local e de `origin/main` sincronizadas.
 
 Essa autorização permite criar a branch a partir de `BASE_MAIN_SHA`, alterar
-somente o escopo aprovado, criar os commits locais necessários e executar pushes
-normais somente para a branch autorizada. Correções técnicas rotineiras não exigem
-nova autorização quando permanecem no escopo; os gates afetados precisam ser
-reexecutados.
+somente o escopo aprovado e executar validações. Correções técnicas rotineiras não
+exigem nova autorização quando permanecem no escopo; os gates afetados precisam
+ser reexecutados. Commit e push normal da branch exigem autorizações posteriores
+específicas.
 
 A autorização de ciclo não permite:
 
@@ -199,7 +170,9 @@ relate a divergência.
 
 ## Commit
 
-Execute esta seção somente na modalidade **Implementação com commit**.
+Execute esta seção somente mediante autorização específica de commit, seja na
+modalidade **Implementação com commit** vigente ou em uma branch curta depois da
+ativação.
 
 1. Confirme os caminhos autorizados e adicione-os explicitamente. Evite
    `git add .`, `git add -A` ou outro staging amplo quando houver qualquer risco
@@ -245,8 +218,71 @@ o caminho. Não remova alterações do usuário para ajustar o staging.
 
 ## Publicação
 
-Execute esta seção somente na modalidade **Publicação controlada**, em atividade
-posterior à criação e aprovação do commit local.
+Execute esta seção somente mediante autorização específica de push, em atividade
+posterior à criação e aprovação do commit local. A autorização precisa identificar
+se o alvo é a branch curta ou a `main`; uma não autoriza a outra.
+
+### Publicação controlada da branch curta
+
+Depois da ativação, o push da branch exige autorização específica para
+`work/<incremento>` e para o SHA aprovado.
+
+1. Confirme branch, base, commit e árvore limpa:
+
+   ```bash
+   git branch --show-current
+   git rev-parse HEAD
+   git rev-parse origin/main
+   git status --porcelain=v1
+   ```
+
+   A branch deve ser exatamente `work/<incremento>`, e `origin/main` deve
+   continuar em `BASE_MAIN_SHA`. Divergência interrompe a publicação sem merge,
+   rebase ou pull automático.
+
+2. Atualize referências e inspecione exatamente o conjunto da branch:
+
+   ```bash
+   git fetch --prune origin
+   git rev-parse origin/main
+   git rev-list --left-right --count origin/main...work/<incremento>
+   git log --oneline origin/main..work/<incremento>
+   git ls-remote --heads origin refs/heads/work/<incremento>
+   ```
+
+   A branch deve estar `0 behind / N ahead` da base e conter somente os commits
+   autorizados. Reconfirme `origin/main` igual a `BASE_MAIN_SHA` depois do fetch.
+   Se a referência remota já existir, confirme que não avançou nem divergiu do
+   histórico local antes do novo push:
+
+   ```bash
+   git rev-list --left-right --count origin/work/<incremento>...work/<incremento>
+   git log --oneline origin/work/<incremento>..work/<incremento>
+   ```
+
+3. Publique somente a referência autorizada, sem force push:
+
+   ```bash
+   git push origin refs/heads/work/<incremento>:refs/heads/work/<incremento>
+   ```
+
+4. Confirme o SHA remoto exato e a árvore local:
+
+   ```bash
+   git rev-parse HEAD
+   git rev-parse origin/work/<incremento>
+   git ls-remote --heads origin refs/heads/work/<incremento>
+   git status --short --branch
+   ```
+
+   O SHA local, a referência remota consultada e o commit autorizado precisam
+   coincidir. Esse push não autoriza integração ou publicação na `main`.
+
+### Publicação controlada da `main`
+
+Esta subseção aplica-se ao fluxo vigente direto na `main` ou à integração
+fast-forward já autorizada. Não pode ser usada para substituir o push e o CI da
+branch curta.
 
 1. Confirme a branch, o commit autorizado e a árvore limpa:
 
@@ -277,7 +313,7 @@ posterior à criação e aprovação do commit local.
    previamente sincronizada, a divergência obrigatória antes do push é exatamente
    `0 behind / 1 ahead`.
 
-4. Publique sem force push e somente para a branch autorizada:
+4. Publique sem force push e somente para a `main` autorizada:
 
    ```bash
    git push origin main
@@ -309,7 +345,8 @@ Após confirmar a publicação e a sincronização da branch:
    exato. Não selecione uma execução apenas por ser a mais recente. Confirme na
    execução encontrada:
    - `head_sha` igual ao SHA publicado;
-   - branch `main`;
+   - branch exatamente igual à referência publicada: `work/<incremento>` para o
+     CI da branch ou `main` para o CI final;
    - workflow `CI`;
    - evento de push correspondente;
    - tentativa atual da execução, quando houver reexecuções.

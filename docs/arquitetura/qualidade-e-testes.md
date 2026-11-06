@@ -54,12 +54,9 @@ tentativa, preserva verificação negativa, `401` genérico e auditoria funciona
 
 ### Matriz obrigatória da F1-B.4.5
 
-O contrato de recuperação está aprovado, e a fundação PostgreSQL da F1-B.4.5.1 e
-as operações da F1-B.4.5.2, a admissão/capacidade da F1-B.4.5.3 e a
-solicitação/classificação da F1-B.4.5.4 e a redefinição interna da F1-B.4.5.5
-foram publicadas. O processamento da F1-B.4.5.6 também foi publicado; o provider
-da F1-B.4.5.7 possui contrato e implementação publicados. HTTP público e demais
-testes ponta a ponta continuam pendentes. A entrega completa deve cobrir:
+O contrato de recuperação está aprovado. O estado factual corrente dos
+incrementos fica no [estado do projeto](../estado-do-projeto.md#fase-atual).
+A entrega completa deve cobrir:
 
 - unitários: DTOs exatos, normalização, Base64URL canônica, hash com separação de
   domínio, transições, leases, cooldown, quotas, três tentativas, três tokens
@@ -532,13 +529,15 @@ mapeamentos operacionais. A cobertura permanece em no mínimo 90% para lines,
 statements, functions e branches em API, Web e consolidado, sem exclusão
 artificial. `Quality`, `API integration` e `Required` permanecem obrigatórios.
 
-Evidência local da implementação: 34 testes unitários específicos e 42 cenários
+Evidência de implementação: 34 testes unitários específicos e 42 cenários
 PostgreSQL 18.6 específicos foram aprovados. A regressão serial de F1-B.4.5.1–.8
 aprovou 202 cenários; a suíte E2E geral aprovou 37 e a prova transacional, dois.
 O `quality:local` aprovou 770 testes unitários da API e quatro do Web, formatação,
-lint, typecheck e builds. A cobertura foi: API 93,79% statements, 91,15% branches,
+lint, typecheck e builds. A cobertura local foi: API 93,79% statements, 91,15% branches,
 97,25% functions e 94,30% lines; Web 100% nas quatro métricas; consolidado 93,81%,
-91,21%, 97,26% e 94,31%, respectivamente. São evidências locais, sem CI remoto.
+91,21%, 97,26% e 94,31%, respectivamente. O estado factual corrente e as
+evidências de CI ficam no
+[estado do projeto](../estado-do-projeto.md#f1-b458--terminalização-de-intenções-abandonadas).
 
 ## Integração com PostgreSQL real
 
