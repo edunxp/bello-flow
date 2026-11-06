@@ -19,6 +19,8 @@ import {
   LoginAdmissionService,
   SYSTEM_LOGIN_ADMISSION_TIME,
 } from '../src/auth/login-admission.service.js';
+import { PasswordRecoveryRequestService } from '../src/auth/password-recovery-request.service.js';
+import { PasswordResetService } from '../src/auth/password-reset.service.js';
 import { hashSessionToken } from '../src/auth/session-primitives.js';
 import { PasswordCredentialService } from '../src/credentials/password-credential.service.js';
 import { configureHttpApplication } from '../src/http/configure-http-application.js';
@@ -219,7 +221,14 @@ describe('F1-B.3.3.3 password authentication (PostgreSQL)', () => {
     const accountId = await createAccount();
     const moduleFixture = await Test.createTestingModule({
       controllers: [AuthController],
-      providers: [{ provide: AuthenticationService, useValue: service }],
+      providers: [
+        { provide: AuthenticationService, useValue: service },
+        {
+          provide: PasswordRecoveryRequestService,
+          useValue: { request: vi.fn() },
+        },
+        { provide: PasswordResetService, useValue: { reset: vi.fn() } },
+      ],
     }).compile();
     const app: INestApplication<App> =
       moduleFixture.createNestApplication<NestExpressApplication>({
