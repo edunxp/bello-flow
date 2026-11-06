@@ -7,9 +7,12 @@ publicação no GitHub e a verificação do CI do Bello Flow. Ele complementa as
 regras permanentes de segurança e autorização do
 [AGENTS.md](../../AGENTS.md).
 
-Nenhuma etapa deste documento concede autorização por si só. A atividade precisa
-selecionar explicitamente uma das modalidades abaixo. Não execute merge, rebase,
-pull, reset, force push ou reescrita de histórico automaticamente.
+Nenhuma etapa deste documento concede autorização por si só. Enquanto a
+modalidade de branch curta não estiver ativa, a atividade precisa selecionar
+explicitamente uma das modalidades abaixo. Depois da ativação, um ciclo pode
+selecionar explicitamente a modalidade preparada na seção correspondente. Não
+execute merge, rebase, pull, reset, force push ou reescrita de histórico
+automaticamente.
 
 ## Modalidades de autorização
 
@@ -19,10 +22,13 @@ pull, reset, force push ou reescrita de histórico automaticamente.
 | **Implementação com commit** | autorizado no escopo          | autorizado no escopo     | não autorizado                    |
 | **Publicação controlada**    | não autoriza novas alterações | não autoriza novo commit | autorizado para o commit aprovado |
 
-A publicação ocorre em atividade posterior ao commit e exige autorização
-separada e explícita para push. Uma autorização apenas para commit permanece na
-segunda modalidade e não permite push. Expressões ambíguas como “vamos em frente”,
-“continue” ou equivalentes não selecionam a modalidade de publicação.
+Nas modalidades vigentes e em qualquer operação direta na `main`, a publicação
+ocorre em atividade posterior ao commit e exige autorização separada e explícita
+para push. Uma autorização apenas para commit permanece na segunda modalidade e
+não permite push. Expressões ambíguas como “vamos em frente”, “continue” ou
+equivalentes não selecionam a modalidade de publicação. Depois da ativação,
+somente a autorização explícita de ciclo reúne commits e pushes normais na branch
+`work/<incremento>`; integração e push na `main` continuam separados.
 
 Durante a implementação, problemas técnicos rotineiros podem ser corrigidos e
 revalidados autonomamente nos limites da autorização recebida. Após cada correção,
@@ -37,28 +43,116 @@ escopo, staging, divergência, autenticação, publicação ou CI interrompe a e
 deve ser reportada: a autorização de commit ou publicação não permite criar
 correção, commit adicional, novo push, reexecução ou ampliação de escopo.
 
-## Estratégia futura de branch curta
+## Modalidade preparada — ciclo em branch curta
 
-Considerando que existe um único responsável com acesso ao repositório, propõe-se
-uma branch de curta duração por incremento. O Codex teria autonomia técnica
-delimitada ao escopo aprovado. Cada commit e cada push na branch exigiriam
-autorização de escopo específica, e os jobs `Quality`, `API integration` e
-`Required` precisariam concluir com sucesso na branch antes da integração.
+### Estado de adoção
 
-A revisão independente seria uma etapa baseada no diff, nas fontes primárias, nos
-riscos e nas evidências do SHA candidato, sem exigir segundo mantenedor. A
-integração na `main` dependeria de autorização expressa do responsável. Pull
-request seria opcional, e a estratégia não dependeria obrigatoriamente de recursos
-pagos de proteção de branch. O SHA integrado e o CI aplicável seriam verificados
-depois da integração.
+Esta modalidade está em **preparação**: o CI aceita localmente pushes em
+`work/**`, e o contrato operacional está documentado, mas essas alterações ainda
+não foram publicadas nem validadas em uma branch real. Ela não concede autoridade
+operacional nesta etapa.
 
-A proposta não está autorizada por este documento. Sua entrada em vigor depende
-de aprovação posterior explícita, verificação dos gatilhos do GitHub Actions,
-definição do procedimento de integração e sincronização e confirmação dos checks
-e da verificação do SHA exato. Até lá, permanece integralmente vigente o
-procedimento abaixo para commit local e publicação controlada em `main`. Nenhum
-texto desta seção autoriza criar branch, pull request, integração, merge, commit
-ou push.
+A **ativação** exige cumulativamente:
+
+1. publicação deste preparo na `main` pelo procedimento vigente;
+2. CI da publicação aprovado nos jobs `Quality`, `API integration` e `Required`;
+3. teste real autorizado em uma branch `work/**`, criada a partir da `main`
+   publicada;
+4. os três jobs aprovados no evento `push` e no SHA final exato dessa branch; e
+5. formalização explícita de que a modalidade foi ativada.
+
+Até a ativação, permanecem exclusivamente vigentes as modalidades e os
+procedimentos atuais para trabalho direto na `main`. Esta seção não autoriza criar
+branch, commit, push, integração ou limpeza.
+
+### Teste controlado de ativação
+
+Depois da publicação deste preparo e do CI aprovado na `main`, uma autorização
+específica de teste pode permitir somente:
+
+1. confirmar `main`, `origin/main`, árvore e índice limpos e registrar o SHA
+   publicado;
+2. criar `work/validacao-<identificador>` apontando diretamente para esse SHA;
+3. executar um único push normal dessa branch, sem alteração ou novo commit;
+4. localizar o workflow pelo evento `push`, pela branch e pelo mesmo SHA; e
+5. exigir `completed/success` para o workflow, `Quality`, `API integration` e
+   `Required`.
+
+Esse teste não autoriza modificar arquivos, criar commit, integrar ou publicar na
+`main`, publicar outra branch nem declarar a modalidade ativa. A remoção da branch
+de validação exige autorização posterior e alvos exatos.
+
+### Autorização do ciclo após a ativação
+
+Uma única autorização explícita de ciclo deve registrar:
+
+- objetivo, escopo e riscos aprovados;
+- branch exclusiva `work/<incremento>`; e
+- `BASE_MAIN_SHA`, obtido da `main` local e de `origin/main` sincronizadas.
+
+Essa autorização permite criar a branch a partir de `BASE_MAIN_SHA`, alterar
+somente o escopo aprovado, criar os commits locais necessários e executar pushes
+normais somente para a branch autorizada. Correções técnicas rotineiras não exigem
+nova autorização quando permanecem no escopo; os gates afetados precisam ser
+reexecutados.
+
+A autorização de ciclo não permite:
+
+- integrar ou publicar diretamente na `main`;
+- alterar ou publicar outra branch;
+- force push, rebase automático ou reescrita de histórico;
+- modificar contratos AT, DEC, RN ou políticas de segurança;
+- ampliar escopo, aceitar risco novo ou introduzir dependência ou custo não
+  aprovado; nem
+- acessar ou alterar banco persistente ou privilégios não autorizados.
+
+### CI e revisão da branch
+
+Antes de solicitar integração:
+
+1. confirme branch, working tree, índice, SHA local e SHA remoto da branch;
+2. localize o workflow `CI` pelo evento `push`, branch `work/<incremento>`, SHA
+   final exato e tentativa atual;
+3. exija `completed/success` para o workflow e para `Quality`, `API integration` e
+   `Required`;
+4. trate ausência, cancelamento, skip ou conclusão diferente de `success` como
+   bloqueio; e
+5. realize revisão independente quando a mudança for de alto risco.
+
+Pull request é opcional e não substitui a execução de `push` no SHA final da
+branch. Nenhuma configuração paga de proteção de branch é requisito desta
+modalidade. Falha não corrigida de gate obrigatório impede integração e não pode
+ser ignorada por controle apenas operacional.
+
+### Integração fast-forward autorizada
+
+A integração exige autorização específica posterior; a autorização do ciclo não
+a concede. Antes de integrar:
+
+1. registre novamente a branch e seu SHA aprovado;
+2. confirme árvore e índice limpos;
+3. execute `git fetch --prune origin`, sem alterar commits locais;
+4. exija que `origin/main` continue exatamente em `BASE_MAIN_SHA`;
+5. exija que a branch autorizada esteja `0 behind / N ahead` de `origin/main`, com
+   o SHA remoto igual ao SHA aprovado pelo CI; e
+6. interrompa diante de avanço da `main`, divergência ou conjunto de commits
+   diferente do autorizado, sem merge, rebase, pull ou correção automática.
+
+Se todas as condições forem satisfeitas, a autorização de integração permite
+somente o fast-forward da `main` até o SHA aprovado da branch e um único push
+normal de `main` para `origin/main`. Não se cria merge commit nem se usa squash.
+Depois do push, confirme o SHA remoto e a divergência `0 behind / 0 ahead` e exija
+novo CI completo no SHA integrado da `main`.
+
+Falha do CI final é reportada sem reescrita de histórico. Correção ou reversão usa
+novo commit em ciclo autorizado posterior; nunca reset ou force push.
+
+### Encerramento e limpeza
+
+A branch local ou remota somente pode ser removida depois da sincronização da
+`main`, do CI final aprovado e do encerramento do ciclo. A remoção exige
+autorização específica, alvos exatos e confirmação de que pertencem ao ciclo; não
+há limpeza ampla ou automática.
 
 ## Preparação
 

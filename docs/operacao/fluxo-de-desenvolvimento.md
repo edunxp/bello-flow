@@ -255,27 +255,49 @@ inteiros não são reproduzidos; use referências e registre apenas o impacto no
 incremento. As afirmações relevantes seguem as classificações de confiabilidade
 deste documento.
 
-## Estratégia Git proposta
+## Preparação e ativação da branch curta
 
-Considerando que existe um único responsável com acesso ao repositório, propõe-se
-uma branch de curta duração por incremento. O Codex teria autonomia técnica
-delimitada ao escopo aprovado; cada commit e cada push na branch exigiriam a
-autorização de escopo específica definida pelo procedimento futuro. O CI seria
-obrigatório na branch antes da integração, e a revisão independente examinaria o
-diff, as fontes primárias, os riscos e as evidências do SHA candidato.
+Para o único responsável pelo repositório, a modalidade preparada usa uma branch
+`work/<incremento>` por ciclo, criada a partir da `main` sincronizada. O
+`BASE_MAIN_SHA` é registrado antes da criação. Uma autorização explícita de ciclo
+delimita objetivo, escopo e branch e, depois da ativação da modalidade, permite ao
+Codex criar commits locais e realizar pushes normais somente nessa branch. Pull
+request permanece opcional.
 
-A integração na `main` dependeria de autorização expressa do responsável. Pull
-request seria opcional, e a estratégia não dependeria obrigatoriamente de recursos
-pagos de proteção de branch. Após a integração, a sincronização, o SHA exato e o
-CI aplicável seriam verificados.
+Durante o ciclo, correções técnicas rotineiras, testes e documentação seguem com
+autonomia dentro do escopo. A autorização não alcança outra branch, integração na
+`main`, force push, rebase automático, contratos aprovados, ampliação de escopo,
+banco persistente ou riscos novos.
 
-Essa estratégia ainda não está vigente. Sua adoção depende de aprovação
-posterior explícita, verificação dos gatilhos do GitHub Actions, definição do
-procedimento de integração e sincronização e confirmação dos checks e da
-verificação do SHA exato. Até essas condições serem cumpridas, permanecem válidas
-as etapas 6 a 8 deste documento e o procedimento atual de commit e publicação em
-`main`. Esta proposta não autoriza criar branch, pull request, integração, merge,
-commit ou push.
+O CI da branch é localizado pelo evento `push`, nome da branch e SHA final exato.
+`Quality`, `API integration` e `Required` precisam terminar com `success`. Falha
+obrigatória não corrigida impede integração. Mudança de alto risco exige revisão
+independente antes da decisão do responsável.
+
+A integração exige autorização específica e segue fast-forward only. Antes dela,
+`origin/main` precisa continuar exatamente em `BASE_MAIN_SHA`, e a branch precisa
+estar `0 behind / N ahead` da base. Divergência ou avanço da `main` interrompe o
+fluxo sem rebase ou merge automático. Depois do fast-forward e do push normal
+autorizado da `main`, o CI final é obrigatório no SHA integrado. A branch somente
+pode ser removida após encerramento validado e autorização de limpeza.
+
+### Estado de adoção
+
+- **Preparação:** os gatilhos do CI e os procedimentos estão alterados localmente,
+  mas ainda não publicados; a modalidade não possui vigência operacional.
+- **Ativação:** exige publicação deste preparo, CI aprovado na `main` e teste real
+  bem-sucedido de uma branch `work/**`, com os três jobs no SHA exato. Depois
+  dessas evidências, a ativação precisa ser formalizada explicitamente.
+
+O teste real usa autorização específica e controlada: cria
+`work/validacao-<identificador>` diretamente no SHA publicado da `main`, executa
+um push normal sem novo commit e verifica o CI desse mesmo SHA. O teste não
+autoriza alterações, integração ou ativação automática; sua limpeza exige
+autorização posterior.
+
+Até a ativação, permanecem inalteradas as etapas 6 a 8 e as modalidades vigentes
+para trabalho direto na `main`. Este preparo não autoriza criar branch, commit,
+push, integração ou limpeza.
 
 ## Diretrizes permanentes
 

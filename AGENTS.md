@@ -145,7 +145,8 @@ reexecutar as validações afetadas e atualizar a documentação aplicável enqu
 a correção permanecer no objetivo, no contrato e nos riscos já aprovados. Não é
 necessária uma nova rodada de autorização para cada correção desse tipo.
 
-Cada atividade adota uma das seguintes modalidades de autorização:
+Enquanto a modalidade de branch curta não estiver ativa, cada atividade adota
+uma das seguintes modalidades de autorização:
 
 - **Implementação:** autoriza somente as alterações e validações previstas. Não
   autoriza commit nem push.
@@ -154,10 +155,40 @@ Cada atividade adota uma das seguintes modalidades de autorização:
 - **Publicação controlada:** autoriza somente o push normal de commit local já
   aprovado e a verificação remota correspondente. Não autoriza novo commit.
 
-A publicação ocorre em atividade posterior ao commit e somente quando o pedido
-autoriza explicitamente publicar ou realizar push. Expressões ambíguas como
-“vamos em frente”, “continue” ou equivalentes não autorizam push. Autorização para
-commit nunca implica autorização para publicação.
+A modalidade **Ciclo em branch curta** está preparada, mas não está ativa. Ela só
+entra em vigor após a publicação deste preparo, a aprovação do CI correspondente,
+um teste real bem-sucedido em `work/**` e a formalização explícita de sua
+ativação. Até lá, aplicam-se exclusivamente as modalidades vigentes acima.
+
+Depois da publicação do preparo e do CI aprovado na `main`, uma atividade
+específica pode autorizar o **Teste controlado de ativação**. Ele permite somente
+criar `work/validacao-<identificador>` no SHA publicado da `main`, executar um
+push normal dessa referência e verificar o CI no mesmo SHA. Não autoriza alterar
+arquivos, criar commit, integrar na `main`, publicar outra branch nem ativar a
+modalidade por si só. A limpeza posterior permanece separadamente autorizada.
+
+Depois da ativação, uma autorização explícita de ciclo deve identificar objetivo,
+escopo, branch `work/<incremento>` e `BASE_MAIN_SHA`. Essa autorização permitirá
+criar a branch a partir da `main` sincronizada e, dentro do mesmo ciclo, criar
+commits locais e executar pushes normais somente nessa branch. Correções técnicas
+rotineiras e a reexecução dos gates afetados permanecerão autônomas dentro do
+escopo.
+
+A autorização de ciclo não permitirá integrar na `main`, alterar outra branch,
+usar force push, executar rebase automático, modificar contratos aprovados,
+ampliar escopo, acessar ou alterar banco persistente nem aceitar risco novo. A
+integração fast-forward na `main` e seu único push normal exigirão autorização
+posterior específica, após CI aprovado no SHA final da branch e revisão
+independente quando o risco for alto. A limpeza da branch exigirá autorização e
+somente poderá ocorrer depois do encerramento validado do ciclo.
+
+No fluxo vigente e em qualquer operação direta na `main`, a publicação ocorre em
+atividade posterior ao commit e somente quando o pedido autoriza explicitamente
+publicar ou realizar push. Expressões ambíguas como “vamos em frente”, “continue”
+ou equivalentes não autorizam push. Autorização para commit nunca implica
+autorização para publicação. Depois da ativação, somente a autorização explícita
+de ciclo reúne commits e pushes normais na branch `work/<incremento>`; ela não
+alcança integração ou push na `main`.
 
 Essa autonomia não elimina confirmações técnicas exigidas pelo sandbox. Antes de
 prosseguir, solicite aprovação humana quando for necessário modificar decisões
@@ -173,8 +204,8 @@ custo não aprovado. Continue somente atividades independentes que permaneçam
 seguras e autorizadas.
 
 Exigem autorização específica e separada: commit e publicação conforme as
-modalidades acima; reescrita de histórico Git; acesso ou alteração de bancos
-persistentes;
+modalidades vigentes acima; integração e push na `main`; reescrita de histórico
+Git; acesso ou alteração de bancos persistentes;
 exclusão de recursos preexistentes ou cuja propriedade não esteja comprovada;
 operações administrativas reais; e uso de recursos externos ou credenciais não
 autorizados. A publicação controlada não autoriza force push, rebase, merge,
