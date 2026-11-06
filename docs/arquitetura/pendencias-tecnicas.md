@@ -103,8 +103,10 @@ A F1-B.4.5.7 — Provider Produtivo e Configuração Operacional — foi aprovad
 publicada normativamente em 2026-11-05. Resend é o único provider de referência
 por API HTTPS, com configuração fail-fast, matriz fechada de respostas, mensagem
 mínima, tracking desativado, observabilidade sanitizada e port preservado. A
-implementação está validada localmente e aguarda commit; F1-B.4.5.8–F1-B.4.5.11
-continuam propostas não aprovadas.
+implementação foi publicada no commit
+`af392b32d9bd72f57f8375334079043ac85d3603`, com CI `42152502439` aprovado.
+F1-B.4.5.8 foi aprovada normativamente em 2026-11-06, ainda sem implementação;
+F1-B.4.5.9–F1-B.4.5.11 continuam propostas não aprovadas.
 
 Essa aprovação resolve a escolha normativa de fornecedor e o desenho técnico, mas
 não resolve a PT-009. A pendência conserva as evidências operacionais de:
@@ -124,15 +126,15 @@ Implementação local, commit ou publicação não substituem essas provas. PT-0
 pode ser reclassificada ou encerrada com evidências operacionais e aprovação
 específica; nenhuma disponibilidade produtiva é declarada.
 
-A reconciliação da F1-B.4.5.2 é exclusivamente observacional e não produz nova
-terminalização `NOT_FOUND`. O protocolo autorizado para encerrar intenções
-abandonadas, inclusive autoridade e coordenação persistente entre executores,
-permanece pendência operacional para incremento futuro antes da disponibilização
-produtiva completa. Para esse protocolo de abandono não estão aprovados função de
-fechamento, nova role, credencial, ownership, lease, heartbeat ou fencing. Os
-leases aprovados separadamente na F1-B.4.5.6 pertencem somente à entrega e não
-resolvem essa autoridade futura. A postergação preserva PT-003, PT-007, PT-008 e
-PT-009 abertas e não declara a recuperação funcional concluída.
+A F1-B.4.5.8 aprova normativamente a terminalização exclusiva `STARTED →
+NOT_FOUND` depois da expiração do token e da prova transacional completa. A
+seleção observacional distingue candidato, ociosidade e inconsistência; a função
+mutável usa os locks e grants mínimos aprovados, sem DML direto. Não se criam
+lease, heartbeat, ownership, fencing numérico, role ou credencial. A reconciliação
+existente permanece observacional, `UNKNOWN` não é terminalizado e F1-B.4.5.8 não
+implementa retenção ou expurgo. A implementação ainda não foi iniciada; PT-003,
+PT-007, PT-008, PT-009 e PT-014 permanecem abertas e nenhuma disponibilidade
+produtiva é declarada.
 
 ## Pendências técnicas resolvidas
 

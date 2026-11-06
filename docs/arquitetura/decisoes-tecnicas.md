@@ -211,10 +211,9 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 
 ### Complemento aprovado — F1-B.4.5 Recuperação de Senha
 
-- **Estado:** Aprovado; F1-B.4.5.1–F1-B.4.5.6 implementadas e publicadas nos
-  respectivos recortes; F1-B.4.5.7 aprovada normativamente, publicada e
-  implementada localmente, ainda sem commit da implementação; provider validado,
-  HTTP, frontend e demais incrementos permanecem pendentes
+- **Estado:** Aprovado; F1-B.4.5.1–F1-B.4.5.7 implementadas e publicadas nos
+  respectivos recortes; validação operacional do provider, HTTP, frontend e
+  demais incrementos permanecem pendentes
 - **Data de aprovação:** 2026-11-04
 - **Escopo:** formaliza exclusivamente a recuperação e a redefinição de senha da
   F1-B.4.5. Não altera os quatro endpoints publicados na F1-B.4.4, não implementa
@@ -730,9 +729,9 @@ matriz própria, inclusive refunds operacionais; esta decisão não altera seu
 contrato.
 
 A sequência F1-B.4.5.6–F1-B.4.5.11 permanecia somente proposta de planejamento
-quando este recorte foi publicado. A F1-B.4.5.6 e a F1-B.4.5.7 foram
-posteriormente aprovadas nos contratos abaixo; F1-B.4.5.8–F1-B.4.5.11 continuam
-propostas não aprovadas. PT-009, validação operacional do provider e
+quando este recorte foi publicado. F1-B.4.5.6–F1-B.4.5.8 foram posteriormente
+aprovadas nos contratos abaixo; F1-B.4.5.9–F1-B.4.5.11 continuam propostas não
+aprovadas. PT-009, validação operacional do provider e implementação da
 terminalização de intenções continuam necessárias para a disponibilidade
 produtiva completa.
 
@@ -833,9 +832,10 @@ lease e erro integral não são auditados.
 
 ### Contrato aprovado — F1-B.4.5.7 Provider Produtivo e Configuração Operacional
 
-- **Estado:** aprovado normativamente e publicado; implementação concluída e
-  validada localmente, ainda sem commit; provider não validado operacionalmente e
-  recuperação de senha não disponível em produção.
+- **Estado:** aprovado, implementado e publicado no commit
+  `af392b32d9bd72f57f8375334079043ac85d3603`, com CI `42152502439` aprovado;
+  provider não validado operacionalmente e recuperação de senha não disponível em
+  produção.
 - **Data de aprovação:** 2026-11-05.
 - **Objetivo:** integrar um provider real de e-mail transacional
   atrás do port da F1-B.4.5.6, com configuração, classificação conservadora de
@@ -893,11 +893,10 @@ Antes de ativar `resend`, evidência sanitizada deve comprovar:
 6. mensagem real controlada com remetente, conteúdo e URL preservados, sem pixel
    ou reescrita de link e sem segredo nas evidências.
 
-Essas verificações não integram o CI e não estão comprovadas pela aprovação
-normativa nem pela implementação validada localmente, ainda sem publicação ou CI
-remoto no SHA da implementação. PT-009 permanece aberta e sua reclassificação ou
-resolução exige as evidências e aprovação explícita; nenhuma disponibilidade
-produtiva é declarada.
+Essas verificações não integram o CI e não estão comprovadas pela aprovação,
+implementação, publicação técnica ou CI remoto. PT-009 permanece aberta e sua
+reclassificação ou resolução exige as evidências e aprovação explícita; nenhuma
+disponibilidade produtiva é declarada.
 
 #### D2 — configuração e segredos
 
@@ -1000,6 +999,132 @@ necessários. Nenhuma disponibilidade produtiva é declarada por este contrato.
 - **Decisões funcionais:** DEC-010, DEC-020.
 - **Regras:** RN-070, RN-126, RN-128.
 - **Relacionadas:** AT-003, AT-009, AT-010, PT-007, PT-008, PT-009 e PT-014.
+
+### Contrato aprovado — F1-B.4.5.8 Terminalização de Intenções Abandonadas
+
+- **Estado:** aprovado normativamente; implementação não iniciada.
+- **Data de aprovação:** 2026-11-06.
+- **Objetivo:** terminalizar de forma monotônica uma intenção de reset que permaneça
+  `STARTED` depois de encerrada a possibilidade normativa de sucesso do token,
+  mediante prova transacional completa e sem transformar idade, timeout, reinício,
+  lock livre ou ausência isolada de efeitos em prova de abandono.
+- **Incluído:** seleção observacional de candidato, terminalização PostgreSQL
+  protegida, executor interno desabilitado por padrão, observabilidade operacional
+  minimizada e testes unitários e PostgreSQL reais.
+- **Excluído:** `UNKNOWN`, HTTP público, frontend, provider Resend, retenção ou
+  expurgo geral, fila ou scheduler externo, outbox genérica, nova role, nova
+  credencial e F1-B.4.5.9–F1-B.4.5.11.
+
+#### Decisões D1–D8
+
+| ID  | Decisão aprovada                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | A única transição nova é `STARTED → NOT_FOUND`. `UNKNOWN` permanece intocado e nenhum estado terminal pode ser reaberto. `NOT_FOUND` terminal não se confunde com marcador fisicamente ausente, `REJECTED` ou resultado observacional `UNKNOWN`.                                                                                                                                                                                                                                                                                                              |
+| D2  | O limite funcional é o `expires_at` persistido do token vinculado. Não se cria outro deadline. Expiração isolada não basta: marcador `STARTED`, `terminal_at` nulo, token e grafo íntegros, ausência completa de efeitos e auditoria, locks e revalidação são cumulativos.                                                                                                                                                                                                                                                                                    |
+| D3  | `find_abandoned_password_reset_operation()` é estritamente observacional e prioriza trabalho elegível; `has_inconsistent_password_reset_operation()` é um probe booleano observacional e limitado; `terminalize_abandoned_password_reset_operation(reset_operation_id)` realiza a única mutação. O seletor retorna exatamente uma linha com `CANDIDATE`, `INCONSISTENT` ou `NO_CANDIDATE`; o terminalizador retorna exatamente um de `TERMINALIZED`, `NOT_ELIGIBLE`, `ALREADY_TERMINAL`, `NOT_OBSERVED` ou `INCONSISTENT`, segundo a partição fechada abaixo. |
+| D4  | As três funções são `SECURITY DEFINER`, pertencem ao migrator, fixam `search_path = pg_catalog, public, pg_temp`, qualificam objetos, validam argumentos e não usam SQL dinâmico. `PUBLIC`, bootstrap e manutenção não recebem `EXECUTE`; somente `bello_runtime` recebe o grant mínimo, sem DML direto ou nova role/credencial.                                                                                                                                                                                                                              |
+| D5  | Não se adicionam lease, heartbeat, ownership ou fencing numérico. Antes da expiração, trabalho ainda pode produzir sucesso e não é elegível. Depois dela, a conclusão já não pode produzir sucesso; o advisory lock, os row locks, a revalidação integral e o estado terminal `NOT_FOUND` funcionam como fence contra conclusão tardia.                                                                                                                                                                                                                       |
+| D6  | `NOT_FOUND` não gera auditoria funcional. Observabilidade usa categorias fechadas e minimizadas, sem senha, PHC, token ou hash, e-mail, link, IP bruto, payload, credencial ou identificadores sensíveis em logs e métricas comuns. Não se cria plataforma nova.                                                                                                                                                                                                                                                                                              |
+| D7  | `BELLO_PASSWORD_RESET_TERMINALIZER_MODE=disabled\|internal`; ausência equivale a `disabled`, valor inválido falha no bootstrap e `internal` exige ativação explícita. Polling é de 60 segundos, lote máximo dez, paralelismo um por instância, `lock_timeout` dois segundos e `statement_timeout` cinco segundos. Teste não inicia worker por configuração ambiental, shutdown é conservador e falha não provoca loop agressivo.                                                                                                                              |
+| D8  | `terminal_at` é definido somente no commit confirmado de `NOT_FOUND` e inicia a retenção de 30 dias. `STARTED` não terminalizado, `UNKNOWN` e operações ainda reconciliáveis permanecem protegidos. Reconciliação continua observacional e nenhuma exclusão física integra este incremento.                                                                                                                                                                                                                                                                   |
+
+#### Seleção, inconsistência e prova
+
+O universo de seleção contém todos os marcadores `STARTED` ainda presentes. Um
+candidato é íntegro, possui token e cadeia conta/request/tentativa/ordinal
+coerentes, está funcionalmente expirado e não apresenta efeito ou auditoria
+atribuído. Uma inconsistência identificável é um `STARTED` com token ausente,
+vínculo ou ordinal incompatível, conta divergente, ou consumo, invalidação, efeito
+ou auditoria contraditórios.
+
+O seletor faz no máximo duas provas observacionais limitadas a uma linha. Primeiro
+procura `CANDIDATE`, ordenado por `token.expires_at` e `reset_operation_id`. Somente
+se não houver candidato procura `INCONSISTENT`, ordenado por `operation.updated_at`
+e `reset_operation_id`; essa chave não depende de token existente. Retorna
+`NO_CANDIDATE` com UUID nulo somente quando ambas as provas não encontram linha.
+`CANDIDATE` e `INCONSISTENT` retornam UUID v4 não nulo. Toda condição do candidato é
+revalidada sob locks pela função mutável.
+
+Essa prioridade garante progresso do trabalho, mas candidatos continuamente
+presentes poderiam adiar a resposta `INCONSISTENT`. Para limitar esse adiamento sem
+cursor, estado ou fila adicional, cada ciclo que completar o lote de dez executa
+uma única vez `has_inconsistent_password_reset_operation()`. O probe reutiliza o
+mesmo universo e os mesmos predicados de inconsistência, faz somente uma prova
+`EXISTS` limitada e retorna booleano, sem UUID. Resultado verdadeiro produz o sinal
+operacional sanitizado `INCONSISTENT`, mas não interrompe o processamento de
+candidatos. Assim, a existência de inconsistência é sinalizada no máximo ao fim de
+um lote cheio; a enumeração ou reparo de cada linha permanece operação de
+manutenção fora deste incremento. Sob concorrência, seleção e probe podem ficar
+obsoletos e nunca autorizam mutação por si mesmos.
+
+A terminalização localiza a conta, adquire o advisory lock compartilhado e segue
+a ordem global: conta, credencial, marcadores por UUID, requests por UUID,
+tentativas por UUID, tokens por UUID, sessões por UUID e auditoria. Sob esses locks,
+revalida estado, vínculo, expiração pelo `transaction_timestamp()`, ausência de
+efeitos e auditoria e executa `UPDATE` condicional de exatamente uma linha, usando o
+mesmo instante para `updated_at` e `terminal_at`. Evidência parcial ou contraditória
+retorna `INCONSISTENT` sem mutação.
+
+Se conclusão adquirir primeiro os locks, termina em `COMPLETED` antes da expiração
+ou `REJECTED` depois dela; o terminalizador observa estado terminal. Se o
+terminalizador confirmar primeiro, conclusão tardia recebe
+`RECONCILIATION_REQUIRED` e não altera credencial, token ou sessões. Duas instâncias
+podem observar o mesmo candidato, mas somente uma transição é confirmada. A
+reconciliação mantém assinatura e comportamento exclusivamente observacionais.
+
+Rollback preserva `STARTED`. Após commit indeterminado, o alvo já conhecido é
+reconciliado; não há repetição cega. `NOT_FOUND` confirma a terminalização,
+`COMPLETED` ou `REJECTED` confirmam corrida perdida, `INCONSISTENT` exige tratamento
+operacional e falha de observação permanece indeterminada. Nova avaliação somente
+ocorre quando leitura posterior confiável volta a comprovar o mesmo marcador ainda
+`STARTED` e elegível, seguida de revalidação integral sob locks.
+
+O terminalizador particiona os estados sem sobreposição: ausência física produz
+`NOT_OBSERVED`; `STARTED` fisicamente coerente mas ainda não expirado produz
+`NOT_ELIGIBLE`; `UNKNOWN` fisicamente coerente também produz `NOT_ELIGIBLE`, sem ser
+tratado como terminal ou ausente; `COMPLETED`, `REJECTED` e `NOT_FOUND` coerentes
+produzem `ALREADY_TERMINAL`; estado persistido `INCONSISTENT`, grafo contraditório
+ou combinação impossível produzem `INCONSISTENT`; somente `STARTED` íntegro,
+expirado, sem efeitos e atualizado em exatamente uma linha produz `TERMINALIZED`.
+Cardinalidade zero exige releitura sob os mesmos locks e aplicação dessa mesma
+partição. Exceção SQL ou falha de leitura não inventa resultado funcional.
+
+#### Executor, observabilidade e limites
+
+O worker NestJS interno não usa scheduler externo, fila, leader election ou
+coordenação fora do PostgreSQL. `disabled` é kill switch. Em teste, o worker não é
+iniciado acidentalmente por variável ambiental; configuração controlada é injetada
+nos testes. Um ciclo processa sequencialmente até dez candidatos; depois de lote
+cheio executa o probe booleano uma vez e pode agendar continuação imediata.
+Ociosidade, inconsistência ou falha de infraestrutura aguardam o polling normal.
+Shutdown impede novos ciclos, cancela o timer ainda não iniciado e aguarda a
+operação SQL ativa sem presumir rollback.
+
+As categorias operacionais fechadas são `NO_CANDIDATE`, `TERMINALIZED`,
+`LOST_RACE`, `ALREADY_TERMINAL`, `INCONSISTENT`, `INDETERMINATE` e
+`INFRASTRUCTURE_ERROR`. Podem ser observados resultado, duração, quantidade e
+categoria segura de falha. `reset_operation_id` e demais identificadores não
+integram logs ou métricas comuns.
+
+`NO_CANDIDATE` mapeia ao sinal homônimo; `TERMINALIZED`, `ALREADY_TERMINAL` e
+`INCONSISTENT` mapeiam aos sinais homônimos; todo `NOT_ELIGIBLE` é `LOST_RACE`,
+indicando observação obsoleta ou chamada fora da elegibilidade;
+`NOT_OBSERVED` é `INDETERMINATE`. Rollback confirmado
+antes de commit e falha de infraestrutura sem envio possível são
+`INFRASTRUCTURE_ERROR`; timeout, conexão perdida, cancelamento ou erro depois de
+possível envio de commit são `INDETERMINATE` até reconciliação. Exceção SQL, timeout
+ou falha de observação nunca se tornam `NO_CANDIDATE`.
+
+Uma computação Argon2id ainda ativa nunca é terminalizada antes da expiração. Se
+retomar depois, já não pode produzir sucesso porque a conclusão revalida o token;
+a primeira transação elegível confirmada prevalece. A integração Resend e PT-009
+permanecem independentes e abertas. Aprovação deste contrato não declara
+implementação, publicação ou disponibilidade produtiva.
+
+- **Requisitos:** BEL-032, BEL-038.
+- **Decisões funcionais:** DEC-010, DEC-020.
+- **Regras:** RN-070, RN-126, RN-128.
+- **Relacionadas:** AT-003, AT-009, AT-010, PT-003, PT-007, PT-008, PT-009 e PT-014.
 
 ## AT-002 — Autorização centralizada
 
@@ -1271,9 +1396,8 @@ necessários. Nenhuma disponibilidade produtiva é declarada por este contrato.
 - **Regras:** RN-069–RN-076, RN-120–RN-128.
 - **Relacionadas:** AT-001, AT-003, AT-007, AT-010.
 - **Evolução:** a F1-B.4.5 aprovou geração just-in-time sem persistir token ou
-  link recuperável. F1-B.4.5.6 foi publicada; F1-B.4.5.7 aprova Resend e possui
-  implementação local validada, ainda sem commit e sem validação operacional.
-  PT-009 continua aberta.
+  link recuperável. F1-B.4.5.6 e F1-B.4.5.7 foram publicadas; a integração Resend
+  permanece sem validação operacional. PT-009 continua aberta.
 
 ## AT-010 — Observabilidade, testes e prontidão
 

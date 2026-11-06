@@ -58,9 +58,8 @@ O contrato de recuperação está aprovado, e a fundação PostgreSQL da F1-B.4.
 as operações da F1-B.4.5.2, a admissão/capacidade da F1-B.4.5.3 e a
 solicitação/classificação da F1-B.4.5.4 e a redefinição interna da F1-B.4.5.5
 foram publicadas. O processamento da F1-B.4.5.6 também foi publicado; o provider
-da F1-B.4.5.7 possui contrato publicado e implementação local validada, ainda sem
-commit. HTTP público e demais testes ponta a ponta continuam pendentes. A entrega
-completa deve cobrir:
+da F1-B.4.5.7 possui contrato e implementação publicados. HTTP público e demais
+testes ponta a ponta continuam pendentes. A entrega completa deve cobrir:
 
 - unitários: DTOs exatos, normalização, Base64URL canônica, hash com separação de
   domínio, transições, leases, cooldown, quotas, três tentativas, três tokens
@@ -478,10 +477,10 @@ chamada, abort, truncamento e limite incremental de 64 KiB em respostas fixed e
 chunked, sem rede externa.
 
 Em PostgreSQL `18.6` descartável, 222 cenários aplicáveis foram aprovados na
-validação inicial, inclusive os 18 da F1-B.4.5.6. Após a correção da leitura
-HTTP, os 18 cenários da F1-B.4.5.6 foram reexecutados e aprovados; os recursos
-temporários foram removidos ao final. Essas evidências são locais e ainda aguardam
-commit, publicação e CI remoto.
+validação inicial, inclusive os 18 da F1-B.4.5.6. Após a correção da leitura HTTP,
+os 18 cenários da F1-B.4.5.6 foram reexecutados e aprovados; os recursos
+temporários foram removidos ao final. A implementação foi publicada no commit
+`af392b32d9bd72f57f8375334079043ac85d3603`, validado pelo CI `42152502439`.
 
 O Web permaneceu em 100% nas quatro métricas. O consolidado alcançou 94,50% de
 statements, 92,20% de branches, 97,36% de functions e 94,86% de lines; formatação,
@@ -494,6 +493,44 @@ remetente, chave mínima e segregada, TLS, retenção e jurisdição avaliadas,
 `open_tracking=false`, `click_tracking=false`, ausência de pixel ou reescrita e
 preservação da URL. A evidência registra somente resultados, nunca destinatário,
 token, link, segredo, payload ou provider message ID.
+
+### Critérios específicos da F1-B.4.5.8
+
+A terminalização exige testes unitários, de lifecycle e PostgreSQL `18.6` real
+descartável. Sleeps arbitrários não comprovam concorrência; as corridas usam
+transações explícitas, locks, probes de `pg_stat_activity`, promises ou barreiras
+controladas.
+
+| Área             | Evidência obrigatória                                                                                                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| limite funcional | `STARTED` antes da expiração nunca é selecionado; no instante e depois de `expires_at`, o `transaction_timestamp()` governa a elegibilidade sem tornar o tempo prova isolada            |
+| trabalho ativo   | Argon2id em andamento antes da expiração permanece autorizado; retomada posterior nunca produz sucesso e segue a corrida aprovada entre `REJECTED` e `NOT_FOUND`                        |
+| estados          | somente `STARTED → NOT_FOUND`; `UNKNOWN` intocado; terminal nunca reaberto; marcador ausente distinto de `NOT_FOUND`                                                                    |
+| seleção          | exatamente uma linha; candidatos precedem inconsistências; ordem total por expiração/UUID ou atualização/UUID; somente ausência de ambas produz `NO_CANDIDATE`                          |
+| justiça          | marcador inconsistente coexistindo com um ou vários candidatos não bloqueia progresso; lote cheio executa um probe booleano e sinaliza inconsistência em até dez terminalizações        |
+| grafo            | token ausente, conta, request, tentativa, ordinal ou vínculo incompatível, consumo ou invalidação divergente produzem `INCONSISTENT`, nunca `NO_CANDIDATE`                              |
+| probe            | `EXISTS` limitado usa o mesmo universo e predicados, não retorna UUID, não muta dados e não impede candidatos; backlog finito termina expondo a inconsistência pelo seletor             |
+| mutação          | matriz completa dos cinco resultados cobre cada estado, ausência, instante de expiração, cardinalidade zero e combinação impossível; somente prova completa altera uma linha            |
+| corridas         | conclusão antes/depois da expiração versus terminalização nas duas ordens; reconciliação nas duas ordens; duas instâncias e candidatos concorrentes                                     |
+| efeitos          | nenhuma alteração de credencial, token, request, tentativa ou sessão e nenhum `audit_event` funcional na terminalização                                                                 |
+| falhas           | crash antes e depois do possível commit, rollback em cada etapa, timeout, conexão perdida, observação falha e ausência de repetição cega                                                |
+| idempotência     | repetição após observação conclusiva não duplica efeito nem timestamps; estado terminal retorna sem mutação                                                                             |
+| locks            | advisory lock da conta, row locks na ordem global, revalidação depois da espera, ausência de deadlock e contas independentes concorrentes                                               |
+| privilégios      | owner, `SECURITY DEFINER`, `search_path`, objetos qualificados, ausência de SQL dinâmico e shadowing, `REVOKE` e `EXECUTE` mínimo sem DML direto                                        |
+| executor         | `disabled` por padrão, modo inválido fail-fast, `internal` explícito, teste sem worker ambiental, polling 60 s, lote dez, paralelismo um, timeouts 2 s/5 s e ausência de loop agressivo |
+| lifecycle        | lote cheio, ociosidade, inconsistência, falha de infraestrutura, shutdown antes e durante chamada e múltiplas instâncias                                                                |
+| observabilidade  | mapeamento exato de resultados, probe, commit indeterminado e falha para categorias fechadas; nenhum erro vira ociosidade; ausência de identificadores ou dados sensíveis               |
+| retenção         | `terminal_at` somente em commit de `NOT_FOUND`, reconhecimento dentro dos 30 dias e proteção de `STARTED`, `UNKNOWN` e reconciliáveis; nenhum expurgo                                   |
+| regressão        | intenção, conclusão, reconciliação, caso de uso, Argon2id, login, sessões, solicitação, entrega e Resend permanecem aprovados                                                           |
+
+Testes parametrizados devem falhar se estado, resultado, categoria operacional,
+cardinalidade, grant ou campo observável for ampliado sem mudança normativa. A
+cobertura da matriz inclui `UNKNOWN`, `INCONSISTENT` persistido, `NOT_FOUND`
+terminal, marcador ausente, `STARTED` antes/no instante/depois da expiração,
+concorrência que zera o `UPDATE`, falha de leitura sem efeito inventado e todos os
+mapeamentos operacionais. A cobertura permanece em no mínimo 90% para lines,
+statements, functions e branches em API, Web e consolidado, sem exclusão
+artificial. `Quality`, `API integration` e `Required` permanecem obrigatórios.
 
 ## Integração com PostgreSQL real
 

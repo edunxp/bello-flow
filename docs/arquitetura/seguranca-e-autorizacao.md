@@ -427,8 +427,8 @@ F1-B.4.5.1, a camada transacional F1-B.4.5.2, a admissão/capacidade da
 F1-B.4.5.3 e os casos de uso internos F1-B.4.5.4–F1-B.4.5.5 foram publicados.
 O processamento da F1-B.4.5.6 foi implementado e publicado no commit
 `601c92ab8f3922b5f0e2a03c432de5fc74c6258d`, com CI `42117321177` aprovado. A
-F1-B.4.5.7 possui contrato normativo publicado e implementação local validada,
-mas provider validado, HTTP e disponibilidade produtiva permanecem pendentes.
+F1-B.4.5.7 possui contrato normativo e implementação publicados, mas validação
+operacional do provider, HTTP e disponibilidade produtiva permanecem pendentes.
 Ele detalha AT-001, AT-003 e AT-009, resolve normativamente a PT-007 e o recorte
 de recuperação da PT-008 e preserva a PT-009 aberta.
 
@@ -828,9 +828,9 @@ fora do código. Erros e logs não revelam valor, prefixo, tamanho ou presença
 parcial do segredo. `disabled` é kill switch explícito mesmo quando a infraestrutura
 injeta credenciais, e nenhum modo possui fallback silencioso.
 
-A implementação local aplica essas barreiras no bootstrap, seleciona o adapter
-Resend somente no modo explícito e mantém `disabled` como padrão. Essa evidência
-sintética não comprova chave, remetente, domínio ou conta reais.
+A implementação publicada aplica essas barreiras no bootstrap, seleciona o
+adapter Resend somente no modo explícito e mantém `disabled` como padrão. Essa
+evidência sintética não comprova chave, remetente, domínio ou conta reais.
 
 #### Classificação conservadora e efeito externo
 
@@ -965,13 +965,74 @@ ausência de efeitos não provam abandono. Ela não altera marcador, auditoria n
 efeitos de negócio. `NOT_FOUND` somente é reconhecido a partir de marcador já
 terminal e evidências coerentes; o runtime não produz nova terminalização desse
 estado na F1-B.4.5.2. Crash ou intenção aparentemente abandonada permanece
-`STARTED` ou `UNKNOWN`, sem recuperação automática. Um protocolo autorizado de
-fechamento depende de decisão futura anterior à disponibilização produtiva
-completa.
+`STARTED` ou `UNKNOWN`, sem recuperação automática pela F1-B.4.5.2. O contrato da
+F1-B.4.5.8 abaixo define a autoridade futura de terminalização, mas sua
+implementação ainda não foi iniciada e não declara disponibilidade produtiva.
 
 Os predicados físicos, contagens, cadeia de alterações posteriores e política de
 retry estão em
 [persistência e auditoria](persistencia-e-auditoria.md#operações-transacionais-da-f1-b452).
+
+### F1-B.4.5.8 — terminalização segura de intenções abandonadas
+
+O contrato aprovado autoriza somente `STARTED → NOT_FOUND`. `UNKNOWN` continua
+fail-closed e nenhum estado terminal é reaberto. Marcador terminal `NOT_FOUND`
+significa intenção conhecida, encerrada sem efeito funcional e ainda dentro da
+janela probatória; marcador ausente continua observação insuficiente, `REJECTED`
+continua negativa funcional auditada e `UNKNOWN` continua indeterminação.
+
+O `expires_at` do token vinculado é o limite funcional. Antes dele, Argon2id ainda
+pode produzir hash apto à conclusão e a intenção nunca é elegível. Depois dele,
+conclusão revalida o token e não pode produzir sucesso. Expiração, idade, timeout,
+reinício ou advisory lock livre, isoladamente, não autorizam terminalização: são
+obrigatórios marcador `STARTED`, `terminal_at` nulo, grafo íntegro, ausência total
+de efeitos e auditoria e revalidação sob a ordem global de locks.
+
+A seleção observacional prioriza `CANDIDATE`, ordenado por expiração e UUID; sem
+candidato, retorna a primeira `INCONSISTENT` por atualização e UUID; somente a
+ausência de ambos produz `NO_CANDIDATE`. Vínculo quebrado, token ausente, ordinal
+incompatível, consumo ou invalidação divergente nunca são convertidos em
+ociosidade. Depois de cada lote cheio, um probe booleano limitado sinaliza a
+existência de inconsistência mesmo sob fluxo contínuo, sem retornar UUID, bloquear
+candidatos ou reparar dados.
+
+A função mutável recebe somente UUID v4 de operação, descobre internamente a conta
+e a chave de serialização e retorna resultado fechado. As três interfaces usam
+`SECURITY DEFINER`, owner migrator, `search_path` protegido, objetos qualificados,
+nenhum SQL dinâmico e `EXECUTE` exclusivo do runtime. Não há DML sensível direto,
+role ou credencial nova, e a reconciliação observacional não é usada como reparo.
+
+Conclusão e terminalização adquirem os mesmos locks. Se conclusão confirmar
+primeiro, produz `COMPLETED` ou `REJECTED`; se terminalização confirmar primeiro,
+`NOT_FOUND` cerca a conclusão tardia, que falha sem tocar credencial, tokens ou
+sessões. Duas instâncias podem concorrer, mas somente uma atualização condicional
+vence. Commit indeterminado é observado pelo ID conhecido e não repetido por
+suposição; falha de observação permanece indeterminada.
+
+Marcador ausente é `NOT_OBSERVED`; `STARTED` íntegro antes da expiração e
+`UNKNOWN` íntegro são `NOT_ELIGIBLE`; `COMPLETED`, `REJECTED` e `NOT_FOUND`
+coerentes são `ALREADY_TERMINAL`; estado persistido `INCONSISTENT` ou evidência
+contraditória é `INCONSISTENT`. Somente atualização confirmada de um `STARTED`
+íntegro e expirado é `TERMINALIZED`. Falha SQL não recebe classificação funcional.
+
+Não se adicionam lease, heartbeat, ownership ou fencing numérico, pois não existe
+reassunção do hash. O fence é a transição terminal sob locks depois da perda
+objetiva da aptidão do token. Pausa ou crash antes da expiração preservam
+`STARTED`; retomada posterior à expiração nunca recupera autorização de sucesso.
+
+O executor interno usa
+`BELLO_PASSWORD_RESET_TERMINALIZER_MODE=disabled|internal`, com `disabled` por
+padrão, ativação explícita, polling de 60 segundos, lote dez, paralelismo um,
+`lock_timeout` de dois segundos e `statement_timeout` de cinco segundos. Testes não
+iniciam worker por configuração ambiental; shutdown impede novos ciclos e aguarda
+a operação ativa conservadoramente. Não há fila, scheduler, leader election ou
+plataforma nova.
+
+`NOT_FOUND` não gera auditoria funcional. Logs e métricas comuns usam somente
+categorias fechadas, duração e contagens; proíbem senha, PHC, token ou hash, e-mail,
+link, IP bruto, payload, credencial, `reset_operation_id` e demais identificadores
+sensíveis. A janela de 30 dias começa apenas no `terminal_at` confirmado; este
+incremento não remove dados nem altera a PT-009 ou a disponibilidade produtiva.
 
 ## Fluxo de uma requisição protegida
 
@@ -1038,8 +1099,8 @@ O comando, formato de autorização e mecanismo operacional da CLI serão defini
 
 A F1-B.4.5 detalha geração just-in-time sem persistir token ou link recuperável;
 a geração e o processamento foram publicados pela F1-B.4.5.6. O contrato Resend
-da F1-B.4.5.7 está implementado e validado localmente, ainda sem commit, mas não
-foi validado operacionalmente; a
+da F1-B.4.5.7 está implementado e publicado, mas não foi validado
+operacionalmente; a
 [PT-009](pendencias-tecnicas.md#pendências-operacionais) permanece aberta.
 
 ## Respostas e minimização

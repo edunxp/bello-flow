@@ -401,9 +401,9 @@ local, outbox genérica ou retenção própria do conteúdo. Nenhuma mudança de
 roles, owner, `EXECUTE`, DML runtime ou credencial PostgreSQL pertence à
 F1-B.4.5.7.
 
-A implementação local preserva essa fronteira: não adiciona migration, schema,
-DML, acesso do adapter ao banco ou campo persistido, e as regressões das cinco
-operações foram aprovadas em PostgreSQL `18.6` descartável.
+A implementação publicada preserva essa fronteira: não adiciona migration,
+schema, DML, acesso do adapter ao banco ou campo persistido, e as regressões das
+cinco operações foram aprovadas em PostgreSQL `18.6` descartável.
 
 #### Contrato publicado da F1-B.4.5.4
 
@@ -892,13 +892,13 @@ Evidência positiva parcial ou contraditória continua `INCONSISTENT`; marcador
 terminal só retorna sua classificação depois da prova completa correspondente.
 
 Não existe função PostgreSQL de fechamento nem overload de reconciliação com modo
-mutável na F1-B.4.5.2. O estado físico `NOT_FOUND` é preservado e pode ser
-reconhecido somente quando o marcador já estiver terminal nesse estado e sua
-ausência de efeitos for coerente. O protocolo autorizado que poderá produzir essa
-terminalização fica adiado para incremento futuro anterior à disponibilização
-produtiva completa e deverá definir sua própria autoridade e coordenação
-persistente antes de receber grants. Até lá, crash ou abandono aparente preserva
-`STARTED` ou `UNKNOWN` e não possui recuperação automática.
+mutável na implementação publicada da F1-B.4.5.2. O estado físico `NOT_FOUND` é
+preservado e pode ser reconhecido somente quando o marcador já estiver terminal
+nesse estado e sua ausência de efeitos for coerente. A F1-B.4.5.8 abaixo aprova a
+autoridade e a coordenação do protocolo que poderá produzir essa terminalização,
+mas sua implementação ainda não foi iniciada. Até que ela seja publicada e
+ativada, crash ou abandono aparente preserva `STARTED` ou `UNKNOWN` e não possui
+recuperação automática.
 
 Após commit indeterminado da conclusão, não há fechamento nem retry automático: a
 reconciliação espera o advisory lock e procura o conjunto completo de evidências.
@@ -968,6 +968,131 @@ operações resolvidas, tokens, tentativas e requests, respeitando as referênci
 Cada lote registra período, quantidades e resultado sem PII. Falha é retomável e
 não remove registros sem confirmação. Auditoria funcional permanece sujeita aos
 24 meses, separada dessa retenção operacional.
+
+### F1-B.4.5.8 — terminalização de intenções abandonadas
+
+A F1-B.4.5.8 aprova três novas interfaces protegidas, sem alterar a assinatura ou
+o caráter observacional de `reconcile_password_reset_operation`:
+
+```text
+find_abandoned_password_reset_operation()
+  RETURNS TABLE (outcome text, reset_operation_id uuid)
+
+has_inconsistent_password_reset_operation()
+  RETURNS boolean
+
+terminalize_abandoned_password_reset_operation(
+  p_reset_operation_id uuid
+) RETURNS text
+```
+
+A seleção sempre retorna exatamente uma linha. Os resultados são:
+
+| `outcome`      | `reset_operation_id` | Significado                                                                 |
+| -------------- | -------------------- | --------------------------------------------------------------------------- |
+| `CANDIDATE`    | UUID v4 não nulo     | existe `STARTED` íntegro cujo token perdeu aptidão funcional                |
+| `NO_CANDIDATE` | `NULL`               | não existe candidato elegível nem inconsistência observada                  |
+| `INCONSISTENT` | UUID v4 do marcador  | um `STARTED` possui grafo, ordinal, vínculo ou estado de token incompatível |
+
+O universo contém todos os marcadores `STARTED` fisicamente presentes. O seletor
+faz duas provas de uma linha: primeiro procura candidato íntegro e funcionalmente
+expirado, ordenado por `token.expires_at, reset_operation_id`; na ausência dele,
+procura inconsistência identificável, ordenada por
+`operation.updated_at, reset_operation_id`. `LEFT JOIN` e predicados explícitos
+impedem que token ausente, conta ou request divergente, ordinal incompatível, ou
+token consumido/inválido sem conclusão coerente desapareçam como `NO_CANDIDATE`.
+Somente a ausência das duas classes retorna `NO_CANDIDATE`. O UUID retornado é
+fronteira interna e nunca integra log ou métrica comum.
+
+Priorizar candidatos evita que uma linha quebrada paralise a terminalização. Para
+que fluxo contínuo não oculte indefinidamente a existência de inconsistência, ao
+fim de todo lote cheio o worker chama uma única vez
+`has_inconsistent_password_reset_operation()`. O probe usa o mesmo universo e os
+mesmos predicados, executa `EXISTS` limitado, retorna apenas booleano e não altera
+ordem, estado ou locks. Resultado verdadeiro emite somente a categoria sanitizada
+`INCONSISTENT`. Isso limita o adiamento do diagnóstico a dez terminalizações por
+instância; não enumera todas as inconsistências nem substitui investigação de
+manutenção. Seleção e probe são observações sujeitas a corrida e nunca autorizam
+mutação sem revalidação.
+
+A função mutável retorna exatamente um de `TERMINALIZED`, `NOT_ELIGIBLE`,
+`ALREADY_TERMINAL`, `NOT_OBSERVED` ou `INCONSISTENT`. UUID ausente ou não v4 falha
+com `22023` e código estável. A partição normativa é:
+
+| Estado/evidência depois dos locks                                                       | Condição transacional                                                     | Resultado              |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------- |
+| marcador fisicamente ausente                                                            | busca inicial ou releitura não encontra a linha                           | `NOT_OBSERVED`         |
+| `STARTED` íntegro antes de `expires_at`                                                 | nenhuma mutação                                                           | `NOT_ELIGIBLE`         |
+| `STARTED` íntegro em ou depois de `expires_at`, sem efeito ou auditoria                 | `UPDATE ... WHERE state = 'STARTED'` altera exatamente uma linha          | `TERMINALIZED`         |
+| `STARTED` com vínculo, ordinal, token, efeito ou auditoria contraditórios               | nenhuma mutação                                                           | `INCONSISTENT`         |
+| `UNKNOWN` fisicamente coerente                                                          | nenhuma mutação; não é terminal nem ausência                              | `NOT_ELIGIBLE`         |
+| `COMPLETED`, `REJECTED` ou `NOT_FOUND` com evidências coerentes                         | nenhuma mutação                                                           | `ALREADY_TERMINAL`     |
+| estado persistido `INCONSISTENT`                                                        | nenhuma mutação; nunca comprova êxito                                     | `INCONSISTENT`         |
+| estado não reconhecido, `terminal_at` incompatível ou combinação fisicamente impossível | nenhuma mutação                                                           | `INCONSISTENT`         |
+| cardinalidade zero no `UPDATE`                                                          | releitura sob os mesmos locks reaplica integralmente as linhas anteriores | resultado da releitura |
+
+No instante exato de expiração vale `token.expires_at <= transaction_timestamp()`.
+Conclusão que confirmar antes dos locks do terminalizador produz estado terminal e
+`ALREADY_TERMINAL`; outro terminalizador que confirmar primeiro produz
+`ALREADY_TERMINAL` sobre `NOT_FOUND`. `NOT_OBSERVED` não equivale ao estado
+funcional `NOT_FOUND`. Falha de leitura, timeout ou exceção SQL interrompe a função
+e não retorna um dos cinco resultados por suposição.
+
+Depois de descobrir otimisticamente a conta, a função adquire
+`acquire_auth_account_advisory_xact_lock(account_id)` e bloqueia conta, credencial,
+todos os marcadores da conta por UUID, requests por UUID, tentativas por UUID,
+tokens por UUID, sessões por UUID e auditoria. Sob esses locks, revalida:
+
+1. marcador ainda `STARTED` e `terminal_at IS NULL`;
+2. token vinculado existente, da mesma conta e com cadeia request/tentativa íntegra;
+3. `token.expires_at <= transaction_timestamp()`;
+4. zero alterações de credencial, consumos, invalidações, cancelamentos, revogações
+   e eventos de auditoria atribuídos ao `reset_operation_id`; e
+5. ausência de qualquer evidência parcial ou contraditória.
+
+Somente então atualiza exatamente uma linha de `STARTED` para `NOT_FOUND`, usando o
+mesmo `transaction_timestamp()` em `updated_at` e `terminal_at`. A expiração é
+necessária, mas não suficiente. Nenhum deadline, coluna, lease, heartbeat,
+ownership, fencing numérico ou novo estado é adicionado. Um índice parcial de
+suporte à seleção por token expirado pode integrar a migration somente se o plano
+PostgreSQL demonstrar necessidade; não altera semântica nem antecipa retenção.
+
+Conclusão, terminalização e reconciliação usam o mesmo advisory lock e a mesma
+ordem relativa. Conclusão confirmada primeiro produz `COMPLETED` ou `REJECTED` e a
+terminalização devolve `ALREADY_TERMINAL`. Terminalização confirmada primeiro
+produz `NOT_FOUND`; conclusão tardia devolve `RECONCILIATION_REQUIRED`. A
+reconciliação que vencer antes apenas observa `UNKNOWN`; se executar depois,
+reconhece `NOT_FOUND`. Duas instâncias podem selecionar o mesmo UUID, mas o lock e
+o `UPDATE ... WHERE state = 'STARTED'` permitem uma única transição.
+
+Rollback preserva `STARTED`. Após erro com commit possivelmente enviado, o caller
+conhece o UUID selecionado e usa reconciliação; não repete a mutação cegamente.
+Falha da observação permanece indeterminada. Nova tentativa exige leitura posterior
+confiável que volte a demonstrar o mesmo marcador ainda `STARTED` e elegível, além
+de toda a revalidação transacional. `40001`, `40P01` e `55P03` comprovadamente de
+`lock_timeout` admitem no máximo duas novas tentativas após rollback confirmado;
+`57014`, conexão e erro desconhecido não.
+
+As funções são `SECURITY DEFINER`, owner migrator, `search_path = pg_catalog,
+public, pg_temp`, nomes qualificados, argumentos estritos e nenhum SQL dinâmico.
+`PUBLIC`, bootstrap e manutenção não recebem `EXECUTE`; o runtime recebe somente
+os três grants novos. Não se concede `SELECT` ou DML direto nas tabelas.
+
+O adapter mapeia `NO_CANDIDATE`, `TERMINALIZED`, `ALREADY_TERMINAL` e
+`INCONSISTENT` às categorias homônimas. Todo `NOT_ELIGIBLE` é `LOST_RACE`, por
+observação obsoleta ou chamada fora da elegibilidade; `NOT_OBSERVED` é
+`INDETERMINATE`. Erro com rollback
+confirmado e sem envio possível de commit é `INFRASTRUCTURE_ERROR`; timeout,
+cancelamento, conexão perdida ou erro depois de possível envio é `INDETERMINATE`
+até reconciliação. Reconciliação `NOT_FOUND` confirma `TERMINALIZED`,
+`COMPLETED`/`REJECTED` confirmam `LOST_RACE`, `INCONSISTENT` preserva a categoria
+homônima e falha ou `UNKNOWN` permanece `INDETERMINATE`. Nenhum erro se torna
+`NO_CANDIDATE`.
+
+`NOT_FOUND` não grava `audit_event`, porque sua prova exige ausência de auditoria
+funcional. `terminal_at` confirmado inicia a janela existente de 30 dias.
+`STARTED` não terminalizado, `UNKNOWN` e operações reconciliáveis continuam
+protegidos. Nenhuma exclusão física pertence à F1-B.4.5.8.
 
 ## Isolamento, bloqueios e repetição
 
