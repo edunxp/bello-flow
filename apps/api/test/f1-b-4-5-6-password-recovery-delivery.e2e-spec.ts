@@ -1211,48 +1211,96 @@ describe('F1-B.4.5.6 protected password recovery delivery', () => {
     const tokenId = randomUUID();
     const token = tokenFixture();
 
-    await runtime.query('BEGIN');
-    await claim(runtime, attemptId, leaseId);
-    await expect(
-      reconcile(secondRuntime, fixture.requestId, attemptId, leaseId, tokenId),
-    ).resolves.toMatchObject({ outcome: 'NOT_FOUND' });
-    await runtime.query('ROLLBACK');
+    const inRolledBackTransaction = async (
+      operation: () => Promise<void>,
+    ): Promise<void> => {
+      await runtime.query('BEGIN');
+      try {
+        await operation();
+      } catch (error) {
+        await runtime.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      }
+      await runtime.query('ROLLBACK');
+    };
+
+    await inRolledBackTransaction(async () => {
+      await claim(runtime, attemptId, leaseId);
+      await expect(
+        reconcile(
+          secondRuntime,
+          fixture.requestId,
+          attemptId,
+          leaseId,
+          tokenId,
+        ),
+      ).resolves.toMatchObject({ outcome: 'NOT_FOUND' });
+    });
     await expect(
       reconcile(secondRuntime, fixture.requestId, attemptId, leaseId, null),
     ).resolves.toMatchObject({ outcome: 'NOT_FOUND' });
 
     await claim(runtime, attemptId, leaseId);
-    await runtime.query('BEGIN');
-    await prepare(runtime, attemptId, leaseId, tokenId, token.hash);
-    await expect(
-      reconcile(secondRuntime, fixture.requestId, attemptId, leaseId, tokenId),
-    ).resolves.toMatchObject({
-      outcome: 'OBSERVED',
-      attempt_state: 'PREPARING',
+    await inRolledBackTransaction(async () => {
+      const expiration = await runtime.query<{ expires_at: Date }>(
+        `SELECT pg_catalog.transaction_timestamp() + INTERVAL '29 minutes'
+           AS expires_at`,
+      );
+      await prepare(
+        runtime,
+        attemptId,
+        leaseId,
+        tokenId,
+        token.hash,
+        expiration.rows[0]!.expires_at,
+      );
+      await expect(
+        reconcile(
+          secondRuntime,
+          fixture.requestId,
+          attemptId,
+          leaseId,
+          tokenId,
+        ),
+      ).resolves.toMatchObject({
+        outcome: 'OBSERVED',
+        attempt_state: 'PREPARING',
+      });
     });
-    await runtime.query('ROLLBACK');
     await prepare(runtime, attemptId, leaseId, tokenId, token.hash);
 
-    await runtime.query('BEGIN');
-    await confirm(runtime, attemptId, leaseId);
-    await expect(
-      reconcile(secondRuntime, fixture.requestId, attemptId, leaseId, tokenId),
-    ).resolves.toMatchObject({
-      outcome: 'OBSERVED',
-      attempt_state: 'PREPARED',
+    await inRolledBackTransaction(async () => {
+      await confirm(runtime, attemptId, leaseId);
+      await expect(
+        reconcile(
+          secondRuntime,
+          fixture.requestId,
+          attemptId,
+          leaseId,
+          tokenId,
+        ),
+      ).resolves.toMatchObject({
+        outcome: 'OBSERVED',
+        attempt_state: 'PREPARED',
+      });
     });
-    await runtime.query('ROLLBACK');
     await confirm(runtime, attemptId, leaseId);
 
-    await runtime.query('BEGIN');
-    await complete(runtime, attemptId, leaseId, 'ACCEPTED');
-    await expect(
-      reconcile(secondRuntime, fixture.requestId, attemptId, leaseId, tokenId),
-    ).resolves.toMatchObject({
-      outcome: 'OBSERVED',
-      attempt_state: 'SENDING',
+    await inRolledBackTransaction(async () => {
+      await complete(runtime, attemptId, leaseId, 'ACCEPTED');
+      await expect(
+        reconcile(
+          secondRuntime,
+          fixture.requestId,
+          attemptId,
+          leaseId,
+          tokenId,
+        ),
+      ).resolves.toMatchObject({
+        outcome: 'OBSERVED',
+        attempt_state: 'SENDING',
+      });
     });
-    await runtime.query('ROLLBACK');
     await complete(runtime, attemptId, leaseId, 'ACCEPTED');
 
     const firstObservation = await reconcile(
