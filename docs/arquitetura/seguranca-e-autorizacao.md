@@ -163,8 +163,8 @@ conta inelegível e demais rejeições determinadas da credencial. O `401` não
 revela existência, elegibilidade ou estado da conta, e o `503` não revela a
 causa operacional. Para o login, limites, chaves, armazenamento, `Retry-After`
 e `429` estão definidos no subconjunto aprovado da PT-008. Recuperação de senha
-possui contrato separado na F1-B.4.5, implementado apenas nos incrementos
-publicados F1-B.4.5.1–F1-B.4.5.5; os endpoints de recuperação permanecem futuros.
+possui contrato separado na F1-B.4.5. O estado de implementação dos endpoints
+e da interface deve ser consultado no documento de estado do projeto.
 
 ### `POST /api/auth/login`
 

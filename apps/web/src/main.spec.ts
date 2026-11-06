@@ -41,6 +41,6 @@ describe('application bootstrap', () => {
     await import('./main');
     await Promise.resolve();
 
-    expect(consoleError).toHaveBeenCalledWith(error);
+    expect(consoleError).toHaveBeenCalledWith('Não foi possível iniciar o Bello Flow');
   });
 });

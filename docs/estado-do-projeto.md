@@ -9,6 +9,31 @@ corrente, devem apontar para este registro em vez de duplicar o estado operacion
 
 ## Fase atual
 
+### F1-B.4.5.11 — Interface Angular de autenticação e recuperação
+
+- **Escopo aprovado:** em 2026-11-06, o responsável autorizou nesta atividade a
+  interface Angular, os estados e as rotas propostos, testes, documentação,
+  commits, push da branch exclusiva e acompanhamento do CI. Não autorizou
+  integração na main nem prontidão produtiva.
+- **Base — VERIFICADO:** main local, origin/main e referência remota em
+  `bf70c7b0bee8966cec9e5779a92bf8a09ae9ea1d`, sem alterações preexistentes.
+  `BASE_MAIN_SHA` tem esse mesmo valor; branch `work/f1-b-4-5-11-auth-ui`.
+- **Estado — VERIFICADO:** implementação local de login, consulta/restauração,
+  logout atual, solicitação e reset pelo fragmento; rotas, formulários,
+  acessibilidade estática, erros sanitizados, timeout sem retry e token efêmero.
+  Nenhuma mudança de contrato HTTP, API, schema, migration ou provider.
+- **Validação — VERIFICADO:** 63 testes Angular aprovados, incluindo dois fluxos
+  entre rotas com HTTP controlado; cobertura web de 100% em lines, statements e
+  functions e 98,55% em branches. Gate completo local aprovado; correção final de feedback dos campos obrigatórios
+  revalidada por tipos, lint, testes, cobertura e build web. Commit, push e CI da
+  branch ainda pendentes neste registro pré-publicação; resultados finais serão
+  informados no relatório.
+- **Limites:** integração em navegador real/API/PostgreSQL, inspeção visual,
+  leitor de tela, provider real, TLS e disponibilidade produtiva não comprovados
+  por esses testes. Revisão independente exigida antes da integração; PT-009 e
+  demais pendências não são encerradas.
+
+
 - **Último marco publicado — VERIFICADO:** F1-B.4.5.10 — Endpoints HTTP de
   Recuperação, integrada por fast-forward na `main` no commit
   `edb31644d3912f66760b98461e78d2c5e58868ef`.
@@ -326,7 +351,8 @@ constituem contrato específico, autorização de implementação ou aprovação
 automática:
 
 1. F1-B.4.5.9 — Retenção Operacional; e
-2. F1-B.4.5.11 — Frontend e Prontidão Ponta a Ponta.
+2. F1-B.4.5.11 — Frontend e Prontidão Ponta a Ponta: somente o recorte de
+   interface descrito acima foi autorizado; prontidão operacional permanece futura.
 
 ### Sequência recomendada de execução — não aprovada como contrato específico
 

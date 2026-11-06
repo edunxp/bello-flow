@@ -32,3 +32,20 @@ body {
 body {
   min-width: 20rem;
 }
+
+:focus-visible {
+  outline: 3px solid #172038;
+  outline-offset: 3px;
+}
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -8rem;
+  padding: 1rem;
+  background: white;
+  color: #172038;
+  z-index: 10;
+}
+.skip-link:focus {
+  top: 1rem;
+}

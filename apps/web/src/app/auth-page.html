@@ -1,0 +1,108 @@
+<section class="card" aria-labelledby="page-title">
+  <h1 id="page-title" tabindex="-1">{{ title }}</h1>
+  @if (mode === 'login' && session.state() === 'authenticated') {
+    <p>Você já tem uma sessão ativa.</p>
+    <a routerLink="/">Continuar</a>
+  } @else if (done()) {
+    <div id="form-feedback" tabindex="-1" role="status">
+      @if (mode === 'recover') {
+        <p>Se houver uma conta elegível, você receberá instruções por e-mail.</p>
+      } @else {
+        <p>Senha redefinida. Entre com a nova senha quando precisar autenticar esta conta.</p>
+      }
+    </div>
+    <a routerLink="/login">Ir para o login</a>
+  } @else if (mode === 'reset' && !hasToken) {
+    <p>
+      Link inválido ou indisponível. Se você recarregou esta página, reabra o link original recebido
+      por e-mail ou solicite outro.
+    </p>
+    <a routerLink="/forgot-password">Solicitar novo link</a>
+  } @else {
+    <p>
+      @if (mode === 'login') {
+        Use o e-mail da sua conta administrada.
+      } @else if (mode === 'recover') {
+        Informe seu e-mail para solicitar instruções de recuperação.
+      } @else {
+        Use de 12 a 128 caracteres Unicode. A redefinição encerra as sessões da conta.
+      }
+    </p>
+    <form
+      #form="ngForm"
+      (ngSubmit)="submit(form.valid === true)"
+      [attr.aria-busy]="busy()"
+      aria-describedby="form-feedback"
+    >
+      @if (mode !== 'reset') {
+        <label for="email">E-mail</label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          autocomplete="username"
+          required
+          [(ngModel)]="email"
+          [disabled]="busy()"
+          aria-describedby="form-feedback"
+        />
+      }
+      @if (mode !== 'recover') {
+        <label for="password">{{ mode === 'reset' ? 'Nova senha' : 'Senha' }}</label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          required
+          [autocomplete]="mode === 'reset' ? 'new-password' : 'current-password'"
+          [(ngModel)]="password"
+          [disabled]="busy()"
+          aria-describedby="form-feedback"
+        />
+      }
+      @if (mode === 'reset') {
+        <label for="confirmation">Confirme a nova senha</label>
+        <input
+          id="confirmation"
+          name="confirmation"
+          type="password"
+          autocomplete="new-password"
+          required
+          [(ngModel)]="confirmation"
+          [disabled]="busy()"
+          aria-describedby="form-feedback"
+        />
+      }
+      <div id="form-feedback" tabindex="-1" role="status" aria-live="polite">
+        {{ message() }}
+        @if (remaining()) {
+          <p>Aguarde {{ remaining() }} segundos.</p>
+        }
+        @if (busy()) {
+          <p>Processando…</p>
+        }
+      </div>
+      <button type="submit" [disabled]="busy() || remaining() > 0">
+        {{
+          busy()
+            ? 'Aguarde…'
+            : mode === 'login'
+              ? 'Entrar'
+              : mode === 'recover'
+                ? 'Solicitar recuperação'
+                : 'Redefinir senha'
+        }}
+      </button>
+    </form>
+    <nav aria-label="Acesso">
+      @if (mode === 'login') {
+        <a routerLink="/forgot-password">Esqueci minha senha</a>
+      } @else {
+        <a routerLink="/login">Voltar ao login</a>
+      }
+      @if (mode === 'reset') {
+        <a routerLink="/forgot-password">Solicitar novo link</a>
+      }
+    </nav>
+  }
+</section>

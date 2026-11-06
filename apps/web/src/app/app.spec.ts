@@ -1,23 +1,29 @@
 import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
+import { provideRouter, Router } from '@angular/router';
 import { App } from './app';
+import { Home } from './home';
 
-describe('App', () => {
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
+describe('App shell', () => {
+  it('restores the session and renders a keyboard-accessible shell', async () => {
+    TestBed.configureTestingModule({
       imports: [App],
-    }).compileComponents();
-  });
-
-  it('should create the app', () => {
+      providers: [
+        provideRouter([{ path: '', component: Home }]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+      ],
+    });
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance;
-    expect(app).toBeTruthy();
-  });
-
-  it('should render the Bello Flow shell', async () => {
-    const fixture = TestBed.createComponent(App);
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/auth/session')
+      .flush({ account: { id: 'synthetic' } });
+    await TestBed.inject(Router).navigateByUrl('/');
     await fixture.whenStable();
-    const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Seu trabalho, em fluxo.');
+    expect(fixture.nativeElement.textContent).toContain('Bello Flow');
+    expect(fixture.nativeElement.querySelector('.skip-link')).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    TestBed.inject(HttpTestingController).verify();
   });
 });
