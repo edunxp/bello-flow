@@ -4,6 +4,8 @@ import type { Response } from 'express';
 import {
   createHttpRequestCancellation,
   readLoginHttpInput,
+  readPasswordRecoveryHttpInput,
+  readPasswordResetHttpInput,
   requestContainsBody,
 } from './auth-http-request.js';
 
@@ -47,6 +49,57 @@ describe('authentication HTTP request contracts', () => {
       { email: 'user@example.com', password: 'password', extra: true },
     ]) {
       expect(readLoginHttpInput(value)).toEqual({ valid: false });
+    }
+  });
+
+  it('accepts only an exact string password recovery object', () => {
+    expect(
+      readPasswordRecoveryHttpInput({ email: 'user@example.com' }),
+    ).toEqual({
+      valid: true,
+      input: { email: 'user@example.com' },
+    });
+
+    for (const value of [
+      undefined,
+      null,
+      [],
+      'value',
+      {},
+      { email: 1 },
+      { email: 'user@example.com', extra: true },
+    ]) {
+      expect(readPasswordRecoveryHttpInput(value)).toEqual({ valid: false });
+    }
+  });
+
+  it('accepts only an exact string password reset object', () => {
+    expect(
+      readPasswordResetHttpInput({
+        token: 'opaque-token',
+        newPassword: 'candidate-password',
+      }),
+    ).toEqual({
+      valid: true,
+      input: {
+        token: 'opaque-token',
+        newPassword: 'candidate-password',
+      },
+    });
+
+    for (const value of [
+      undefined,
+      null,
+      [],
+      'value',
+      {},
+      { token: 'opaque-token' },
+      { newPassword: 'candidate-password' },
+      { token: 1, newPassword: 'candidate-password' },
+      { token: 'opaque-token', newPassword: 1 },
+      { token: 'opaque-token', newPassword: 'candidate-password', extra: true },
+    ]) {
+      expect(readPasswordResetHttpInput(value)).toEqual({ valid: false });
     }
   });
 

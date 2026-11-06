@@ -22,11 +22,14 @@ corrente, devem apontar para este registro em vez de duplicar o estado operacion
   persistente e o caso de uso interno de redefinição foram publicados. As
   reconciliações permanecem observacionais, a admissão e a anti-enumeração estão
   integradas e a regressão do login foi preservada. F1-B.4.5.6 e F1-B.4.5.7 estão
-  publicadas. F1-B.4.5.8 está concluída, integrada, publicada e validada. A
-  validação operacional do provider, os endpoints HTTP, a interface Angular, a
-  retenção operacional e a prontidão ponta a ponta permanecem pendentes, sem
+  publicadas. F1-B.4.5.8 está concluída, integrada, publicada e validada. Os
+  endpoints HTTP estão implementados e validados somente na árvore local da
+  branch `work/f1-b-4-5-10-recovery-http`, ainda sem commit, publicação ou CI.
+  A validação operacional do provider, a interface Angular, a retenção
+  operacional e a prontidão ponta a ponta permanecem pendentes, sem
   disponibilidade produtiva declarada.
-- **Próximo objetivo proposto:** expor os endpoints HTTP da recuperação e tornar
+- **Próximo objetivo proposto:** revisar e, mediante autorizações separadas,
+  versionar e publicar os endpoints HTTP implementados localmente; depois tornar
   autenticação e recuperação utilizáveis no Angular antes da automação de
   retenção. F1-B.4.5.9–F1-B.4.5.11 preservam seus identificadores históricos e
   continuam propostas sem contrato específico aprovado; a sequência de execução
@@ -285,7 +288,23 @@ e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b4
 
 ## Próximos incrementos
 
-Nenhum próximo incremento está iniciado ou autorizado por este documento.
+### F1-B.4.5.10 — Endpoints HTTP de Recuperação
+
+- **Estado:** implementação local concluída e validada na branch
+  `work/f1-b-4-5-10-recovery-http`, aguardando revisão independente e eventual
+  autorização de commit; não publicada e sem CI remoto.
+- **Escopo materializado:** `POST /api/auth/password-recovery` e
+  `POST /api/auth/password-reset` ligam os contratos HTTP publicados aos casos
+  de uso internos existentes, sem migration, alteração de schema, novo provider
+  ou mudança nos contratos transacionais.
+- **Evidências locais:** parsers estruturais exatos, políticas PT-005, envelopes
+  e precedência de erros, `Retry-After`, respostas sem corpo e ausência de
+  `Set-Cookie` cobertos por testes unitários e HTTP; solicitação, reset atômico,
+  concorrência e revogação de sessão revalidados em PostgreSQL `18.6`
+  descartável. O gate `quality:local` foi aprovado.
+- **Limite:** implementação local não equivale a commit, publicação, CI ou
+  disponibilidade produtiva. PT-009 permanece aberta e a interface Angular não
+  integra este incremento.
 
 ### Identificadores históricos propostos — não aprovados
 

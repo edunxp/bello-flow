@@ -35,14 +35,27 @@ import {
 import {
   createHttpRequestCancellation,
   readLoginHttpInput,
+  readPasswordRecoveryHttpInput,
+  readPasswordResetHttpInput,
   requestContainsBody,
 } from './auth-http-request.js';
+import { PasswordRecoveryRequestService } from './password-recovery-request.service.js';
+import {
+  PasswordResetService,
+  PasswordResetValidationError,
+} from './password-reset.service.js';
 
 type AuthIdentityResponse = {
   readonly account: { readonly id: string };
 };
 
-type AuthEndpoint = 'login' | 'session' | 'logout' | 'logout-all';
+type AuthEndpoint =
+  | 'login'
+  | 'session'
+  | 'logout'
+  | 'logout-all'
+  | 'password-recovery'
+  | 'password-reset';
 
 function identityResponse(accountId: string): AuthIdentityResponse {
   return { account: { id: accountId } };
@@ -53,7 +66,11 @@ function identityResponse(accountId: string): AuthIdentityResponse {
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
 
-  constructor(private readonly authentication: AuthenticationService) {}
+  constructor(
+    private readonly authentication: AuthenticationService,
+    private readonly passwordRecovery: PasswordRecoveryRequestService,
+    private readonly passwordResetService: PasswordResetService,
+  ) {}
 
   @Post('login')
   @HttpCode(200)
@@ -202,6 +219,82 @@ export class AuthController {
     );
   }
 
+  @Post('password-recovery')
+  @HttpCode(202)
+  async requestPasswordRecovery(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    const config = this.readHttpSecurityConfig(request);
+    this.requireApplicationHeader(request, 'password-recovery');
+    this.requireMutatingOrigin(request, config, 'password-recovery');
+    this.requireJsonContentType(request);
+
+    const body = readPasswordRecoveryHttpInput(request.body);
+    if (!body.valid) {
+      throw new HttpContractError(HTTP_ERROR_CODE.INVALID_REQUEST);
+    }
+
+    const result = await this.passwordRecovery.request({
+      email: body.input.email,
+      trustedIp: request.ip,
+    });
+    if (result.status === 'RECORDED') return;
+    if (result.status === 'RATE_LIMITED') {
+      this.throwRateLimited(result.retryAfterSeconds, response);
+    }
+    if (result.status === 'SERVICE_UNAVAILABLE') {
+      throw new HttpContractError(HTTP_ERROR_CODE.SERVICE_UNAVAILABLE);
+    }
+    throw new HttpContractError(HTTP_ERROR_CODE.INTERNAL_ERROR);
+  }
+
+  @Post('password-reset')
+  @HttpCode(204)
+  async resetPassword(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    const config = this.readHttpSecurityConfig(request);
+    this.requireApplicationHeader(request, 'password-reset');
+    this.requireMutatingOrigin(request, config, 'password-reset');
+    this.requireJsonContentType(request);
+
+    const body = readPasswordResetHttpInput(request.body);
+    if (!body.valid) {
+      throw new HttpContractError(HTTP_ERROR_CODE.INVALID_REQUEST);
+    }
+
+    const cancellation = createHttpRequestCancellation(request, response);
+    let result;
+    try {
+      result = await this.passwordResetService.reset({
+        ...body.input,
+        trustedIp: request.ip,
+        signal: cancellation.signal,
+      });
+    } catch (error) {
+      if (error instanceof PasswordResetValidationError) {
+        throw new HttpContractError(HTTP_ERROR_CODE.INVALID_REQUEST);
+      }
+      throw error;
+    } finally {
+      cancellation.dispose();
+    }
+
+    if (result.status === 'COMPLETED') return;
+    if (result.status === 'AUTHENTICATION_FAILED') {
+      throw new HttpContractError(HTTP_ERROR_CODE.AUTHENTICATION_FAILED);
+    }
+    if (result.status === 'RATE_LIMITED') {
+      this.throwRateLimited(result.retryAfterSeconds, response);
+    }
+    if (result.status === 'SERVICE_UNAVAILABLE') {
+      throw new HttpContractError(HTTP_ERROR_CODE.SERVICE_UNAVAILABLE);
+    }
+    throw new HttpContractError(HTTP_ERROR_CODE.INTERNAL_ERROR);
+  }
+
   private readHttpSecurityConfig(request: Request): HttpSecurityConfig {
     const config = request.app.get(HTTP_SECURITY_CONFIG_SETTING) as unknown;
     if (!config || typeof config !== 'object') {
@@ -280,6 +373,17 @@ export class AuthController {
       }
     }
     this.throwServiceError(error);
+  }
+
+  private throwRateLimited(
+    retryAfterSeconds: number,
+    response: Response,
+  ): never {
+    if (!Number.isSafeInteger(retryAfterSeconds) || retryAfterSeconds <= 0) {
+      throw new HttpContractError(HTTP_ERROR_CODE.INTERNAL_ERROR);
+    }
+    response.setHeader('Retry-After', String(retryAfterSeconds));
+    throw new HttpContractError(HTTP_ERROR_CODE.RATE_LIMITED);
   }
 
   private throwServiceError(error: unknown): never {

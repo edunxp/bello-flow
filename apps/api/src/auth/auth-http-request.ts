@@ -10,6 +10,23 @@ export type LoginHttpInputResult =
   | { readonly valid: true; readonly input: LoginHttpInput }
   | { readonly valid: false };
 
+export type PasswordRecoveryHttpInput = {
+  readonly email: string;
+};
+
+export type PasswordRecoveryHttpInputResult =
+  | { readonly valid: true; readonly input: PasswordRecoveryHttpInput }
+  | { readonly valid: false };
+
+export type PasswordResetHttpInput = {
+  readonly token: string;
+  readonly newPassword: string;
+};
+
+export type PasswordResetHttpInputResult =
+  | { readonly valid: true; readonly input: PasswordResetHttpInput }
+  | { readonly valid: false };
+
 function readRawHeaderValues(
   rawHeaders: readonly string[],
   name: string,
@@ -44,6 +61,47 @@ export function readLoginHttpInput(value: unknown): LoginHttpInputResult {
   return {
     valid: true,
     input: { email: record.email, password: record.password },
+  };
+}
+
+export function readPasswordRecoveryHttpInput(
+  value: unknown,
+): PasswordRecoveryHttpInputResult {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return { valid: false };
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (
+    keys.length !== 1 ||
+    !Object.hasOwn(record, 'email') ||
+    typeof record.email !== 'string'
+  ) {
+    return { valid: false };
+  }
+  return { valid: true, input: { email: record.email } };
+}
+
+export function readPasswordResetHttpInput(
+  value: unknown,
+): PasswordResetHttpInputResult {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return { valid: false };
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (
+    keys.length !== 2 ||
+    !Object.hasOwn(record, 'token') ||
+    !Object.hasOwn(record, 'newPassword') ||
+    typeof record.token !== 'string' ||
+    typeof record.newPassword !== 'string'
+  ) {
+    return { valid: false };
+  }
+  return {
+    valid: true,
+    input: { token: record.token, newPassword: record.newPassword },
   };
 }
 
