@@ -9,31 +9,34 @@ corrente, devem apontar para este registro em vez de duplicar o estado operacion
 
 ## Fase atual
 
-- **Último marco publicado:** F1-B.4.5.8 — Terminalização de Intenções
-  Abandonadas, integrada por fast-forward na `main` no commit
-  `3a25547755a361a343755b09511b83bdc3e68ac4`.
-- **Publicação e CI:** branch de trabalho validada pela execução
-  [CI 42254538285](https://github.com/edunxp/bello-flow/actions/runs/42254538285)
+- **Último marco publicado — VERIFICADO:** F1-B.4.5.10 — Endpoints HTTP de
+  Recuperação, integrada por fast-forward na `main` no commit
+  `edb31644d3912f66760b98461e78d2c5e58868ef`.
+- **Publicação e CI — VERIFICADO:** branch de trabalho validada pela execução
+  [CI 42298230105](https://github.com/edunxp/bello-flow/actions/runs/42298230105)
   e `main` validada pela execução
-  [CI 42255249588](https://github.com/edunxp/bello-flow/actions/runs/42255249588),
-  ambas com `Quality`, `API integration` e `Required` aprovados.
+  [CI 42299013887](https://github.com/edunxp/bello-flow/actions/runs/42299013887),
+  ambas no SHA integrado, com `Quality`, `API integration` e `Required` aprovados.
 - **Estado da F1-B.4.5:** fundação PostgreSQL, camada transacional, admissão
-  efêmera, executor Argon2id global compartilhado e solicitação/classificação
-  persistente e o caso de uso interno de redefinição foram publicados. As
-  reconciliações permanecem observacionais, a admissão e a anti-enumeração estão
-  integradas e a regressão do login foi preservada. F1-B.4.5.6 e F1-B.4.5.7 estão
-  publicadas. F1-B.4.5.8 está concluída, integrada, publicada e validada. Os
-  endpoints HTTP estão implementados e validados somente na árvore local da
-  branch `work/f1-b-4-5-10-recovery-http`, ainda sem commit, publicação ou CI.
-  A validação operacional do provider, a interface Angular, a retenção
+  efêmera, executor Argon2id global compartilhado, solicitação/classificação
+  persistente, caso de uso de redefinição, processamento de entrega, adapter do
+  provider e terminalização de intenções abandonadas foram publicados. Os
+  endpoints HTTP da recuperação também estão integrados, publicados e validados.
+  As reconciliações permanecem observacionais e a regressão do login foi
+  preservada. A validação operacional do provider, a interface Angular, a retenção
   operacional e a prontidão ponta a ponta permanecem pendentes, sem
   disponibilidade produtiva declarada.
-- **Próximo objetivo proposto:** revisar e, mediante autorizações separadas,
-  versionar e publicar os endpoints HTTP implementados localmente; depois tornar
-  autenticação e recuperação utilizáveis no Angular antes da automação de
-  retenção. F1-B.4.5.9–F1-B.4.5.11 preservam seus identificadores históricos e
-  continuam propostas sem contrato específico aprovado; a sequência de execução
-  abaixo não os renumera.
+- **Fluxo de trabalho vigente:** execução em branch exclusiva, com alterações,
+  validações, correções rotineiras, commits, push normal da branch e CI incluídos
+  no ciclo autorizado. A integração do SHA final na `main` exige autorização
+  explícita posterior. Consulte o
+  [fluxo de desenvolvimento](operacao/fluxo-de-desenvolvimento.md).
+- **Próximo objetivo proposto:** planejar a interface Angular de autenticação e
+  recuperação, antes da validação ponta a ponta e da automação de retenção.
+  F1-B.4.5.9 e F1-B.4.5.11 preservam seus identificadores históricos e continuam
+  propostas sem contrato específico aprovado; o planejamento não autoriza sua
+  implementação. A F1-B.4.5.10 já foi entregue e não integra mais as propostas
+  pendentes.
 - **Pendências:** PT-003, PT-007, PT-008 e PT-009 preservam o estado de seus
   documentos canônicos. Esta consolidação não as encerra nem declara a recuperação
   disponível em produção.
@@ -64,6 +67,7 @@ corrente, devem apontar para este registro em vez de duplicar o estado operacion
 | F1-B.4.5.6 — Processador de Entrega com Adapter Controlado    | implementação publicada e validada pelo CI remoto; provider produtivo permanece fora do recorte                                                                                   | [processador](../apps/api/src/auth/password-recovery-delivery.processor.ts); [persistência](../apps/api/src/auth/password-recovery-delivery.persistence.ts); [migration](../apps/api/prisma/migrations/20261110000000_f1_b_4_5_6_password_recovery_delivery/migration.sql); [teste PostgreSQL](../apps/api/test/f1-b-4-5-6-password-recovery-delivery.e2e-spec.ts); commit `601c92ab8f3922b5f0e2a03c432de5fc74c6258d`; [CI 42117321177](https://github.com/edunxp/bello-flow/actions/runs/42117321177) |
 | F1-B.4.5.7 — Provider Produtivo e Configuração Operacional    | implementação publicada e validada; ativação produtiva continua condicionada à PT-009                                                                                             | commit `af392b32d9bd72f57f8375334079043ac85d3603`; [CI 42152502439](https://github.com/edunxp/bello-flow/actions/runs/42152502439)                                                                                                                                                                                                                                                                                                                                                                     |
 | F1-B.4.5.8 — Terminalização de Intenções Abandonadas          | concluída, integrada por fast-forward, publicada e validada; não implementa retenção física                                                                                       | commit `3a25547755a361a343755b09511b83bdc3e68ac4`; [CI da branch 42254538285](https://github.com/edunxp/bello-flow/actions/runs/42254538285); [CI da main 42255249588](https://github.com/edunxp/bello-flow/actions/runs/42255249588)                                                                                                                                                                                                                                                                  |
+| F1-B.4.5.10 — Endpoints HTTP de Recuperação | concluída, integrada por fast-forward, publicada e validada; sem disponibilidade produtiva declarada | commit `edb31644d3912f66760b98461e78d2c5e58868ef`; [CI da branch 42298230105](https://github.com/edunxp/bello-flow/actions/runs/42298230105); [CI da main 42299013887](https://github.com/edunxp/bello-flow/actions/runs/42299013887) |
 
 Os agrupamentos resumidos organizam evidências já existentes; não criam fases
 normativas nem alteram o estado de decisões ou pendências.
@@ -286,38 +290,47 @@ O contrato está consolidado em
 [persistência](arquitetura/persistencia-e-auditoria.md#f1-b458--terminalização-de-intenções-abandonadas)
 e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b458).
 
-## Próximos incrementos
-
 ### F1-B.4.5.10 — Endpoints HTTP de Recuperação
 
-- **Estado:** implementação local concluída e validada na branch
-  `work/f1-b-4-5-10-recovery-http`, aguardando revisão independente e eventual
-  autorização de commit; não publicada e sem CI remoto.
+- **Estado — VERIFICADO:** concluída, integrada por fast-forward na `main`,
+  publicada e validada no SHA `edb31644d3912f66760b98461e78d2c5e58868ef`.
+- **Commits:** `d9705f7308f5b9f6463d738b628b271f3f2ae05c` implementa os
+  endpoints; `edb31644d3912f66760b98461e78d2c5e58868ef` ajusta os providers da
+  suíte de integração de autenticação afetada pelo novo construtor HTTP.
 - **Escopo materializado:** `POST /api/auth/password-recovery` e
   `POST /api/auth/password-reset` ligam os contratos HTTP publicados aos casos
   de uso internos existentes, sem migration, alteração de schema, novo provider
   ou mudança nos contratos transacionais.
-- **Evidências locais:** parsers estruturais exatos, políticas PT-005, envelopes
-  e precedência de erros, `Retry-After`, respostas sem corpo e ausência de
-  `Set-Cookie` cobertos por testes unitários e HTTP; solicitação, reset atômico,
-  concorrência e revogação de sessão revalidados em PostgreSQL `18.6`
-  descartável. O gate `quality:local` foi aprovado.
-- **Limite:** implementação local não equivale a commit, publicação, CI ou
-  disponibilidade produtiva. PT-009 permanece aberta e a interface Angular não
-  integra este incremento.
+- **Validação local — VERIFICADO:** `quality:local` aprovado; 56 testes HTTP,
+  incluindo 23 da recuperação; 66 testes PostgreSQL de solicitação e cinco de
+  reset aprovados em PostgreSQL `18.6` descartável. Após a correção da suíte de
+  autenticação, seus 13 testes PostgreSQL, os 56 testes HTTP, formatação, lint e
+  typecheck da API foram aprovados. Nenhum banco persistente foi utilizado.
+- **CI — VERIFICADO:** a primeira execução da branch,
+  [CI 42296441022](https://github.com/edunxp/bello-flow/actions/runs/42296441022),
+  reprovou por providers ausentes no módulo de teste de autenticação. A correção
+  foi validada na branch pelo
+  [CI 42298230105](https://github.com/edunxp/bello-flow/actions/runs/42298230105)
+  e na `main` pelo
+  [CI 42299013887](https://github.com/edunxp/bello-flow/actions/runs/42299013887),
+  com `Quality`, `API integration` e `Required` aprovados no SHA final.
+- **Limite:** publicação dos endpoints não declara disponibilidade produtiva.
+  PT-009 permanece aberta e a interface Angular não integra este incremento.
+
+## Próximos incrementos
 
 ### Identificadores históricos propostos — não aprovados
 
-Os identificadores abaixo organizam o planejamento e não constituem contrato,
-autorização de implementação ou aprovação automática:
+Os identificadores ainda pendentes abaixo organizam o planejamento e não
+constituem contrato específico, autorização de implementação ou aprovação
+automática:
 
-1. F1-B.4.5.9 — Retenção Operacional;
-2. F1-B.4.5.10 — Endpoints HTTP de Recuperação; e
-3. F1-B.4.5.11 — Frontend e Prontidão Ponta a Ponta.
+1. F1-B.4.5.9 — Retenção Operacional; e
+2. F1-B.4.5.11 — Frontend e Prontidão Ponta a Ponta.
 
 ### Sequência recomendada de execução — não aprovada como contrato específico
 
-1. endpoints HTTP da recuperação de senha, preservando os contratos publicados;
+1. endpoints HTTP da recuperação de senha — concluídos na F1-B.4.5.10;
 2. interface Angular de autenticação e recuperação;
 3. validação ponta a ponta e operacional do e-mail;
 4. retenção operacional por mecanismo administrativo simples; e

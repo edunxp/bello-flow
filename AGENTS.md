@@ -149,49 +149,31 @@ reexecutar as validações afetadas e atualizar a documentação aplicável enqu
 a correção permanecer no objetivo, no contrato e nos riscos já aprovados. Não é
 necessária uma nova rodada de autorização para cada correção desse tipo.
 
-Enquanto a modalidade de branch curta não estiver ativa, cada atividade adota
-uma das seguintes modalidades de autorização:
+A modalidade vigente é **Ciclo em branch curta**. Para cada atividade de
+implementação autorizada, registre objetivo, escopo, riscos, branch
+`work/<incremento>` e `BASE_MAIN_SHA`, obtido da `main` sincronizada. Todo o
+trabalho ocorre na branch exclusiva, nunca diretamente na `main`.
 
-- **Implementação:** autoriza somente as alterações e validações previstas. Não
-  autoriza commit nem push.
-- **Implementação com commit:** autoriza as alterações, validações e o commit
-  local expressamente delimitado. Não autoriza push.
-- **Publicação controlada:** autoriza somente o push normal de commit local já
-  aprovado e a verificação remota correspondente. Não autoriza novo commit.
+A autorização da atividade inclui criar a branch, implementar, validar, corrigir
+problemas rotineiros, manter a documentação, preparar staging explícito, criar os
+commits necessários, publicar por push normal somente essa branch e acompanhar
+o CI. Essas operações não exigem novas autorizações de escopo enquanto o
+objetivo, os contratos e os riscos aprovados forem preservados. Falhas locais ou
+do CI da branch podem ser diagnosticadas, corrigidas e revalidadas no mesmo ciclo;
+novos commits e pushes da correção ficam limitados à mesma branch e ao escopo.
 
-A modalidade **Ciclo em branch curta** possui os pré-requisitos técnicos de
-ativação satisfeitos conforme o
-[estado do projeto](docs/estado-do-projeto.md). A ativação é formalizada por esta
-direção arquitetural e entra em vigor somente depois de sua publicação e do CI
-correspondente na `main`. Até lá, aplicam-se exclusivamente as modalidades
-vigentes acima.
+A integração na `main` exige autorização explícita posterior para o SHA final,
+após CI aprovado e revisão independente quando o risco for alto. Essa autorização
+permite somente fast-forward até o SHA aprovado, seu push normal na `main` e a
+verificação do CI final. Commit ou push da branch não autoriza integração.
 
-Depois da ativação, uma autorização explícita de ciclo deve identificar objetivo,
-escopo, riscos, branch `work/<incremento>` e `BASE_MAIN_SHA`. Essa autorização
-permite criar a branch a partir da `main` sincronizada, modificar somente o escopo
-aprovado e executar as validações necessárias. Subtarefas técnicas, correções
-rotineiras e documentação aplicável permanecem na mesma entrega vertical.
-
-Commit local, push normal da branch e integração fast-forward na `main` continuam
-exigindo autorizações específicas e separadas. Autorização do ciclo não autoriza
-commit ou push; autorização de commit não autoriza push; push da branch não
-autoriza integração. O CI da branch precisa aprovar o SHA final antes da revisão e
-da decisão de integração.
-
-A autorização de ciclo não permitirá integrar na `main`, alterar outra branch,
-usar force push, executar rebase automático, modificar contratos aprovados,
-ampliar escopo, acessar ou alterar banco persistente nem aceitar risco novo. A
-integração fast-forward na `main` e seu único push normal exigirão autorização
-posterior específica, após CI aprovado no SHA final da branch e revisão
-independente quando o risco for alto. A limpeza da branch exigirá autorização e
-somente poderá ocorrer depois do encerramento validado do ciclo.
-
-No fluxo vigente e em qualquer operação direta na `main`, a publicação ocorre em
-atividade posterior ao commit e somente quando o pedido autoriza explicitamente
-publicar ou realizar push. Expressões ambíguas como “vamos em frente”, “continue”
-ou equivalentes não autorizam push. Autorização para commit nunca implica
-autorização para publicação. Depois da ativação, a branch curta reúne a entrega e
-suas subtarefas, mas não reúne as autorizações de commit, push e integração.
+A autorização do ciclo não permite alterar outra branch, usar force push,
+reescrever histórico, executar rebase automático, modificar contratos aprovados,
+ampliar escopo, acessar ou alterar banco persistente nem aceitar risco novo.
+Divergência da base interrompe a publicação ou integração, sem correção automática.
+Falha do CI final da `main` é reportada; sua correção exige novo ciclo autorizado,
+sem reset nem force push. A limpeza da branch exige autorização específica e
+somente pode ocorrer depois do encerramento validado do ciclo.
 
 Essa autonomia não elimina confirmações técnicas exigidas pelo sandbox. Antes de
 prosseguir, solicite aprovação humana quando for necessário modificar decisões
@@ -206,12 +188,12 @@ persistente, mudança de privilégios não autorizada ou dependência externa ou
 custo não aprovado. Continue somente atividades independentes que permaneçam
 seguras e autorizadas.
 
-Exigem autorização específica e separada: commit e publicação conforme as
-modalidades vigentes acima; integração e push na `main`; reescrita de histórico
-Git; acesso ou alteração de bancos persistentes;
+Exigem autorização específica fora da execução normal do ciclo: integração e
+push na `main`; reescrita de histórico Git; acesso ou alteração de bancos
+persistentes;
 exclusão de recursos preexistentes ou cuja propriedade não esteja comprovada;
 operações administrativas reais; e uso de recursos externos ou credenciais não
-autorizados. A publicação controlada não autoriza force push, rebase, merge,
+autorizados. A publicação da branch não autoriza force push, rebase, integração,
 pull, reescrita de histórico nem correções ou commits adicionais fora do escopo.
 
 Preserve o sandbox e os controles de execução. Não crie regras `allow` amplas,
@@ -334,13 +316,13 @@ passar.
   autorização inequívoca.
 - Não inclua arquivos temporários, gerados, relatórios de cobertura, builds ou
   secrets.
-- Não execute `git commit` fora da modalidade **Implementação com commit** vigente
-  ou sem autorização específica de commit da branch curta depois da ativação.
-- Não execute `git push` sem a modalidade **Publicação controlada** vigente ou sem
-  autorização específica de push da branch curta depois da ativação.
-- Autorização para commit não implica autorização para push. A publicação trata
-  somente commit local já aprovado e permanece condicionada ao
-  [Procedimento de Git e publicação](docs/operacao/git-e-publicacao.md).
+- Commit e push normal da branch exclusiva integram a implementação autorizada,
+  após as validações e a revisão explícita do staging; não exigem novas
+  autorizações de escopo.
+- Não integre nem publique na `main` sem autorização específica para o SHA final
+  aprovado pelo CI e pela revisão aplicável.
+- Siga o [Procedimento de Git e publicação](docs/operacao/git-e-publicacao.md)
+  para conferir base, escopo, staging, publicação e CI.
 
 Sempre que a atividade envolver preparação de commit, publicação ou verificação
 de CI, consulte e siga o

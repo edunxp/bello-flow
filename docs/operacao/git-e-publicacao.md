@@ -7,75 +7,64 @@ publicação no GitHub e a verificação do CI do Bello Flow. Ele complementa as
 regras permanentes de segurança e autorização do
 [AGENTS.md](../../AGENTS.md).
 
-Nenhuma etapa deste documento concede autorização por si só. Enquanto a
-modalidade de branch curta não estiver ativa, a atividade precisa selecionar
-explicitamente uma das modalidades abaixo. Depois da ativação, um ciclo segue a
-seção correspondente, mantendo autorizações separadas para commit, push da branch
-e integração. Não execute merge, rebase, pull, reset, force push ou reescrita de
-histórico automaticamente.
+Nenhuma etapa deste documento autoriza uma atividade por si só. Uma atividade de
+implementação autorizada é executada em branch exclusiva `work/<incremento>`,
+com autonomia para alterações, validações, staging explícito, commits, push normal
+da própria branch e acompanhamento do CI. A integração e publicação na `main`
+exigem autorização explícita posterior para o SHA final aprovado.
 
 ## Modalidades de autorização
 
-| Modalidade                   | Alterações e validações       | Commit local             | Push normal                       |
-| ---------------------------- | ----------------------------- | ------------------------ | --------------------------------- |
-| **Implementação**            | autorizado no escopo          | não autorizado           | não autorizado                    |
-| **Implementação com commit** | autorizado no escopo          | autorizado no escopo     | não autorizado                    |
-| **Publicação controlada**    | não autoriza novas alterações | não autoriza novo commit | autorizado para o commit aprovado |
+| Modalidade | Operações permitidas | Limite |
+| --- | --- | --- |
+| **Planejamento ou revisão** | inspeção e entregáveis autorizados, somente leitura quando assim delimitado | não autoriza implementar, commit ou push |
+| **Ciclo em branch curta** | implementação, documentação, testes, correções rotineiras, staging explícito, commits, push normal da branch e acompanhamento do CI | não autoriza integrar ou publicar na `main` |
+| **Integração autorizada** | fast-forward da `main` até o SHA aprovado, push normal da `main` e acompanhamento do CI final | não autoriza novos commits ou alteração do SHA aprovado |
 
-Nas modalidades vigentes e em qualquer operação direta na `main`, a publicação
-ocorre em atividade posterior ao commit e exige autorização separada e explícita
-para push. Uma autorização apenas para commit permanece na segunda modalidade e
-não permite push. Expressões ambíguas como “vamos em frente”, “continue” ou
-equivalentes não selecionam a modalidade de publicação. Depois da ativação, o
-ciclo reúne a entrega na branch `work/<incremento>`, mas commit, push normal da
-branch e integração permanecem autorizações específicas e separadas.
+Uma instrução mais restritiva da atividade, como somente leitura ou proibição de
+commit ou push, continua obrigatória. A autorização do ciclo não dispensa os
+controles técnicos nem permite ampliar escopo, alterar contratos aprovados,
+acessar banco persistente ou aceitar risco novo.
 
-Durante a implementação, problemas técnicos rotineiros podem ser corrigidos e
-revalidados autonomamente nos limites da autorização recebida. Após cada correção,
-os gates afetados precisam ser reexecutados. Qualquer falha em validação
-obrigatória que não tenha sido corrigida e revalidada impede staging e commit. Não
-é permitido ignorar falhas para concluir a atividade nem reduzir testes,
-cobertura ou verificações para obter aprovação. Bloqueios devem ser relatados com
-a evidência disponível.
+Durante a implementação e o CI da branch, problemas técnicos rotineiros podem
+ser diagnosticados, corrigidos e revalidados autonomamente no escopo aprovado.
+Commits adicionais e novos pushes normais da correção ficam na mesma branch.
+Qualquer falha obrigatória não corrigida e revalidada impede staging do conjunto
+afetado e integração. Não reduza testes, cobertura ou gates para obter aprovação.
 
-Depois da aprovação do commit ou durante publicação e CI, qualquer falha de
-escopo, staging, divergência, autenticação, publicação ou CI interrompe a etapa e
-deve ser reportada: a autorização de commit ou publicação não permite criar
-correção, commit adicional, novo push, reexecução ou ampliação de escopo.
+Divergência da base, falha de autenticação, alteração inesperada do staging ou
+ampliação material do escopo interrompem a parte afetada e são reportadas, sem
+merge, rebase, pull, reset, force push ou reescrita automática de histórico.
+Durante a integração e o CI final da `main`, qualquer falha é reportada sem novo
+commit, push ou reexecução não autorizados; correção exige novo ciclo autorizado.
 
 ## Ciclo em branch curta
 
 ### Estado de adoção
 
-Os pré-requisitos técnicos de ativação estão satisfeitos conforme o
-[estado do projeto](../estado-do-projeto.md). A ativação é formalizada por esta
-revisão e entra em vigor somente quando esta formalização for publicada e seu CI
-na `main` for aprovado. Até lá, permanecem as modalidades vigentes para trabalho
-direto na `main`.
+O ciclo em branch curta é o fluxo vigente, conforme a orientação do responsável.
+A execução normal na branch inclui commit e push; a autorização humana posterior
+fica na integração do SHA final na `main`. As evidências dos incrementos ficam no
+[estado do projeto](../estado-do-projeto.md).
 
-### Autorização do ciclo após a ativação
+### Autorização do ciclo
 
-Uma única autorização explícita de ciclo deve registrar:
+Antes de iniciar, registre:
 
-- objetivo, escopo e riscos aprovados;
+- objetivo, escopo e riscos da atividade autorizada;
 - branch exclusiva `work/<incremento>`; e
 - `BASE_MAIN_SHA`, obtido da `main` local e de `origin/main` sincronizadas.
 
-Essa autorização permite criar a branch a partir de `BASE_MAIN_SHA`, alterar
-somente o escopo aprovado e executar validações. Correções técnicas rotineiras não
-exigem nova autorização quando permanecem no escopo; os gates afetados precisam
-ser reexecutados. Commit e push normal da branch exigem autorizações posteriores
-específicas.
+A autorização permite criar a branch a partir de `BASE_MAIN_SHA` e conduzir o
+ciclo até a publicação da branch com CI aprovado, sem novas autorizações para
+cada comando, correção rotineira, commit ou push dentro do escopo. Preserve as
+confirmações técnicas exigidas pelas ferramentas.
 
-A autorização de ciclo não permite:
-
-- integrar ou publicar diretamente na `main`;
-- alterar ou publicar outra branch;
-- force push, rebase automático ou reescrita de histórico;
-- modificar contratos AT, DEC, RN ou políticas de segurança;
-- ampliar escopo, aceitar risco novo ou introduzir dependência ou custo não
-  aprovado; nem
-- acessar ou alterar banco persistente ou privilégios não autorizados.
+A autorização de ciclo não permite integrar ou publicar diretamente na `main`,
+alterar outra branch, force push, rebase automático, reescrita de histórico,
+mudança não aprovada de contratos AT, DEC, RN ou políticas de segurança,
+ampliação de escopo, custo ou dependência não aprovados, nem acesso ou alteração
+de banco persistente ou privilégios não autorizados.
 
 ### CI e revisão da branch
 
@@ -170,9 +159,9 @@ relate a divergência.
 
 ## Commit
 
-Execute esta seção somente mediante autorização específica de commit, seja na
-modalidade **Implementação com commit** vigente ou em uma branch curta depois da
-ativação.
+Execute esta seção dentro do ciclo em branch curta autorizado, após as
+validações aplicáveis. Commit local da branch não exige autorização adicional,
+mas continua limitado ao escopo e ao staging explicitamente revisado.
 
 1. Confirme os caminhos autorizados e adicione-os explicitamente. Evite
    `git add .`, `git add -A` ou outro staging amplo quando houver qualquer risco
@@ -199,10 +188,10 @@ ativação.
    git ls-files --others --exclude-standard
    ```
 
-4. Crie um único commit com a mensagem autorizada e coerente com a alteração:
+4. Crie um commit com mensagem coerente com o conjunto revisado:
 
    ```bash
-   git commit -m "<mensagem-autorizada>"
+   git commit -m "<mensagem-do-commit>"
    ```
 
 5. Confirme o hash, os caminhos efetivamente incluídos e o estado final:
@@ -218,14 +207,14 @@ o caminho. Não remova alterações do usuário para ajustar o staging.
 
 ## Publicação
 
-Execute esta seção somente mediante autorização específica de push, em atividade
-posterior à criação e aprovação do commit local. A autorização precisa identificar
-se o alvo é a branch curta ou a `main`; uma não autoriza a outra.
+O push normal da branch exclusiva integra o ciclo autorizado, após revisão do
+commit e das verificações abaixo. O push da `main` somente é permitido como parte
+da integração explicitamente autorizada para o SHA final aprovado.
 
 ### Publicação controlada da branch curta
 
-Depois da ativação, o push da branch exige autorização específica para
-`work/<incremento>` e para o SHA aprovado.
+Publique somente a branch `work/<incremento>` do ciclo autorizado e registre o
+SHA exato publicado. Não é necessária autorização adicional para esse push.
 
 1. Confirme branch, base, commit e árvore limpa:
 
@@ -280,9 +269,8 @@ Depois da ativação, o push da branch exige autorização específica para
 
 ### Publicação controlada da `main`
 
-Esta subseção aplica-se ao fluxo vigente direto na `main` ou à integração
-fast-forward já autorizada. Não pode ser usada para substituir o push e o CI da
-branch curta.
+Esta subseção aplica-se somente à integração fast-forward já autorizada.
+Não trabalhe diretamente na `main` nem substitua o push e o CI da branch curta.
 
 1. Confirme a branch, o commit autorizado e a árvore limpa:
 
@@ -309,9 +297,8 @@ branch curta.
    O hash autorizado precisa estar no conjunto a publicar, e nenhum commit não
    autorizado pode acompanhá-lo. Se a branch remota tiver avançado, se houver
    divergência ou se o conjunto diferir do autorizado, interrompa sem executar
-   merge, rebase, pull ou push. Para um único commit novo criado sobre `main`
-   previamente sincronizada, a divergência obrigatória antes do push é exatamente
-   `0 behind / 1 ahead`.
+   merge, rebase, pull ou push. A divergência deve ser `0 behind / N ahead`,
+   contendo exatamente os commits da branch aprovada para integração.
 
 4. Publique sem force push e somente para a `main` autorizada:
 
@@ -335,7 +322,8 @@ branch curta.
    verificação de CI como se a publicação estivesse confirmada.
 
 Nunca use `--force` ou `--force-with-lease`. Push rejeitado ou divergência
-inesperada deve ser reportado sem merge, rebase, pull ou novo commit automático.
+inesperada deve ser reportado sem merge, rebase, pull ou correção automática do
+histórico.
 
 ## GitHub Actions
 
@@ -371,13 +359,17 @@ Após confirmar a publicação e a sincronização da branch:
    - `API integration` estiver `completed` com conclusão `success`;
    - `Required` estiver `completed` com conclusão `success`.
 7. Em caso de conclusão diferente de `success`, informe o job, sua conclusão,
-   a etapa ou evidência disponível e o link da execução. Não altere código,
-   configuração ou dados e não reexecute o workflow automaticamente.
+   a etapa ou evidência disponível e o link da execução. Na branch do ciclo,
+   diagnostique e corrija falhas rotineiras dentro do escopo, revalide e publique
+   a correção por novo commit e push normal; acompanhe o CI do novo SHA. Não
+   repita um workflow inalterado para tentar obter aprovação. Na `main`, pare
+   e reporte; correção exige novo ciclo autorizado.
 
 Use o cliente GitHub configurado no ambiente ou a API do GitHub em modo somente
-leitura. Durante o acompanhamento, não crie commits, não modifique arquivos, não
-execute novos pushes e não use force push. Não declare sucesso com base apenas no
-resultado do `git push`.
+leitura. Durante cada execução acompanhada, preserve o SHA observado. Se houver
+correção autorizada no ciclo da branch, registre a falha antes de produzir o novo
+SHA e retome o acompanhamento para ele. Não use force push nem declare sucesso
+com base apenas no resultado do `git push`.
 
 Se o ambiente não tiver acesso ao GitHub Actions, informe explicitamente que o CI
 não pôde ser verificado e forneça apenas as evidências locais e o último estado
@@ -396,8 +388,8 @@ O relatório final da publicação deve conter:
 Esse relatório encerra a publicação. Não se cria automaticamente outro commit
 apenas para registrar SHA ou número do CI na documentação. Atualização documental
 posterior exige necessidade normativa ou operacional expressa, correção factual,
-mudança material do projeto ou consolidação periódica e segue nova autorização
-Git.
+mudança material do projeto ou consolidação periódica e segue o escopo do ciclo
+autorizado e seus controles Git.
 
 ## Situações excepcionais
 
@@ -408,7 +400,7 @@ Git.
 | `HEAD` diferente do commit autorizado   | Não publicar e apresentar os dois hashes.                                                     |
 | Falha de autenticação no GitHub         | Não trocar credenciais, não expor tokens e relatar a falha.                                   |
 | Push rejeitado                          | Não forçar, mesclar ou rebasear; atualizar as referências e relatar a divergência.            |
-| CI reprovado                            | Relatar workflow, job, etapa e evidência sem correção automática.                             |
+| CI reprovado                            | Na branch, relatar e corrigir falhas rotineiras no escopo; na main, reportar e exigir novo ciclo autorizado. |
 | CI não verificável                      | Declarar a limitação; não presumir aprovação.                                                 |
 
 Em todas as situações, preserve o histórico e as alterações locais. Não crie

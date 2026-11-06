@@ -26,7 +26,8 @@ alterar a precedência das fontes normativas.
 ## Responsabilidades
 
 - O único responsável pelo repositório estabelece objetivos, prioridades, limites
-  e autorizações e é a única pessoa com acesso ao repositório.
+  e autorizações. Agentes acessam a cópia local somente pelas ferramentas e
+  permissões autorizadas para a atividade.
 - O ChatGPT consolida escopo, arquitetura, restrições, critérios de aceite e
   decisões que precisam retornar ao usuário.
 - O Codex inspeciona, implementa, valida e apresenta evidências dentro do escopo
@@ -35,8 +36,46 @@ alterar a precedência das fontes normativas.
   nas fontes primárias e nas evidências produzidas. Pode ser realizada pelo
   responsável ou por um agente que não tenha produzido a alteração revisada; não
   exige segundo mantenedor nem concede acesso adicional ao repositório.
-- O responsável aprova ou rejeita a integração. Essa aprovação não concede por si
-  só autorização operacional para commit, push ou merge.
+- O responsável autoriza o objetivo e o escopo do ciclo e, após as evidências,
+  aprova ou rejeita a integração do SHA final. A autorização explícita de
+  integração permite o fast-forward e o push da `main` previstos no procedimento
+  Git; não permite alterar o SHA aprovado.
+
+## Trabalho pelo desktop e continuidade entre conversas
+
+O Codex no aplicativo desktop é a interface de execução local adotada neste
+fluxo. Planejamento, inspeção, implementação e validação podem ocorrer na mesma
+conversa, dentro das autorizações recebidas. Não é necessário copiar prompts do
+ChatGPT web para a CLI. Web e CLI continuam alternativas de trabalho; as
+responsabilidades descritas neste procedimento não exigem interfaces separadas.
+
+- Mantenha uma conversa por incremento para implementação, correções rotineiras,
+  testes e documentação. Um novo objetivo pode iniciar outra conversa no mesmo
+  projeto local.
+- Ao iniciar ou retomar uma conversa, confirme o diretório e o estado Git e leia
+  `AGENTS.md`, este fluxo e `docs/estado-do-projeto.md`. Preserve alterações
+  locais preexistentes e não presuma que o histórico de outro chat esteja
+  disponível ou que sincronizar a conversa conceda acesso à pasta local.
+- Use a cópia existente do repositório no WSL quando essa for a cópia autorizada,
+  inclusive para examinar alterações não commitadas. Confirme ambiente, acesso e
+  versões exigidas antes de executar ferramentas.
+- Decisões duráveis e evidências relevantes ficam nos documentos do repositório.
+  Uma decisão discutida no web ou em outra conversa precisa ser confrontada com
+  as fontes normativas antes de orientar alterações.
+- A revisão independente usa um revisor que não tenha produzido a alteração,
+  com acesso ao diff, contratos e evidências primárias. Uma conversa separada
+  ajuda a organizar a revisão, mas não comprova independência por si só.
+- Evite alterações simultâneas pela CLI e pelo desktop na mesma árvore de
+  trabalho. Antes de mudar de interface, confirme branch, índice e arquivos
+  pendentes.
+
+Durante uma implementação autorizada, execute as alterações, correções rotineiras
+e validações necessárias ao escopo sem nova aprovação de escopo por comando,
+preservadas as confirmações técnicas exigidas pelas ferramentas. As interrupções
+materiais continuam regidas pela seção de autonomia. Apresente uma
+ação concreta e revisável ao solicitar a integração do SHA final na `main`.
+Commits e pushes normais da branch fazem parte do ciclo autorizado, sem novas
+solicitações de aprovação de escopo. A interface não altera os controles Git.
 
 ## Modelo operacional
 
@@ -54,10 +93,11 @@ O fluxo alvo organiza cada incremento nesta sequência:
    CI aplicável.
 7. O ciclo é encerrado com um resumo curto e a próxima ação.
 
-As autorizações operacionais continuam separadas: planejar ou revisar não
-autoriza implementar; implementar não autoriza commit; commit não autoriza push;
-e aprovação de integração não autoriza merge. O
-[Procedimento de Git e publicação](git-e-publicacao.md) permanece obrigatório.
+Planejar ou revisar não autoriza implementar. Uma implementação autorizada em
+branch exclusiva inclui commits, pushes normais da própria branch, correções
+rotineiras e acompanhamento do CI. A integração na `main` permanece condicionada
+à autorização explícita para o SHA final aprovado, conforme o
+[Procedimento de Git e publicação](git-e-publicacao.md).
 
 ### Entregas verticais
 
@@ -101,7 +141,8 @@ Interrompa a parte afetada e solicite decisão diante de:
 - dependência externa ou custo não aprovado.
 
 Atividades independentes podem continuar quando permanecerem seguras e dentro do
-escopo. Commit, push e merge nunca são autorizados automaticamente.
+escopo. Commit e push normal da branch integram o ciclo autorizado; integração
+na `main` exige decisão explícita posterior.
 
 ## Confiabilidade das evidências
 
@@ -216,24 +257,27 @@ relatórios extensos sem impacto na decisão.
 
 1. Código, testes, documentação, evidências e estado Git são revisados em
    conjunto, com independência proporcional ao risco.
-2. Somente após parecer favorável e decisão do responsável pode ser emitida
-   autorização específica para o commit ou para a integração aplicável.
+2. Somente após parecer favorável e CI aprovado no SHA final, o responsável
+   pode autorizar sua integração na `main`. Commit e publicação da branch
+   integram a execução do ciclo, sem aprovação separada por etapa.
 3. Achado remanescente retorna à etapa aplicável sem ampliar automaticamente o
    escopo.
 
 ## Etapa 6 — Commit local
 
-1. Mediante autorização específica, o Codex cria um único commit com código,
-   testes, documentação aplicável e configurações estritamente necessárias.
+1. No ciclo autorizado, o Codex cria commits coerentes com código, testes,
+   documentação aplicável e configurações estritamente necessárias, sem nova
+   autorização de escopo por commit.
 2. O staging é explícito e integralmente revisado conforme o
    [Procedimento de Git e publicação](git-e-publicacao.md).
-3. Esta etapa não autoriza nem executa push.
+3. O push normal da branch ocorre após as conferências da etapa seguinte;
+   nenhuma dessas etapas autoriza integração na `main`.
 
 ## Etapa 7 — Publicação
 
-1. Em atividade posterior e mediante autorização separada, o Codex confirma o
-   commit aprovado, atualiza as referências remotas e executa push normal somente
-   da branch autorizada.
+1. No mesmo ciclo autorizado, o Codex confirma o commit revisado, atualiza as
+   referências remotas e executa push normal somente da branch exclusiva, sem
+   nova autorização de escopo para o push.
 2. Antes do push, confirma branch, SHA, escopo, árvore limpa e divergência com
    `origin/main`.
 3. Force push, force-with-lease, merge, rebase, pull e correções automáticas de
@@ -244,8 +288,10 @@ relatórios extensos sem impacto na decisão.
 
 1. O Codex localiza o workflow pelo SHA exato, branch, evento e tentativa.
 2. `Quality`, `API integration` e `Required` precisam terminar com `success`.
-3. Enquanto houver job pendente, não presume aprovação. Falha é reportada sem
-   correção, novo commit, nova publicação ou reexecução não autorizados.
+3. Enquanto houver job pendente, não presume aprovação. Falha da branch é
+   reportada e, quando rotineira e dentro do escopo, corrigida, revalidada e
+   publicada em novo SHA no mesmo ciclo. Falha do CI final da `main` é reportada
+   e exige novo ciclo autorizado para correção.
 4. Somente depois do sucesso remoto o incremento é classificado como publicado e
    validado.
 
@@ -279,9 +325,10 @@ Para o único responsável pelo repositório, a modalidade usa uma branch
 `work/<incremento>` por ciclo, criada a partir da `main` sincronizada. O
 `BASE_MAIN_SHA` é registrado antes da criação. Uma autorização explícita de ciclo
 delimita objetivo, escopo, riscos e branch e permite ao Codex alterar e validar o
-escopo autorizado. Commit, push normal da branch e integração fast-forward
-continuam etapas separadas, cada uma dependente de autorização específica. Pull
-request permanece opcional.
+escopo autorizado, incluindo staging explícito, commits, push normal da branch,
+correções rotineiras e acompanhamento do CI, sem novas autorizações por etapa.
+A integração fast-forward na `main` exige autorização explícita posterior para o
+SHA final aprovado. Pull request permanece opcional.
 
 Durante o ciclo, correções técnicas rotineiras, testes e documentação seguem com
 autonomia dentro do escopo. A autorização não alcança outra branch, integração na
@@ -302,13 +349,11 @@ pode ser removida após encerramento validado e autorização de limpeza.
 
 ### Estado de adoção
 
-Os pré-requisitos técnicos de ativação estão satisfeitos conforme o
-[estado do projeto](../estado-do-projeto.md). A ativação é formalizada por esta
-revisão e passa a valer somente após a publicação e o CI desta própria
-formalização na `main`; até lá, permanecem as modalidades vigentes.
-
-A ativação não concede autorização automática. Cada ciclo e cada etapa de commit,
-push, integração ou limpeza continuam dependendo da autorização aplicável.
+O ciclo em branch curta é o fluxo vigente, conforme a orientação do responsável.
+A atividade autorizada inclui execução, commits, publicação e CI da própria
+branch; não inclui integração na `main`. A integração do SHA final e eventual
+limpeza da branch permanecem sujeitas às respectivas autorizações. O estado
+factual dos incrementos fica no [estado do projeto](../estado-do-projeto.md).
 
 ## Diretrizes permanentes
 
@@ -316,7 +361,7 @@ push, integração ou limpeza continuam dependendo da autorização aplicável.
 - tratar segurança, autorização, auditoria e dados sensíveis como restrições de
   primeira classe;
 - não duplicar documentação normativa nem transformar proposta em decisão;
-- não presumir autorização de commit ou push;
+- limitar commits e pushes à branch e ao escopo do ciclo autorizado;
 - não ampliar nem antecipar o escopo aprovado;
 - preservar os gates de cobertura e CI vigentes; e
 - preferir evidências objetivas a repetição de inspeções ou relatórios extensos.
