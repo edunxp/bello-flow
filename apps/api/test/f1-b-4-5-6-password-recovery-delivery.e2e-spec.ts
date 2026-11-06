@@ -1071,6 +1071,8 @@ describe('F1-B.4.5.6 protected password recovery delivery', () => {
       {
         mode: 'controlled',
         publicOrigin: 'https://bello.example',
+        resendApiKey: null,
+        fromAddress: null,
         idlePollingMilliseconds: 1_000,
         maximumClaimsPerCycle: 10,
         adapterTimeoutMilliseconds: 10_000,

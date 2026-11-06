@@ -31,10 +31,15 @@ with_bello_dev_database env \
 por vírgula; pode ficar ausente no desenvolvimento local sem proxy confiável e é
 obrigatória em produção.
 
-`BELLO_PASSWORD_RECOVERY_DELIVERY_MODE` fica ausente ou `disabled` nos ambientes
-normais. O valor `controlled` é exclusivo de `NODE_ENV=test`, ativa o processador
-interno com adapter técnico sem serviço externo e exige `BELLO_PUBLIC_ORIGIN`
-válida; valor desconhecido ou uso controlado fora de teste impede a inicialização.
+`BELLO_PASSWORD_RECOVERY_DELIVERY_MODE` aceita `disabled`, `controlled` ou
+`resend`; ausência preserva `disabled`. `controlled` é exclusivo de
+`NODE_ENV=test`, ativa o processador com adapter técnico sem serviço externo e
+exige `BELLO_PUBLIC_ORIGIN` válida. `resend` é proibido em teste e exige
+`BELLO_PASSWORD_RECOVERY_RESEND_API_KEY`,
+`BELLO_PASSWORD_RECOVERY_FROM_ADDRESS` e `BELLO_PUBLIC_ORIGIN` HTTPS válidas.
+Valor desconhecido, barreira ambiental violada ou configuração inválida impede
+a inicialização. A chave e o remetente reais permanecem fora do repositório; a
+ativação produtiva depende da validação operacional da PT-009.
 
 A proteção de admissão do login possui os seguintes limites opcionais de
 runtime:

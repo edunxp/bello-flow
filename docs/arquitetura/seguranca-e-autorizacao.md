@@ -427,8 +427,8 @@ F1-B.4.5.1, a camada transacional F1-B.4.5.2, a admissão/capacidade da
 F1-B.4.5.3 e os casos de uso internos F1-B.4.5.4–F1-B.4.5.5 foram publicados.
 O processamento da F1-B.4.5.6 foi implementado e publicado no commit
 `601c92ab8f3922b5f0e2a03c432de5fc74c6258d`, com CI `42117321177` aprovado. A
-F1-B.4.5.7 possui contrato normativo aprovado, mas provider validado, HTTP e
-disponibilidade produtiva ainda não foram implementados.
+F1-B.4.5.7 possui contrato normativo publicado e implementação local validada,
+mas provider validado, HTTP e disponibilidade produtiva permanecem pendentes.
 Ele detalha AT-001, AT-003 e AT-009, resolve normativamente a PT-007 e o recorte
 de recuperação da PT-008 e preserva a PT-009 aberta.
 
@@ -828,6 +828,10 @@ fora do código. Erros e logs não revelam valor, prefixo, tamanho ou presença
 parcial do segredo. `disabled` é kill switch explícito mesmo quando a infraestrutura
 injeta credenciais, e nenhum modo possui fallback silencioso.
 
+A implementação local aplica essas barreiras no bootstrap, seleciona o adapter
+Resend somente no modo explícito e mantém `disabled` como padrão. Essa evidência
+sintética não comprova chave, remetente, domínio ou conta reais.
+
 #### Classificação conservadora e efeito externo
 
 `ACCEPTED` exige HTTP `200`, resposta integral, JSON válido e `id` string não
@@ -844,6 +848,10 @@ cancelamento ou perda de resposta é `INDETERMINATE`. O timeout total inicial é
 rejeitados. Há exatamente uma requisição por `SEND_AUTHORIZED`, sem retry do
 cliente, SDK ou adapter. `Retry-After` pode produzir somente observabilidade
 sanitizada. Abort local não comprova rollback remoto, e `UNKNOWN` não é reenviado.
+
+A implementação limita a leitura incremental da resposta a 64 KiB efetivamente
+recebidos. Excesso, UTF-8 inválido, truncamento ou falha do stream são
+`INDETERMINATE`; o conteúdo externo não integra logs ou erros.
 
 #### Mensagem, link e tracking
 
@@ -1030,7 +1038,8 @@ O comando, formato de autorização e mecanismo operacional da CLI serão defini
 
 A F1-B.4.5 detalha geração just-in-time sem persistir token ou link recuperável;
 a geração e o processamento foram publicados pela F1-B.4.5.6. O contrato Resend
-da F1-B.4.5.7 ainda não está implementado ou validado operacionalmente, e a
+da F1-B.4.5.7 está implementado e validado localmente, ainda sem commit, mas não
+foi validado operacionalmente; a
 [PT-009](pendencias-tecnicas.md#pendências-operacionais) permanece aberta.
 
 ## Respostas e minimização

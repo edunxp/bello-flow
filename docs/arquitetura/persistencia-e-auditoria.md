@@ -401,6 +401,10 @@ local, outbox genérica ou retenção própria do conteúdo. Nenhuma mudança de
 roles, owner, `EXECUTE`, DML runtime ou credencial PostgreSQL pertence à
 F1-B.4.5.7.
 
+A implementação local preserva essa fronteira: não adiciona migration, schema,
+DML, acesso do adapter ao banco ou campo persistido, e as regressões das cinco
+operações foram aprovadas em PostgreSQL `18.6` descartável.
+
 #### Contrato publicado da F1-B.4.5.4
 
 A estrutura publicada permite registrar e classificar a solicitação sem nova

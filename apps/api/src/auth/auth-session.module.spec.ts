@@ -10,9 +10,14 @@ import { Argon2ExecutionService } from './argon2-execution.service.js';
 import { LoginAdmissionConfigurationError } from './login-admission.config.js';
 import { LoginAdmissionService } from './login-admission.service.js';
 import { PasswordRecoveryAdmissionService } from './password-recovery-admission.service.js';
+import {
+  ControlledPasswordRecoveryDeliveryAdapter,
+  PASSWORD_RECOVERY_DELIVERY_ADAPTER,
+} from './password-recovery-delivery.adapter.js';
 import { PasswordRecoveryDeliveryConfigurationError } from './password-recovery-delivery.config.js';
 import { PasswordRecoveryDeliveryPersistence } from './password-recovery-delivery.persistence.js';
 import { PasswordRecoveryDeliveryProcessor } from './password-recovery-delivery.processor.js';
+import { ResendPasswordRecoveryDeliveryAdapter } from './password-recovery-resend.adapter.js';
 import { PasswordRecoveryRequestPersistence } from './password-recovery-request.persistence.js';
 import { PasswordRecoveryRequestService } from './password-recovery-request.service.js';
 import { PasswordResetPersistence } from './password-reset.persistence.js';
@@ -184,6 +189,48 @@ describe('AuthSessionModule', () => {
     }
   });
 
+  it('selects only the Resend adapter for resend mode', async () => {
+    const names = [
+      'BELLO_PASSWORD_RECOVERY_DELIVERY_MODE',
+      'BELLO_PASSWORD_RECOVERY_RESEND_API_KEY',
+      'BELLO_PASSWORD_RECOVERY_FROM_ADDRESS',
+      'BELLO_PUBLIC_ORIGIN',
+      'BELLO_TRUSTED_PROXIES',
+      'NODE_ENV',
+    ] as const;
+    const originals = Object.fromEntries(
+      names.map((name) => [name, process.env[name]]),
+    );
+    Object.assign(process.env, {
+      BELLO_PASSWORD_RECOVERY_DELIVERY_MODE: 'resend',
+      BELLO_PASSWORD_RECOVERY_RESEND_API_KEY: 'synthetic_api_key',
+      BELLO_PASSWORD_RECOVERY_FROM_ADDRESS: 'mail@auth.bello.example',
+      BELLO_PUBLIC_ORIGIN: 'https://bello.example',
+      BELLO_TRUSTED_PROXIES: '127.0.0.1',
+      NODE_ENV: 'production',
+    });
+    try {
+      const context = await Test.createTestingModule({
+        imports: [AuthSessionModule],
+      })
+        .overrideProvider(PrismaService)
+        .useValue({})
+        .compile();
+      expect(
+        context
+          .select(AuthSessionModule)
+          .get(PASSWORD_RECOVERY_DELIVERY_ADAPTER, { strict: true }),
+      ).toBeInstanceOf(ResendPasswordRecoveryDeliveryAdapter);
+      await context.close();
+    } finally {
+      for (const name of names) {
+        const original = originals[name];
+        if (original === undefined) delete process.env[name];
+        else process.env[name] = original;
+      }
+    }
+  });
+
   it('initializes AppModule with one Prisma lifecycle', async () => {
     const onModuleInit = vi.fn();
     const onModuleDestroy = vi.fn();
@@ -241,6 +288,11 @@ describe('AuthSessionModule', () => {
         .select(AuthSessionModule)
         .get(PasswordRecoveryDeliveryProcessor, { strict: true }),
     ).toBeInstanceOf(PasswordRecoveryDeliveryProcessor);
+    expect(
+      context
+        .select(AuthSessionModule)
+        .get(PASSWORD_RECOVERY_DELIVERY_ADAPTER, { strict: true }),
+    ).toBeInstanceOf(ControlledPasswordRecoveryDeliveryAdapter);
     expect(
       context
         .select(AuthSessionModule)

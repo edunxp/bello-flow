@@ -58,8 +58,9 @@ O contrato de recuperação está aprovado, e a fundação PostgreSQL da F1-B.4.
 as operações da F1-B.4.5.2, a admissão/capacidade da F1-B.4.5.3 e a
 solicitação/classificação da F1-B.4.5.4 e a redefinição interna da F1-B.4.5.5
 foram publicadas. O processamento da F1-B.4.5.6 também foi publicado; o provider
-da F1-B.4.5.7 possui contrato aprovado, mas ainda não foi implementado. HTTP e
-demais testes ponta a ponta continuam pendentes. A entrega completa deve cobrir:
+da F1-B.4.5.7 possui contrato publicado e implementação local validada, ainda sem
+commit. HTTP público e demais testes ponta a ponta continuam pendentes. A entrega
+completa deve cobrir:
 
 - unitários: DTOs exatos, normalização, Base64URL canônica, hash com separação de
   domínio, transições, leases, cooldown, quotas, três tentativas, três tokens
@@ -420,8 +421,8 @@ Esses resultados locais foram posteriormente publicados no commit
 
 ### Critérios específicos da F1-B.4.5.7
 
-A implementação futura do adapter Resend usa testes unitários e contratuais com
-fake HTTP exclusivamente local. CI não recebe credencial real, não acessa a
+A implementação do adapter Resend usa testes unitários e contratuais com fake
+HTTP exclusivamente local. CI não recebe credencial real, não acessa a
 Resend e não envia mensagem. A validação operacional posterior da conta, domínio
 e mensagem real é evidência separada e não integra o gate automatizado.
 
@@ -468,6 +469,24 @@ explicitamente o resultado `INDETERMINATE`, pois não pertencem à whitelist.
 A cobertura permanece em no mínimo 90% para lines, statements, functions e
 branches em web, API e consolidado, sem exclusão artificial. `Quality`, `API
 integration` e `Required` permanecem obrigatórios.
+
+Na validação local da implementação, os 735 testes unitários da API foram
+aprovados. A cobertura da API alcançou 94,48% de statements, 92,14% de branches,
+97,34% de functions e 94,85% de lines. Os testes contratuais usam `fetch` nativo
+contra servidor HTTP efêmero em loopback e comprovam request, redirect sem segunda
+chamada, abort, truncamento e limite incremental de 64 KiB em respostas fixed e
+chunked, sem rede externa.
+
+Em PostgreSQL `18.6` descartável, 222 cenários aplicáveis foram aprovados na
+validação inicial, inclusive os 18 da F1-B.4.5.6. Após a correção da leitura
+HTTP, os 18 cenários da F1-B.4.5.6 foram reexecutados e aprovados; os recursos
+temporários foram removidos ao final. Essas evidências são locais e ainda aguardam
+commit, publicação e CI remoto.
+
+O Web permaneceu em 100% nas quatro métricas. O consolidado alcançou 94,50% de
+statements, 92,20% de branches, 97,36% de functions e 94,86% de lines; formatação,
+lint, typecheck e builds de API e Web também foram aprovados pelo
+`quality:local`.
 
 Antes da ativação, procedimento manual autorizado e sanitizado deve comprovar
 conta e MFA, plano e limites, subdomínio e DNS, DKIM/SPF e avaliação de DMARC,

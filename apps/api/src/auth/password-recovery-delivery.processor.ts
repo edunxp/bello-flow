@@ -73,7 +73,7 @@ export class PasswordRecoveryDeliveryProcessor
   ) {}
 
   onApplicationBootstrap(): void {
-    if (this.config.mode === 'controlled') this.schedule(0);
+    if (this.config.mode !== 'disabled') this.schedule(0);
   }
 
   async onApplicationShutdown(): Promise<void> {
@@ -106,7 +106,7 @@ export class PasswordRecoveryDeliveryProcessor
   }
 
   private schedule(delayMilliseconds: number): void {
-    if (this.stopping || this.config.mode !== 'controlled') return;
+    if (this.stopping || this.config.mode === 'disabled') return;
     this.scheduled = setTimeout(() => {
       this.scheduled = null;
       const run = this.runCycle()

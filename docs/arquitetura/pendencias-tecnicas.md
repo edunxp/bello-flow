@@ -99,11 +99,12 @@ reclassifica PT-007 ou PT-008 sem autorização explícita.
 O modo `controlled` é restrito a `NODE_ENV=test` e não escolhe provider produtivo;
 PT-009 permanece aberta.
 
-A F1-B.4.5.7 — Provider Produtivo e Configuração Operacional — foi aprovada
-normativamente em 2026-11-05, sem autorização de implementação. Resend é o único
-provider de referência por API HTTPS, com configuração fail-fast, matriz fechada
-de respostas, mensagem mínima, tracking desativado, observabilidade sanitizada e
-port preservado. F1-B.4.5.8–F1-B.4.5.11 continuam propostas não aprovadas.
+A F1-B.4.5.7 — Provider Produtivo e Configuração Operacional — foi aprovada e
+publicada normativamente em 2026-11-05. Resend é o único provider de referência
+por API HTTPS, com configuração fail-fast, matriz fechada de respostas, mensagem
+mínima, tracking desativado, observabilidade sanitizada e port preservado. A
+implementação está validada localmente e aguarda commit; F1-B.4.5.8–F1-B.4.5.11
+continuam propostas não aprovadas.
 
 Essa aprovação resolve a escolha normativa de fornecedor e o desenho técnico, mas
 não resolve a PT-009. A pendência conserva as evidências operacionais de:

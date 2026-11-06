@@ -7,23 +7,25 @@ aprovado ou um marco relevante for publicado.
 
 ## Fase atual
 
-- **Último marco publicado:** F1-B.4.5.6 — Processador de Entrega com Adapter
-  Controlado, publicada pelo commit
-  `601c92ab8f3922b5f0e2a03c432de5fc74c6258d`.
-- **Publicação e CI:** branch `main` sincronizada após a publicação; execução
-  [CI 42117321177](https://github.com/edunxp/bello-flow/actions/runs/42117321177)
-  aprovada nos jobs `Quality`, `API integration` e `Required`.
+- **Último marco publicado:** contrato normativo da F1-B.4.5.7 publicado pelo
+  commit `eaa660cdf251e7362087e5beeae0fca0eec8bca3`; a correção de isolamento
+  dos testes da F1-B.4.5.6 foi publicada posteriormente no commit
+  `9560740beef22324aa17bdbe570c5f58367754e2`.
+- **Publicação e CI:** branch `main` sincronizada; execução
+  [CI 42142538496](https://github.com/edunxp/bello-flow/actions/runs/42142538496)
+  aprovada nos jobs `Quality`, `API integration` e `Required` para o SHA mais
+  recente.
 - **Estado da F1-B.4.5:** fundação PostgreSQL, camada transacional, admissão
   efêmera, executor Argon2id global compartilhado e solicitação/classificação
   persistente e o caso de uso interno de redefinição foram publicados. As
   reconciliações permanecem observacionais, a admissão e a anti-enumeração estão
   integradas e a regressão do login foi preservada. A F1-B.4.5.6 está publicada;
-  a F1-B.4.5.7 possui contrato D1–D7 aprovado, mas não está implementada. Provider
-  operacionalmente validado, endpoints HTTP e frontend permanecem pendentes, sem
-  disponibilidade produtiva declarada.
-- **Próximo objetivo operacional:** revisão final da formalização normativa da
-  F1-B.4.5.7. Este registro não autoriza implementação, commit ou publicação.
-  F1-B.4.5.8–F1-B.4.5.11 permanecem propostas de planejamento não aprovadas.
+  a F1-B.4.5.7 possui contrato D1–D7 publicado e implementação local validada,
+  ainda sem commit ou publicação. Provider operacionalmente validado, endpoints
+  HTTP e frontend permanecem pendentes, sem disponibilidade produtiva declarada.
+- **Próximo objetivo operacional:** revisão final da implementação local da
+  F1-B.4.5.7 antes de eventual autorização separada de commit. F1-B.4.5.8–F1-B.4.5.11
+  permanecem propostas de planejamento não aprovadas.
 - **Pendências:** PT-003, PT-007, PT-008 e PT-009 preservam o estado de seus
   documentos canônicos. Esta consolidação não as encerra nem declara a recuperação
   disponível em produção.
@@ -210,12 +212,13 @@ O contrato está consolidado em
 [persistência](arquitetura/persistencia-e-auditoria.md#operações-protegidas-da-f1-b456)
 e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b456).
 
-## Incremento normativo aprovado, não implementado
+## Incremento implementado localmente, aguardando revisão
 
 ### F1-B.4.5.7 — Provider Produtivo e Configuração Operacional
 
-- **Estado:** contrato D1–D7 aprovado e formalizado localmente; implementação não
-  iniciada nem autorizada.
+- **Estado:** contrato D1–D7 aprovado e publicado; adapter, configuração, wiring,
+  mensagem, observabilidade e testes implementados e validados localmente, sem
+  commit ou publicação desta implementação.
 - **Provider de referência:** Resend por API HTTPS, endpoint fixo, cliente HTTP
   nativo e port da F1-B.4.5.6 preservado, sem SDK obrigatório, fallback ou segundo
   provider.
@@ -230,9 +233,12 @@ e [qualidade](arquitetura/qualidade-e-testes.md#critérios-específicos-da-f1-b4
   Unidos, retenção de mensagens/logs por 30 dias em Free, Pro e Scale e backups
   por 7 dias. Isso não representa aceitação ou mitigação pelo projeto e deve ser
   reconfirmado na contratação.
-- **Limite:** PT-009 e PT-014 permanecem abertas; aprovação normativa não equivale
-  a implementação, publicação, provider validado ou ativação. Recuperação de senha
-  não está declarada disponível em produção.
+- **Evidências locais:** testes unitários e contratuais sem rede externa,
+  regressões em PostgreSQL `18.6` descartável e gates locais; nenhuma credencial
+  ou mensagem real foi utilizada.
+- **Limite:** PT-009 e PT-014 permanecem abertas; implementação local não equivale
+  a publicação, provider validado ou ativação. Recuperação de senha não está
+  declarada disponível em produção.
 
 O contrato está consolidado em
 [decisões técnicas](arquitetura/decisoes-tecnicas.md#contrato-aprovado--f1-b457-provider-produtivo-e-configuração-operacional),

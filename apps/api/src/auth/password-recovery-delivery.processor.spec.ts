@@ -41,7 +41,7 @@ function noWork() {
 
 function createHarness(
   adapterResult: 'ACCEPTED' | 'NOT_ACCEPTED' | 'INDETERMINATE' = 'ACCEPTED',
-  mode: 'disabled' | 'controlled' = 'controlled',
+  mode: 'disabled' | 'controlled' | 'resend' = 'controlled',
 ) {
   const persistence = {
     claim: vi.fn().mockResolvedValueOnce(claimed()).mockResolvedValue(noWork()),
@@ -85,7 +85,9 @@ function createHarness(
   };
   const config: PasswordRecoveryDeliveryConfig = {
     mode,
-    publicOrigin: mode === 'controlled' ? 'https://bello.example' : null,
+    publicOrigin: mode === 'disabled' ? null : 'https://bello.example',
+    resendApiKey: mode === 'resend' ? 'synthetic_api_key' : null,
+    fromAddress: mode === 'resend' ? 'mail@auth.bello.example' : null,
     idlePollingMilliseconds: 1_000,
     maximumClaimsPerCycle: 10,
     adapterTimeoutMilliseconds: 10_000,
@@ -498,7 +500,7 @@ describe('PasswordRecoveryDeliveryProcessor', () => {
     );
 
     vi.useFakeTimers();
-    const timeoutHarness = createHarness();
+    const timeoutHarness = createHarness('ACCEPTED', 'resend');
     timeoutHarness.adapter.deliver.mockReturnValueOnce(new Promise(() => {}));
     const cycle = timeoutHarness.processor.runCycle();
     await vi.advanceTimersByTimeAsync(10_000);
@@ -511,8 +513,8 @@ describe('PasswordRecoveryDeliveryProcessor', () => {
     ).toBe(true);
   });
 
-  it('stops new work and aborts an active controlled call on shutdown', async () => {
-    const harness = createHarness();
+  it('stops new work and aborts an active provider call on shutdown', async () => {
+    const harness = createHarness('ACCEPTED', 'resend');
     let signal: AbortSignal | undefined;
     harness.adapter.deliver.mockImplementationOnce(
       async (input) =>
@@ -531,21 +533,27 @@ describe('PasswordRecoveryDeliveryProcessor', () => {
     expect(harness.persistence.claim).toHaveBeenCalledOnce();
   });
 
-  it('starts only in controlled mode and polls after confirmed NO_WORK', async () => {
-    vi.useFakeTimers();
-    const controlled = createHarness();
-    controlled.persistence.claim.mockReset();
-    controlled.persistence.claim.mockResolvedValue(noWork());
-    controlled.processor.onApplicationBootstrap();
-    expect(controlled.persistence.claim).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(controlled.persistence.claim).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(999);
-    expect(controlled.persistence.claim).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(1);
-    expect(controlled.persistence.claim).toHaveBeenCalledTimes(2);
-    await controlled.processor.onApplicationShutdown();
+  it.each(['controlled', 'resend'] as const)(
+    'starts in %s mode and polls after confirmed NO_WORK',
+    async (mode) => {
+      vi.useFakeTimers();
+      const enabled = createHarness('ACCEPTED', mode);
+      enabled.persistence.claim.mockReset();
+      enabled.persistence.claim.mockResolvedValue(noWork());
+      enabled.processor.onApplicationBootstrap();
+      expect(enabled.persistence.claim).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(enabled.persistence.claim).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(enabled.persistence.claim).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(enabled.persistence.claim).toHaveBeenCalledTimes(2);
+      await enabled.processor.onApplicationShutdown();
+    },
+  );
 
+  it('does not start in disabled mode', async () => {
+    vi.useFakeTimers();
     const disabled = createHarness('ACCEPTED', 'disabled');
     disabled.processor.onApplicationBootstrap();
     await vi.runAllTimersAsync();

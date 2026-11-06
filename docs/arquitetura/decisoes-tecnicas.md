@@ -212,9 +212,9 @@ O detalhamento, os critérios de teste e os limites de saturação estão em
 ### Complemento aprovado — F1-B.4.5 Recuperação de Senha
 
 - **Estado:** Aprovado; F1-B.4.5.1–F1-B.4.5.6 implementadas e publicadas nos
-  respectivos recortes; F1-B.4.5.7 aprovada normativamente e ainda não
-  implementada; provider validado, HTTP, frontend e demais incrementos permanecem
-  pendentes
+  respectivos recortes; F1-B.4.5.7 aprovada normativamente, publicada e
+  implementada localmente, ainda sem commit da implementação; provider validado,
+  HTTP, frontend e demais incrementos permanecem pendentes
 - **Data de aprovação:** 2026-11-04
 - **Escopo:** formaliza exclusivamente a recuperação e a redefinição de senha da
   F1-B.4.5. Não altera os quatro endpoints publicados na F1-B.4.4, não implementa
@@ -833,14 +833,15 @@ lease e erro integral não são auditados.
 
 ### Contrato aprovado — F1-B.4.5.7 Provider Produtivo e Configuração Operacional
 
-- **Estado:** aprovado normativamente; implementação não iniciada, provider não
-  validado operacionalmente e recuperação de senha não disponível em produção.
+- **Estado:** aprovado normativamente e publicado; implementação concluída e
+  validada localmente, ainda sem commit; provider não validado operacionalmente e
+  recuperação de senha não disponível em produção.
 - **Data de aprovação:** 2026-11-05.
-- **Objetivo:** integrar posteriormente um provider real de e-mail transacional
+- **Objetivo:** integrar um provider real de e-mail transacional
   atrás do port da F1-B.4.5.6, com configuração, classificação conservadora de
   respostas, mensagem mínima, observabilidade e testes, sem alterar a fronteira
   PostgreSQL aprovada.
-- **Incluído na implementação futura:** adapter Resend, configuração e validação
+- **Incluído na implementação:** adapter Resend, configuração e validação
   fail-fast, wiring NestJS, template local mínimo, contrato HTTP, observabilidade
   mínima, testes unitários e contratuais e documentação aplicável.
 - **Excluído:** migrations, tabelas ou estados novos; alteração das cinco funções
@@ -893,8 +894,10 @@ Antes de ativar `resend`, evidência sanitizada deve comprovar:
    ou reescrita de link e sem segredo nas evidências.
 
 Essas verificações não integram o CI e não estão comprovadas pela aprovação
-normativa ou por uma futura implementação local. PT-009 permanece aberta e sua
-reclassificação ou resolução exige as evidências e aprovação explícita.
+normativa nem pela implementação validada localmente, ainda sem publicação ou CI
+remoto no SHA da implementação. PT-009 permanece aberta e sua reclassificação ou
+resolução exige as evidências e aprovação explícita; nenhuma disponibilidade
+produtiva é declarada.
 
 #### D2 — configuração e segredos
 
@@ -1268,9 +1271,9 @@ necessários. Nenhuma disponibilidade produtiva é declarada por este contrato.
 - **Regras:** RN-069–RN-076, RN-120–RN-128.
 - **Relacionadas:** AT-001, AT-003, AT-007, AT-010.
 - **Evolução:** a F1-B.4.5 aprovou geração just-in-time sem persistir token ou
-  link recuperável. F1-B.4.5.6 foi publicada; F1-B.4.5.7 aprova Resend e seu
-  contrato técnico sem declarar implementação ou validação operacional. PT-009
-  continua aberta.
+  link recuperável. F1-B.4.5.6 foi publicada; F1-B.4.5.7 aprova Resend e possui
+  implementação local validada, ainda sem commit e sem validação operacional.
+  PT-009 continua aberta.
 
 ## AT-010 — Observabilidade, testes e prontidão
 

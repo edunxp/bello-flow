@@ -15,13 +15,16 @@ import { PasswordRecoveryAdmissionService } from './password-recovery-admission.
 import {
   ControlledPasswordRecoveryDeliveryAdapter,
   PASSWORD_RECOVERY_DELIVERY_ADAPTER,
+  type PasswordRecoveryDeliveryAdapter,
 } from './password-recovery-delivery.adapter.js';
 import {
   loadPasswordRecoveryDeliveryConfig,
   PASSWORD_RECOVERY_DELIVERY_CONFIG,
+  type PasswordRecoveryDeliveryConfig,
 } from './password-recovery-delivery.config.js';
 import { PasswordRecoveryDeliveryPersistence } from './password-recovery-delivery.persistence.js';
 import { PasswordRecoveryDeliveryProcessor } from './password-recovery-delivery.processor.js';
+import { ResendPasswordRecoveryDeliveryAdapter } from './password-recovery-resend.adapter.js';
 import { PasswordRecoveryRequestPersistence } from './password-recovery-request.persistence.js';
 import { PasswordRecoveryRequestService } from './password-recovery-request.service.js';
 import { PasswordResetPersistence } from './password-reset.persistence.js';
@@ -36,7 +39,6 @@ import { PasswordResetService } from './password-reset.service.js';
     Argon2ExecutionService,
     LoginAdmissionService,
     PasswordRecoveryAdmissionService,
-    ControlledPasswordRecoveryDeliveryAdapter,
     PasswordRecoveryDeliveryPersistence,
     PasswordRecoveryDeliveryProcessor,
     PasswordRecoveryRequestPersistence,
@@ -58,7 +60,16 @@ import { PasswordResetService } from './password-reset.service.js';
     },
     {
       provide: PASSWORD_RECOVERY_DELIVERY_ADAPTER,
-      useExisting: ControlledPasswordRecoveryDeliveryAdapter,
+      inject: [PASSWORD_RECOVERY_DELIVERY_CONFIG],
+      useFactory: (
+        config: PasswordRecoveryDeliveryConfig,
+      ): PasswordRecoveryDeliveryAdapter =>
+        config.mode === 'resend'
+          ? new ResendPasswordRecoveryDeliveryAdapter(
+              config.resendApiKey!,
+              config.fromAddress!,
+            )
+          : new ControlledPasswordRecoveryDeliveryAdapter(),
     },
   ],
   exports: [AuthenticationService],
