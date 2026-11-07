@@ -9,68 +9,53 @@ corrente, devem apontar para este registro em vez de duplicar o estado operacion
 
 ## Fase atual
 
-### F1-B.4.5.11 — Interface Angular de autenticação e recuperação
+- **Último marco publicado — VERIFICADO:** interface Angular da F1-B.4.5.11,
+  integrada por fast-forward na main em
+  `330a33ac40ebf2b1516288711185d335bfb6d8a0`.
+- **CI e revisão — VERIFICADO:** CI da branch
+  [42328352367](https://github.com/edunxp/bello-flow/actions/runs/42328352367)
+  e CI final da main
+  [42328723369](https://github.com/edunxp/bello-flow/actions/runs/42328723369),
+  ambos com Quality, API integration e Required aprovados no SHA exato.
+  Outro agente Codex em revisão independente identificou quatro achados,
+  corrigidos no commit final e reavaliados com parecer favorável antes da
+  autorização de integração. A interface tem 66 testes Angular aprovados e
+  cobertura web 100% em lines/statements/functions e 98,70% em branches.
+- **Ciclo atual — VERIFICADO:** recorte de validação ponta a ponta controlada da
+  F1-B.4.5.11, autorizado pelo responsável nesta atividade, em branch
+  `work/f1-b-4-5-11-e2e`, com
+  `BASE_MAIN_SHA=330a33ac40ebf2b1516288711185d335bfb6d8a0`.
+  Base local/remota conferida e árvore inicialmente limpa.
+- **Implementação local — VERIFICADO:** harness Chromium com Angular e API reais,
+  PostgreSQL 18.6 tmpfs em rede interna, TLS temporário, captura de recuperação
+  somente por IPC em memória, fixtures sintéticas e limpeza por ownership.
+  Sem mudança de código produtivo, contrato HTTP, migration, schema ou provider.
+  O novo job Browser E2E integra o gate Required sem reduzir os gates existentes.
+- **Validação local — VERIFICADO:** 12 cenários de navegador aprovados com saída
+  zero e limpeza confirmada; gate quality:local aprovado com cobertura web, API
+  e consolidada acima de 90% nas quatro métricas. Imagens da tela pública de
+  login vazia inspecionadas em desktop e celular, sem cortes ou sobreposição.
+  As rodadas iniciais corrigiram o fallback raiz e o uso incorreto de Fetch.status
+  no harness; não evidenciaram defeito da aplicação.
+- **Revisão do ciclo — VERIFICADO:** revisão independente local encontrou falha
+  no tratamento de limpeza e uma prova de navegação que recarregava o documento.
+  Ambas foram corrigidas e reexaminadas; ausência de CORS funcional também foi
+  explicitamente coberta. Novo parecer no SHA e CI final da branch ainda pendentes,
+  assim como commit e push, neste registro pré-publicação. O relatório operacional
+  registrará seus resultados sem exigir commit adicional apenas para atualizar SHA.
+- **Limites:** falhas 503/429 e atraso de resposta são controlados; não representam
+  falhas reais de persistência ou prova de quotas. CSS zoom 2 não é zoom nativo.
+  Somente Chromium foi exercitado; leitor de tela, certificado/proxy produtivos,
+  provider e entrega real de e-mail permanecem não verificados.
+- **Próximos objetivos propostos:** validação operacional do provider (PT-009),
+  retenção operacional e prontidão produtiva. Pendências existentes não são
+  encerradas nem reclassificadas por este incremento, sem disponibilidade produtiva
+  declarada. A F1-B.4.5.9 continua sem contrato específico aprovado.
 
-- **Escopo aprovado:** em 2026-11-06, o responsável autorizou nesta atividade a
-  interface Angular, os estados e as rotas propostos, testes, documentação,
-  commits, push da branch exclusiva e acompanhamento do CI. Não autorizou
-  integração na main nem prontidão produtiva.
-- **Base — VERIFICADO:** main local, origin/main e referência remota em
-  `bf70c7b0bee8966cec9e5779a92bf8a09ae9ea1d`, sem alterações preexistentes.
-  `BASE_MAIN_SHA` tem esse mesmo valor; branch `work/f1-b-4-5-11-auth-ui`.
-- **Estado — VERIFICADO:** implementação local de login, consulta/restauração,
-  logout atual, solicitação e reset pelo fragmento; rotas, formulários,
-  acessibilidade estática, erros sanitizados, timeout sem retry e token efêmero.
-  Nenhuma mudança de contrato HTTP, API, schema, migration ou provider.
-- **Validação — VERIFICADO:** 66 testes Angular aprovados, incluindo três fluxos
-  entre rotas com HTTP controlado; cobertura web de 100% em lines, statements e
-  functions e 98,70% em branches. Gate completo local aprovado; correção final de feedback dos campos obrigatórios
-  revalidada por tipos, lint, testes, cobertura e build web. Commit, push e CI da
-  branch ainda pendentes neste registro pré-publicação; resultados finais serão
-  informados no relatório.
-- **Revisão independente — VERIFICADO:** outro agente Codex examinou o SHA
-  `1b9ad052a717be3f4cfbe5e50f66f96f7842d881` e identificou quatro correções:
-  recaptura de fragmento no mesmo documento, skip-link sem saída de rota,
-  atualização global após login tardio e reconsulta em entradas de navegação.
-  As correções locais incluem testes de regressão; novo parecer e CI serão
-  registrados no relatório operacional, sem antecipar aprovação.
-- **Limites:** integração em navegador real/API/PostgreSQL, inspeção visual,
-  leitor de tela, provider real, TLS e disponibilidade produtiva não comprovados
-  por esses testes. Revisão independente exigida antes da integração; PT-009 e
-  demais pendências não são encerradas.
-
-
-- **Último marco publicado — VERIFICADO:** F1-B.4.5.10 — Endpoints HTTP de
-  Recuperação, integrada por fast-forward na `main` no commit
-  `edb31644d3912f66760b98461e78d2c5e58868ef`.
-- **Publicação e CI — VERIFICADO:** branch de trabalho validada pela execução
-  [CI 42298230105](https://github.com/edunxp/bello-flow/actions/runs/42298230105)
-  e `main` validada pela execução
-  [CI 42299013887](https://github.com/edunxp/bello-flow/actions/runs/42299013887),
-  ambas no SHA integrado, com `Quality`, `API integration` e `Required` aprovados.
-- **Estado da F1-B.4.5:** fundação PostgreSQL, camada transacional, admissão
-  efêmera, executor Argon2id global compartilhado, solicitação/classificação
-  persistente, caso de uso de redefinição, processamento de entrega, adapter do
-  provider e terminalização de intenções abandonadas foram publicados. Os
-  endpoints HTTP da recuperação também estão integrados, publicados e validados.
-  As reconciliações permanecem observacionais e a regressão do login foi
-  preservada. A validação operacional do provider, a interface Angular, a retenção
-  operacional e a prontidão ponta a ponta permanecem pendentes, sem
-  disponibilidade produtiva declarada.
-- **Fluxo de trabalho vigente:** execução em branch exclusiva, com alterações,
-  validações, correções rotineiras, commits, push normal da branch e CI incluídos
-  no ciclo autorizado. A integração do SHA final na `main` exige autorização
-  explícita posterior. Consulte o
-  [fluxo de desenvolvimento](operacao/fluxo-de-desenvolvimento.md).
-- **Próximo objetivo proposto:** planejar a interface Angular de autenticação e
-  recuperação, antes da validação ponta a ponta e da automação de retenção.
-  F1-B.4.5.9 e F1-B.4.5.11 preservam seus identificadores históricos e continuam
-  propostas sem contrato específico aprovado; o planejamento não autoriza sua
-  implementação. A F1-B.4.5.10 já foi entregue e não integra mais as propostas
-  pendentes.
-- **Pendências:** PT-003, PT-007, PT-008 e PT-009 preservam o estado de seus
-  documentos canônicos. Esta consolidação não as encerra nem declara a recuperação
-  disponível em produção.
+Procedimento e interpretação das evidências:
+[validação em navegador](operacao/validacao-autenticacao-e2e.md).
+Publicação da branch pertence ao ciclo; integração na main exige autorização
+posterior para o SHA final aprovado pelo CI e pela revisão independente.
 
 ## Etapas concluídas
 
@@ -363,8 +348,8 @@ automática:
 ### Sequência recomendada de execução — não aprovada como contrato específico
 
 1. endpoints HTTP da recuperação de senha — concluídos na F1-B.4.5.10;
-2. interface Angular de autenticação e recuperação;
-3. validação ponta a ponta e operacional do e-mail;
+2. interface Angular de autenticação e recuperação — integrada;
+3. validação ponta a ponta controlada — ciclo acima; validação operacional do e-mail posterior;
 4. retenção operacional por mecanismo administrativo simples; e
 5. prontidão produtiva e regressões finais.
 

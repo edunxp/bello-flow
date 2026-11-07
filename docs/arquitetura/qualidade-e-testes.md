@@ -564,6 +564,15 @@ Os testes do Angular cobrem componentes e fluxos E2E essenciais, incluindo:
 - mensagens de validação e conflito;
 - sessão expirada ou revogada.
 
+### Autenticação em navegador com ambiente descartável
+
+O comando `npm run test:e2e:browser` complementa os testes de componentes e da API
+com Chromium, Angular compilado, NestJS e PostgreSQL reais em ambiente isolado.
+O procedimento [E2E](../operacao/validacao-autenticacao-e2e.md) define execução,
+isolamento, evidências reais versus controladas, proteção dos segredos e limites.
+O job Browser E2E é exigido por Required junto dos gates anteriores.
+O estado factual, SHA e resultados ficam exclusivamente no documento de estado.
+
 ## CI
 
 Antes de incorporar alterações à branch principal, o pipeline precisa concluir com sucesso:

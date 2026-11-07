@@ -53,3 +53,8 @@ Os testes de fluxo usam componentes, formulários, Router e HttpClient reais com
 não entrega real de e-mail, atributos de cookie de produção ou experiência em
 navegador real/leitor de tela. Provider, TLS/proxy público, fallback de rotas SPA
 (exceto `/api` e `/health/live`) e prontidão produtiva exigem validação própria.
+
+A suíte adicional de navegador real, API e PostgreSQL descartável é executada
+na raiz por `npm run test:e2e:browser`. Consulte
+[o procedimento](../../docs/operacao/validacao-autenticacao-e2e.md) para isolamento,
+cenários, evidências e limites. Ela não usa o banco persistente de desenvolvimento.

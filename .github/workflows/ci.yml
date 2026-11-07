@@ -227,20 +227,45 @@ jobs:
           ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:password-recovery-delivery --workspace=@bello/api
           ADMIN_TEST_DATABASE_URL="$ADMIN_TEST_DATABASE_URL" npm run test:f1b:password-reset-terminalizer --workspace=@bello/api
 
+  browser-e2e:
+    name: Browser E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
+          package-manager-cache: false
+      - name: Check browser harness syntax
+        run: |
+          node --check scripts/e2e/docker.mjs
+          node --check scripts/e2e/api.mjs
+          node --check scripts/e2e/run.mjs
+      - name: Run isolated Chromium, API and PostgreSQL checks
+        run: node scripts/e2e/docker.mjs
+
   required:
     name: Required
     if: always()
-    needs: [quality, integration-api]
+    needs: [quality, integration-api, browser-e2e]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
       - name: Verify required jobs
         env:
+          BROWSER_RESULT: ${{ needs['browser-e2e'].result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
           INTEGRATION_API_RESULT: ${{ needs['integration-api'].result }}
         run: |
-          if [[ "$QUALITY_RESULT" != "success" || "$INTEGRATION_API_RESULT" != "success" ]]; then
-            printf 'Required jobs failed: quality=%s integration-api=%s\n' \
-              "$QUALITY_RESULT" "$INTEGRATION_API_RESULT" >&2
+          if [[ "$QUALITY_RESULT" != "success" || "$INTEGRATION_API_RESULT" != "success" || "$BROWSER_RESULT" != "success" ]]; then
+            printf 'Required jobs failed: quality=%s integration-api=%s browser=%s\n' \
+              "$QUALITY_RESULT" "$INTEGRATION_API_RESULT" "$BROWSER_RESULT" >&2
             exit 1
           fi
