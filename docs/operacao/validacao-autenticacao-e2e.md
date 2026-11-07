@@ -93,3 +93,11 @@ O job Browser E2E executa o mesmo comando. Required exige seu sucesso junto de
 Quality e API integration. Não se reduzem cobertura ou gates anteriores.
 O formato e a sintaxe do harness são verificados, e os cenários são seriais para
 preservar isolamento de fixtures e previsibilidade dos limites aprovados.
+
+## Uso manual local
+
+O perfil separado de [homologação local](homologacao-local.md) reutiliza o gateway
+e a limpeza sem alterar esta suíte. Ele publica apenas a porta HTTPS em loopback,
+mantém o banco privado e força envio disabled; não recebe segredo Resend.
+O smoke de homologação e a prova de publicação pelo host também integram o job
+Browser E2E, sem substituir os 12 cenários acima.

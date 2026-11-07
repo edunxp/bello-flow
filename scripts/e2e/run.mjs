@@ -1,10 +1,9 @@
+import { openGateway } from "./gateway.mjs";
 import { randomUUID } from "node:crypto";
 import { fork, spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve, extname, sep } from "node:path";
-import { createServer } from "node:https";
-import { request as upstreamRequest } from "node:http";
+import { join } from "node:path";
 import { once } from "node:events";
 import { Client } from "pg";
 import { chromium, expect } from "@playwright/test";
@@ -251,72 +250,11 @@ try {
     }),
   );
   stage = "same-origin gateway";
-  const webRoot = resolve("apps/web/dist/web/browser");
-  server = createServer(
-    {
-      key: await readFile(join(temporary, "key.pem")),
-      cert: await readFile(join(temporary, "cert.pem")),
-    },
-    async (req, res) => {
-      if (
-        req.url.startsWith("/api/") ||
-        req.url.split("?")[0] === "/health/live"
-      ) {
-        const headers = { ...req.headers };
-        for (const name of Object.keys(headers))
-          if (name === "forwarded" || name.startsWith("x-forwarded-"))
-            delete headers[name];
-        const upstream = upstreamRequest(
-          {
-            host: "127.0.0.1",
-            port: ready,
-            path: req.url,
-            method: req.method,
-            headers,
-          },
-          (response) => {
-            res.writeHead(response.statusCode, response.headers);
-            response.pipe(res);
-          },
-        );
-        upstream.on("error", () => {
-          res.writeHead(503);
-          res.end();
-        });
-        req.pipe(upstream);
-        return;
-      }
-      try {
-        const path = new URL(req.url, origin).pathname;
-        const candidate = resolve(webRoot, "." + decodeURIComponent(path));
-        if (candidate !== webRoot && !candidate.startsWith(webRoot + sep)) {
-          res.writeHead(404);
-          res.end();
-          return;
-        }
-        const file = extname(candidate)
-          ? candidate
-          : join(webRoot, "index.html");
-        const contents = await readFile(file);
-        res.setHeader(
-          "Content-Type",
-          file.endsWith(".js")
-            ? "text/javascript"
-            : file.endsWith(".css")
-              ? "text/css"
-              : file.endsWith(".ico")
-                ? "image/x-icon"
-                : "text/html; charset=utf-8",
-        );
-        res.end(contents);
-      } catch {
-        res.writeHead(404);
-        res.end();
-      }
-    },
-  );
-  server.listen(15443, "127.0.0.1");
-  await once(server, "listening");
+  server = await openGateway({
+    apiPort: ready,
+    key: await readFile(join(temporary, "key.pem")),
+    cert: await readFile(join(temporary, "cert.pem")),
+  });
   stage = "chromium";
   browser = await chromium.launch({ headless: true });
   console.log(

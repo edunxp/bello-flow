@@ -58,3 +58,7 @@ A suíte adicional de navegador real, API e PostgreSQL descartável é executada
 na raiz por `npm run test:e2e:browser`. Consulte
 [o procedimento](../../docs/operacao/validacao-autenticacao-e2e.md) para isolamento,
 cenários, evidências e limites. Ela não usa o banco persistente de desenvolvimento.
+
+Para usar a interface manualmente somente na própria máquina, com banco
+descartável e envio desabilitado, consulte
+[a homologação HTTPS local](../../docs/operacao/homologacao-local.md).

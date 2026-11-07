@@ -248,8 +248,17 @@ jobs:
           node --check scripts/e2e/docker.mjs
           node --check scripts/e2e/api.mjs
           node --check scripts/e2e/run.mjs
+          node --check scripts/e2e/gateway.mjs
+          node --check scripts/e2e/resources.mjs
+          node --check scripts/e2e/local.mjs
+          node --check scripts/e2e/local-api.mjs
+          node --check scripts/e2e/local-account.mjs
+          node --check scripts/e2e/local-control.mjs
       - name: Run isolated Chromium, API and PostgreSQL checks
-        run: node scripts/e2e/docker.mjs
+        run: |
+          node scripts/e2e/docker.mjs
+          node scripts/e2e/docker.mjs --local-smoke
+          node scripts/e2e/docker.mjs --local-check
 
   required:
     name: Required

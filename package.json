@@ -24,7 +24,12 @@
     "test:prisma": "npm run test:prisma --workspace=@bello/api",
     "test:transaction": "npm run test:transaction --workspace=@bello/api",
     "quality:local": "npm run prisma:generate --workspace=@bello/api && npm run format:check && npm run lint && npm run typecheck && npm run test:coverage:script && npm run test:coverage && npm run build",
-    "test:e2e:browser": "node scripts/e2e/docker.mjs"
+    "test:e2e:browser": "node scripts/e2e/docker.mjs",
+    "homologacao:local": "node scripts/e2e/docker.mjs --local",
+    "homologacao:conta": "node scripts/e2e/local-control.mjs account",
+    "homologacao:parar": "node scripts/e2e/local-control.mjs stop",
+    "test:homologacao:local": "node scripts/e2e/docker.mjs --local-smoke",
+    "test:homologacao:host": "node scripts/e2e/docker.mjs --local-check"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

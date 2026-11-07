@@ -1,7 +1,24 @@
+import { cleanup } from "./resources.mjs";
 // Only resources with this run's random identity may be removed.
 import { randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
+const arguments_ = process.argv.slice(2);
+if (
+  arguments_.length > 1 ||
+  arguments_.some(
+    (value) => !["--local", "--local-smoke", "--local-check"].includes(value),
+  )
+) {
+  console.error(
+    "Modo inválido. Use sem argumentos, --local, --local-smoke ou --local-check.",
+  );
+  process.exit(1);
+}
+const localCheck = process.argv.includes("--local-check");
+const local = process.argv.includes("--local") || localCheck;
+const smoke = process.argv.includes("--local-smoke");
+let keep = false;
 const run = "bello-e2e-" + randomUUID();
 const label = "bello.e2e.run=" + run;
 const image = run + ":test";
@@ -26,7 +43,10 @@ for (const name of [
 environment.POSTGRES_USER = "bello_admin";
 environment.POSTGRES_DB = "postgres";
 environment.BELLO_E2E_RUN = run;
+environment.BELLO_LOCAL_ONLY = local || smoke ? "true" : "false";
 const owned = [];
+const extraNetworks = [];
+const frontend = run + "-front";
 let networkCreated = false;
 function docker(args, options = {}) {
   const result = spawnSync("docker", args, {
@@ -37,67 +57,6 @@ function docker(args, options = {}) {
   if (result.status !== 0) throw new Error("Docker operation failed");
   return result.stdout?.trim() ?? "";
 }
-function cleanup() {
-  let clean = true;
-  for (const [kind, name] of owned.reverse()) {
-    try {
-      const actual = docker([
-        kind,
-        "inspect",
-        "--format",
-        '{{index .Config.Labels "bello.e2e.run"}}',
-        name,
-      ]);
-      if (actual !== run) throw new Error("Ownership mismatch");
-      docker([kind, "rm", ...(kind === "container" ? ["--force"] : []), name]);
-      const filter =
-        kind === "image" ? "reference=" + name : "name=^" + name + "$";
-      const remains = docker([
-        kind,
-        "ls",
-        ...(kind === "container" ? ["--all"] : []),
-        "--filter",
-        filter,
-        "--format",
-        "{{.ID}}",
-      ]);
-      if (remains) throw new Error("Removal not confirmed");
-    } catch {
-      clean = false;
-      process.stderr.write("Scoped cleanup needs inspection: " + name + "\n");
-    }
-  }
-  if (networkCreated) {
-    try {
-      const actual = docker([
-        "network",
-        "inspect",
-        "--format",
-        '{{index .Labels "bello.e2e.run"}}',
-        network,
-      ]);
-      if (actual !== run) throw new Error("Ownership mismatch");
-      docker(["network", "rm", network]);
-      if (
-        docker([
-          "network",
-          "ls",
-          "--filter",
-          "name=^" + network + "$",
-          "--format",
-          "{{.ID}}",
-        ])
-      )
-        throw new Error("Removal not confirmed");
-    } catch {
-      clean = false;
-      process.stderr.write(
-        "Scoped cleanup needs inspection: " + network + "\n",
-      );
-    }
-  }
-  return clean;
-}
 let status = 0;
 try {
   docker(
@@ -107,6 +66,10 @@ try {
   owned.push(["image", image]);
   docker(["network", "create", "--internal", "--label", label, network]);
   networkCreated = true;
+  if (local) {
+    docker(["network", "create", "--label", label, frontend]);
+    extraNetworks.push(frontend);
+  }
   const dbEnv = Object.keys(environment)
     .filter(
       (name) =>
@@ -175,41 +138,120 @@ try {
     "--label",
     label,
     "--network",
-    network,
+    local ? frontend : network,
     "--shm-size",
     "1g",
+    ...(local ? ["--publish", "127.0.0.1:15443:15443"] : []),
     "--env",
     "BELLO_E2E_RUN",
+    "--env",
+    "BELLO_LOCAL_ONLY",
     "--env",
     "BELLO_TEST_APP_PASSWORD",
     "--env",
     "BELLO_TEST_MIGRATOR_PASSWORD",
     image,
+    ...(local || smoke
+      ? ["node", "scripts/e2e/local.mjs", ...(smoke ? ["--smoke"] : [])]
+      : []),
   ]);
   if (!container) throw new Error("Runner creation failed");
   owned.push(["container", runner]);
-  const result = spawnSync("docker", ["start", "--attach", runner], {
-    stdio: "inherit",
-  });
-  if (
-    result.status === 0 &&
-    docker(["inspect", "--format", "{{.State.ExitCode}}", runner]) === "0"
-  ) {
-    const output = "/tmp/" + run + "-visuals";
-    docker(["cp", runner + ":/tmp/bello-e2e-visuals", output]);
-    process.stdout.write("Empty public login screenshots: " + output + "\n");
+  if (local) docker(["network", "connect", network, runner]);
+  if (local) {
+    const bindings = JSON.parse(docker(["inspect", runner]))[0].HostConfig
+      .PortBindings;
+    if (
+      Object.keys(bindings).length !== 1 ||
+      bindings["15443/tcp"]?.length !== 1 ||
+      bindings["15443/tcp"][0].HostIp !== "127.0.0.1" ||
+      bindings["15443/tcp"][0].HostPort !== "15443"
+    )
+      throw new Error("Loopback binding not proved");
+    docker(["start", runner]);
+    let ready = false;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      if (docker(["logs", runner]).includes("LOCAL_READY")) {
+        ready = true;
+        break;
+      }
+      if (
+        docker(["inspect", "--format", "{{.State.Running}}", runner]) !== "true"
+      )
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    if (!ready) throw new Error("Local startup failed");
+    const effective = JSON.parse(docker(["inspect", runner]))[0].NetworkSettings
+      .Ports["15443/tcp"];
+    if (effective?.length !== 1 || effective[0].HostIp !== "127.0.0.1")
+      throw new Error("Effective loopback publication not proved");
+    if (localCheck) {
+      const { get } = await import("node:https");
+      for (const path of ["/health/live", "/login"]) {
+        await new Promise((resolve, reject) => {
+          const req = get(
+            "https://127.0.0.1:15443" + path,
+            { rejectUnauthorized: false },
+            (res) => {
+              let body = "";
+              res.on("data", (chunk) => (body += chunk));
+              res.on("end", () =>
+                res.statusCode === 200 &&
+                (path === "/login"
+                  ? body.includes("<app-root>")
+                  : body === '{"status":"ok"}')
+                  ? resolve()
+                  : reject(new Error()),
+              );
+            },
+          );
+          req.on("error", reject);
+          req.setTimeout(10000, () => req.destroy(new Error()));
+        });
+      }
+      console.log(
+        "PASS publicação loopback: health e shell Angular via HTTPS no host.",
+      );
+    }
+    keep = !localCheck;
+    if (!localCheck) {
+      console.log("HTTPS local: https://127.0.0.1:15443");
+      console.log(
+        "E-mail desabilitado. Banco descartável. Identificador: " + run,
+      );
+      console.log("Criar conta: npm run homologacao:conta -- " + run);
+      console.log("Encerrar: npm run homologacao:parar -- " + run);
+    }
+  } else {
+    const result = spawnSync("docker", ["start", "--attach", runner], {
+      stdio: "inherit",
+    });
+    if (
+      !smoke &&
+      result.status === 0 &&
+      docker(["inspect", "--format", "{{.State.ExitCode}}", runner]) === "0"
+    ) {
+      const output = "/tmp/" + run + "-visuals";
+      docker(["cp", runner + ":/tmp/bello-e2e-visuals", output]);
+      process.stdout.write("Empty public login screenshots: " + output + "\n");
+    }
+    if (
+      result.status !== 0 ||
+      docker(["inspect", "--format", "{{.State.ExitCode}}", runner]) !== "0"
+    )
+      status = 1;
   }
-  if (
-    result.status !== 0 ||
-    docker(["inspect", "--format", "{{.State.ExitCode}}", runner]) !== "0"
-  )
-    status = 1;
 } catch {
   process.stderr.write(
     "Browser E2E failed; no credentials or raw errors are printed.\n",
   );
   status = 1;
 } finally {
-  if (!cleanup()) status = 1;
+  if (
+    !keep &&
+    !cleanup({ run, owned, network, networkCreated, docker, extraNetworks })
+  )
+    status = 1;
 }
 process.exitCode = status;

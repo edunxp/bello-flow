@@ -9,53 +9,61 @@ corrente, devem apontar para este registro em vez de duplicar o estado operacion
 
 ## Fase atual
 
-- **Último marco publicado — VERIFICADO:** interface Angular da F1-B.4.5.11,
-  integrada por fast-forward na main em
-  `330a33ac40ebf2b1516288711185d335bfb6d8a0`.
-- **CI e revisão — VERIFICADO:** CI da branch
-  [42328352367](https://github.com/edunxp/bello-flow/actions/runs/42328352367)
-  e CI final da main
-  [42328723369](https://github.com/edunxp/bello-flow/actions/runs/42328723369),
-  ambos com Quality, API integration e Required aprovados no SHA exato.
-  Outro agente Codex em revisão independente identificou quatro achados,
-  corrigidos no commit final e reavaliados com parecer favorável antes da
-  autorização de integração. A interface tem 66 testes Angular aprovados e
-  cobertura web 100% em lines/statements/functions e 98,70% em branches.
-- **Ciclo atual — VERIFICADO:** recorte de validação ponta a ponta controlada da
-  F1-B.4.5.11, autorizado pelo responsável nesta atividade, em branch
-  `work/f1-b-4-5-11-e2e`, com
-  `BASE_MAIN_SHA=330a33ac40ebf2b1516288711185d335bfb6d8a0`.
+- **Último marco publicado — VERIFICADO:** validação E2E controlada da
+  F1-B.4.5.11 integrada por fast-forward na main em
+  `2180cf17751497be9ff07905a9ac5e4e8e243c04`.
+  CI da branch [42331070170](https://github.com/edunxp/bello-flow/actions/runs/42331070170)
+  e CI final da main [42332986183](https://github.com/edunxp/bello-flow/actions/runs/42332986183)
+  com Quality, API integration, Browser E2E e Required aprovados no SHA exato.
+  Revisão independente favorável após correções, sem ativação produtiva.
+- **Ciclo atual — VERIFICADO:** preparação de homologação HTTPS na máquina local,
+  com envio disabled, autorizada pelo responsável. Branch
+  `work/pt009-local-homologacao`, com
+  `BASE_MAIN_SHA=2180cf17751497be9ff07905a9ac5e4e8e243c04`.
   Base local/remota conferida e árvore inicialmente limpa.
-- **Implementação local — VERIFICADO:** harness Chromium com Angular e API reais,
-  PostgreSQL 18.6 tmpfs em rede interna, TLS temporário, captura de recuperação
-  somente por IPC em memória, fixtures sintéticas e limpeza por ownership.
-  Sem mudança de código produtivo, contrato HTTP, migration, schema ou provider.
-  O novo job Browser E2E integra o gate Required sem reduzir os gates existentes.
-- **Validação local — VERIFICADO:** 12 cenários de navegador aprovados com saída
-  zero e limpeza confirmada; gate quality:local aprovado com cobertura web, API
-  e consolidada acima de 90% nas quatro métricas. Imagens da tela pública de
-  login vazia inspecionadas em desktop e celular, sem cortes ou sobreposição.
-  As rodadas iniciais corrigiram o fallback raiz e o uso incorreto de Fetch.status
-  no harness; não evidenciaram defeito da aplicação.
-- **Revisão do ciclo — VERIFICADO:** revisão independente local encontrou falha
-  no tratamento de limpeza e uma prova de navegação que recarregava o documento.
-  Ambas foram corrigidas e reexaminadas; ausência de CORS funcional também foi
-  explicitamente coberta. Novo parecer no SHA e CI final da branch ainda pendentes,
-  assim como commit e push, neste registro pré-publicação. O relatório operacional
-  registrará seus resultados sem exigir commit adicional apenas para atualizar SHA.
-- **Limites:** falhas 503/429 e atraso de resposta são controlados; não representam
-  falhas reais de persistência ou prova de quotas. CSS zoom 2 não é zoom nativo.
-  Somente Chromium foi exercitado; leitor de tela, certificado/proxy produtivos,
-  provider e entrega real de e-mail permanecem não verificados.
-- **Próximos objetivos propostos:** validação operacional do provider (PT-009),
-  retenção operacional e prontidão produtiva. Pendências existentes não são
-  encerradas nem reclassificadas por este incremento, sem disponibilidade produtiva
-  declarada. A F1-B.4.5.9 continua sem contrato específico aprovado.
+- **Implementação local — VERIFICADO:** comandos para iniciar sessão manual,
+  criar conta sintética com senha em TTY oculto e encerrar por identificador.
+  API real em development e entrega obrigatoriamente disabled, sem chave Resend.
+  Gateway HTTPS e limpeza extraídos do E2E para reutilização. Banco em tmpfs na
+  rede interna; runner com rede de acesso própria e publicação exclusiva
+  `127.0.0.1:15443`, conferida na configuração e na publicação efetiva.
+  Nenhum código produtivo, contrato HTTP, schema ou migration foi alterado.
+- **Validação — VERIFICADO:** smoke de homologação aprovou login, recarga, cookie
+  seguro e recuperação202, com request PENDING e zero tentativas/tokens.
+  Regressão dos 12 cenários E2E e quality:local aprovados, cobertura web/API/
+  consolidada preservada acima de 90% em todas as métricas. Comandos ambíguos e
+  identificador inválido foram recusados sem alterar recursos.
+  Teste de host acessou health e shell Angular por HTTPS e encerrou sua sessão.
+  Após correção da rede, o Windows também confirmou health200 e shell Angular200.
+- **Achado corrigido — VERIFICADO:** publicação em runner ligado apenas à rede
+  interna não produzia port mapping efetivo, embora constasse no HostConfig.
+  A sessão inacessível foi encerrada por ownership. A solução separa rede de
+  acesso do runner e rede privada do banco; o runner passa a permitir egress,
+  mas o envio continua bloqueado no perfil e nenhuma chave externa é fornecida.
+- **Estado operacional local — VERIFICADO:** sessão manual iniciada com envio
+  desabilitado e conta ainda a ser provisionada pelo responsável em prompt
+  privado. Sua duração e identificador efêmero ficam no relatório da atividade.
+  Recursos dos testes foram limpos; a sessão manual é mantida intencionalmente.
+- **Revisão — VERIFICADO:** outro agente Codex examinou código e correção de rede
+  sem encontrar bloqueante no diff local. Documentação, SHA e CI final da branch
+  ainda pendentes neste registro pré-publicação; o relatório operacional
+  registrará os resultados sem commit adicional apenas para atualizar SHA.
+- **Provider — RELATADO por capturas do responsável:** conta Resend Free,
+  domínio notify.nextpartner.com.br verificado, MFA habilitado, TLS Enforced e
+  chave Sending access restrita ao domínio. O valor da chave não foi recebido,
+  lido ou configurado. A ausência de tracking no envio real ainda não foi
+  comprovada. Não houve envio real nem autorização de ativação produtiva.
+- **Limites e próximo objetivo:** certificado local autoassinado não valida
+  infraestrutura produtiva; conta sintética não é bootstrap nem usuário real.
+  Ensaio Resend futuro requer escopo e autorização próprios, destinatário/volume
+  definidos e condições de tratamento externo aceitas. PT-009 e demais pendências
+  permanecem abertas. Hospedagem pública depende da avaliação de infraestrutura
+  e não integra este ciclo.
 
-Procedimento e interpretação das evidências:
-[validação em navegador](operacao/validacao-autenticacao-e2e.md).
-Publicação da branch pertence ao ciclo; integração na main exige autorização
-posterior para o SHA final aprovado pelo CI e pela revisão independente.
+Procedimentos: [homologação local](operacao/homologacao-local.md) e
+[validação E2E](operacao/validacao-autenticacao-e2e.md).
+Integração na main exige autorização posterior para o SHA final aprovado no CI
+e na revisão independente.
 
 ## Etapas concluídas
 
