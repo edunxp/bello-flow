@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnDestroy } from '@angular/core';
+import { Component, effect, inject, signal, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthApi } from './auth-api';
@@ -27,6 +27,17 @@ export class AuthPage implements OnDestroy {
   confirmation = '';
   private timer?: ReturnType<typeof setInterval>;
   private destroyed = false;
+  constructor() {
+    effect(() => {
+      this.token.generation();
+      if (this.mode === 'reset') {
+        this.done.set(false);
+        this.message.set('');
+        this.password = '';
+        this.confirmation = '';
+      }
+    });
+  }
   get hasToken() {
     return !!this.token.read();
   }
@@ -55,26 +66,28 @@ export class AuthPage implements OnDestroy {
       );
       return;
     }
+    const token = this.token.read();
+    const generation = this.token.generation();
     this.busy.set(true);
     try {
       if (this.mode === 'login') {
         const identity = await this.api.login(this.email, this.password);
-        if (this.destroyed) return;
         this.session.signedIn(identity);
+        if (this.destroyed) return;
         await this.router.navigateByUrl('/');
       } else if (this.mode === 'recover') {
         await this.api.recover(this.email);
         if (!this.destroyed) this.done.set(true);
       } else {
-        await this.api.reset(this.token.read(), this.password);
-        this.token.clear();
-        if (!this.destroyed) {
+        await this.api.reset(token, this.password);
+        this.token.clear(token);
+        await this.session.restore();
+        if (!this.destroyed && generation === this.token.generation()) {
           this.done.set(true);
-          await this.session.restore();
         }
       }
     } catch (error) {
-      if (this.destroyed) return;
+      if (this.destroyed || generation !== this.token.generation()) return;
       this.message.set(failureMessage(error, this.mode));
       this.remaining.set(retrySeconds(error));
       if (this.remaining())

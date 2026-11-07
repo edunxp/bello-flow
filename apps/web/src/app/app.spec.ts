@@ -22,7 +22,11 @@ describe('App shell', () => {
     await TestBed.inject(Router).navigateByUrl('/');
     await fixture.whenStable();
     expect(fixture.nativeElement.textContent).toContain('Bello Flow');
-    expect(fixture.nativeElement.querySelector('.skip-link')).toBeTruthy();
+    const skip = fixture.nativeElement.querySelector('.skip-link') as HTMLAnchorElement;
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    skip.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement?.id).toBe('main-content');
     await new Promise((resolve) => setTimeout(resolve, 10));
     TestBed.inject(HttpTestingController).verify();
   });

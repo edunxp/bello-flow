@@ -22,12 +22,18 @@ corrente, devem apontar para este registro em vez de duplicar o estado operacion
   logout atual, solicitação e reset pelo fragmento; rotas, formulários,
   acessibilidade estática, erros sanitizados, timeout sem retry e token efêmero.
   Nenhuma mudança de contrato HTTP, API, schema, migration ou provider.
-- **Validação — VERIFICADO:** 63 testes Angular aprovados, incluindo dois fluxos
+- **Validação — VERIFICADO:** 66 testes Angular aprovados, incluindo três fluxos
   entre rotas com HTTP controlado; cobertura web de 100% em lines, statements e
-  functions e 98,55% em branches. Gate completo local aprovado; correção final de feedback dos campos obrigatórios
+  functions e 98,70% em branches. Gate completo local aprovado; correção final de feedback dos campos obrigatórios
   revalidada por tipos, lint, testes, cobertura e build web. Commit, push e CI da
   branch ainda pendentes neste registro pré-publicação; resultados finais serão
   informados no relatório.
+- **Revisão independente — VERIFICADO:** outro agente Codex examinou o SHA
+  `1b9ad052a717be3f4cfbe5e50f66f96f7842d881` e identificou quatro correções:
+  recaptura de fragmento no mesmo documento, skip-link sem saída de rota,
+  atualização global após login tardio e reconsulta em entradas de navegação.
+  As correções locais incluem testes de regressão; novo parecer e CI serão
+  registrados no relatório operacional, sem antecipar aprovação.
 - **Limites:** integração em navegador real/API/PostgreSQL, inspeção visual,
   leitor de tela, provider real, TLS e disponibilidade produtiva não comprovados
   por esses testes. Revisão independente exigida antes da integração; PT-009 e

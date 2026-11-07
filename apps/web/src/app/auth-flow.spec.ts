@@ -39,12 +39,16 @@ describe('Angular routed authentication flow (controlled HTTP)', () => {
       password: 'synthetic-password',
     });
     login.flush({ account: { id: 'synthetic' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    http.expectOne('/api/auth/session').flush({ account: { id: 'synthetic' } });
     await fixture.whenStable();
     fixture.detectChanges();
     expect(router.url).toBe('/');
     expect(fixture.nativeElement.textContent).toContain('Sessão ativa');
     fixture.nativeElement.querySelector('button').click();
     http.expectOne('/api/auth/logout').flush(null, { status: 204, statusText: 'No Content' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    http.expectOne('/api/auth/session').flush(null, { status: 401, statusText: 'Unauthorized' });
     await fixture.whenStable();
     fixture.detectChanges();
     expect(router.url).toBe('/login');
@@ -64,8 +68,33 @@ describe('Angular routed authentication flow (controlled HTTP)', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Link inválido ou indisponível');
     await router.navigateByUrl('/unknown');
+    http.expectOne('/api/auth/session').flush(null, { status: 401, statusText: 'Unauthorized' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    http.expectOne('/api/auth/session').flush(null, { status: 401, statusText: 'Unauthorized' });
     await fixture.whenStable();
     expect(router.url).toBe('/login');
+    http.verify();
+  });
+  it('revalidates a revoked session on a subsequent login entry without polling', async () => {
+    TestBed.configureTestingModule({
+      imports: [App],
+      providers: [...appConfig.providers, provideHttpClient(), provideHttpClientTesting()],
+    });
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    const router = TestBed.inject(Router);
+    http.expectOne('/api/auth/session').flush({ account: { id: 'synthetic' } });
+    await router.navigateByUrl('/login');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('sessão ativa');
+    await router.navigateByUrl('/forgot-password');
+    await fixture.whenStable();
+    await router.navigateByUrl('/login');
+    http.expectOne('/api/auth/session').flush(null, { status: 401, statusText: 'Unauthorized' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('#password')).toBeTruthy();
     http.verify();
   });
   it('removes a synthetic reset fragment before router activation and submits only in the JSON body', async () => {
@@ -101,6 +130,18 @@ describe('Angular routed authentication flow (controlled HTTP)', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Senha redefinida');
     expect(window.location.href).not.toContain('token');
+    // Reopening in this document must reset the view and never enter Router state.
+    window.history.pushState(null, '', '/reset-password#token=' + 'B'.repeat(42) + 'A');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(window.location.hash).toBe('');
+    expect(TestBed.inject(Router).url).not.toContain('token');
+    expect(fixture.nativeElement.querySelector('#password')).toBeTruthy();
+    const skip = fixture.nativeElement.querySelector('.skip-link') as HTMLAnchorElement;
+    skip.click();
+    expect(window.location.pathname).toBe('/reset-password');
+    expect(document.activeElement?.id).toBe('main-content');
     http.verify();
   });
 });

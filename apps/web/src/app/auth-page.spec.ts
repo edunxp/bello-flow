@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
@@ -14,7 +15,11 @@ describe('Auth forms', () => {
     reset: ReturnType<typeof vi.fn>;
     session: ReturnType<typeof vi.fn>;
   };
-  let vault: { read: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
+  let vault: {
+    read: ReturnType<typeof vi.fn>;
+    clear: ReturnType<typeof vi.fn>;
+    generation: ReturnType<typeof signal<number>>;
+  };
   function setup(mode: string, token = 'synthetic-token') {
     api = {
       login: vi.fn().mockResolvedValue(identity),
@@ -22,7 +27,7 @@ describe('Auth forms', () => {
       reset: vi.fn().mockResolvedValue(undefined),
       session: vi.fn().mockRejectedValue(new HttpErrorResponse({ status: 401 })),
     };
-    vault = { read: vi.fn().mockReturnValue(token), clear: vi.fn() };
+    vault = { read: vi.fn().mockReturnValue(token), clear: vi.fn(), generation: signal(0) };
     TestBed.configureTestingModule({
       imports: [AuthPage],
       providers: [
@@ -139,7 +144,10 @@ describe('Auth forms', () => {
       resolve(identity);
       await pending;
       expect(page.done()).toBe(false);
-      expect(TestBed.inject(Session).state()).toBe('loading');
+      expect(TestBed.inject(Router).navigateByUrl).not.toHaveBeenCalled();
+      expect(TestBed.inject(Session).state()).toBe(
+        mode === 'login' ? 'authenticated' : mode === 'reset' ? 'anonymous' : 'loading',
+      );
     },
   );
   it('ignores late failure after navigation', async () => {

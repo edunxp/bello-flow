@@ -24,7 +24,9 @@ frontend deve chamar a API por URLs relativas, sem codificar a origem do backend
 As rotas são `/login`, `/forgot-password`, `/reset-password` e `/` (área
 autenticada mínima). A inicialização consulta a sessão; ausência de sessão na
 área protegida conduz ao login, enquanto indisponibilidade permite repetir apenas
-a consulta. Não há polling nem armazenamento persistente de identidade ou segredos.
+a consulta. Novas entradas nas rotas de acesso/área autenticada também reconsultam a sessão;
+não há polling nem armazenamento persistente de identidade ou segredos.
+Login confirmado atualiza a sessão global mesmo se a tela de login já foi fechada.
 
 O cliente usa os contratos publicados em
 [segurança e autorização](../../docs/arquitetura/seguranca-e-autorizacao.md).
@@ -35,7 +37,9 @@ não comprova que a mutação deixou de acontecer; a interface informa incerteza
 
 A solicitação aceita mostra confirmação condicional, sem afirmar envio de e-mail.
 O reset captura o token canônico do fragmento antes da ativação das rotas, remove
-o fragmento por `replaceState` e mantém o token somente em memória. Sair da tela
+o fragmento por `replaceState` e mantém o token somente em memória. Reaberturas
+no mesmo documento são capturadas antes dos listeners de localização do Router;
+novas entradas reativam o formulário sem transportar o token no estado de navegação. Sair da tela
 ou concluir o reset descarta o valor. Recarregar exige reabrir o link original ou
 solicitar outro. A confirmação de senha fica apenas no cliente; a política de
 12–128 pontos de código Unicode bem formados preserva a regra da API, sem trim
