@@ -4,12 +4,17 @@ import { AppModule } from "../../apps/api/dist/app.module.js";
 import { configureHttpApplication } from "../../apps/api/dist/http/configure-http-application.js";
 import { loadHttpSecurityConfig } from "../../apps/api/dist/http/http-security.config.js";
 import { PASSWORD_RECOVERY_DELIVERY_CONFIG } from "../../apps/api/dist/auth/password-recovery-delivery.config.js";
+import { recoveryOrigin } from "./recovery-profile.mjs";
+const origin =
+  process.env.BELLO_RECOVERY_REHEARSAL === "true"
+    ? recoveryOrigin
+    : "https://127.0.0.1:15443";
 let app;
 try {
   if (
     process.env.NODE_ENV !== "development" ||
     process.env.BELLO_PASSWORD_RECOVERY_DELIVERY_MODE !== "disabled" ||
-    process.env.BELLO_PUBLIC_ORIGIN !== "https://127.0.0.1:15443" ||
+    process.env.BELLO_PUBLIC_ORIGIN !== origin ||
     !/^bello-e2e-[0-9a-f-]{36}$/.test(process.env.BELLO_E2E_RUN ?? "") ||
     !process.send
   )

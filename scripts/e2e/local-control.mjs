@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { cleanup } from "./resources.mjs";
-const [action, run] = process.argv.slice(2);
+const [action, run, ...extra] = process.argv.slice(2);
 const docker = (args) => {
   const result = spawnSync("docker", args, { encoding: "utf8" });
   if (result.status !== 0) throw new Error();
@@ -8,7 +8,8 @@ const docker = (args) => {
 };
 try {
   if (
-    !["account", "stop"].includes(action) ||
+    extra.length !== 0 ||
+    !["account", "stop", "send-once"].includes(action) ||
     !/^bello-e2e-[0-9a-f-]{36}$/.test(run ?? "")
   )
     throw new Error();
@@ -19,11 +20,21 @@ try {
     !proof.Config.Cmd.includes("scripts/e2e/local.mjs")
   )
     throw new Error();
-  if (action === "account") {
+  if (action === "send-once" && !proof.Config.Cmd.includes("--recovery"))
+    throw new Error();
+  if (action === "account" || action === "send-once") {
     if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error();
     const result = spawnSync(
       "docker",
-      ["exec", "-it", runner, "node", "scripts/e2e/local-account.mjs"],
+      [
+        "exec",
+        "-it",
+        runner,
+        "node",
+        action === "account"
+          ? "scripts/e2e/local-account.mjs"
+          : "scripts/e2e/recovery-send.mjs",
+      ],
       { stdio: "inherit" },
     );
     if (result.status !== 0) throw new Error();

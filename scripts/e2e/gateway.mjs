@@ -3,8 +3,14 @@ import { resolve, join, extname, sep } from "node:path";
 import { createServer } from "node:https";
 import { request as upstreamRequest } from "node:http";
 import { once } from "node:events";
-export async function openGateway({ apiPort, key, cert, host = "127.0.0.1" }) {
-  const origin = "https://127.0.0.1:15443";
+export async function openGateway({
+  apiPort,
+  key,
+  cert,
+  host = "127.0.0.1",
+  port = 15443,
+}) {
+  const origin = "https://127.0.0.1:" + port;
   const webRoot = resolve("apps/web/dist/web/browser");
   const server = createServer(
     {
@@ -69,7 +75,7 @@ export async function openGateway({ apiPort, key, cert, host = "127.0.0.1" }) {
       }
     },
   );
-  server.listen(15443, host);
+  server.listen(port, host);
   await once(server, "listening");
   return server;
 }

@@ -9,58 +9,65 @@ corrente, devem apontar para este registro em vez de duplicar o estado operacion
 
 ## Fase atual
 
-- **Último marco publicado — VERIFICADO:** validação E2E controlada da
-  F1-B.4.5.11 integrada por fast-forward na main em
-  `2180cf17751497be9ff07905a9ac5e4e8e243c04`.
-  CI da branch [42331070170](https://github.com/edunxp/bello-flow/actions/runs/42331070170)
-  e CI final da main [42332986183](https://github.com/edunxp/bello-flow/actions/runs/42332986183)
-  com Quality, API integration, Browser E2E e Required aprovados no SHA exato.
-  Revisão independente favorável após correções, sem ativação produtiva.
-- **Ciclo atual — VERIFICADO:** preparação de homologação HTTPS na máquina local,
-  com envio disabled, autorizada pelo responsável. Branch
-  `work/pt009-local-homologacao`, com
-  `BASE_MAIN_SHA=2180cf17751497be9ff07905a9ac5e4e8e243c04`.
-  Base local/remota conferida e árvore inicialmente limpa.
-- **Implementação local — VERIFICADO:** comandos para iniciar sessão manual,
-  criar conta sintética com senha em TTY oculto e encerrar por identificador.
-  API real em development e entrega obrigatoriamente disabled, sem chave Resend.
-  Gateway HTTPS e limpeza extraídos do E2E para reutilização. Banco em tmpfs na
-  rede interna; runner com rede de acesso própria e publicação exclusiva
-  `127.0.0.1:15443`, conferida na configuração e na publicação efetiva.
-  Nenhum código produtivo, contrato HTTP, schema ou migration foi alterado.
-- **Validação — VERIFICADO:** smoke de homologação aprovou login, recarga, cookie
-  seguro e recuperação202, com request PENDING e zero tentativas/tokens.
-  Regressão dos 12 cenários E2E e quality:local aprovados, cobertura web/API/
-  consolidada preservada acima de 90% em todas as métricas. Comandos ambíguos e
-  identificador inválido foram recusados sem alterar recursos.
-  Teste de host acessou health e shell Angular por HTTPS e encerrou sua sessão.
-  Após correção da rede, o Windows também confirmou health200 e shell Angular200.
-- **Achado corrigido — VERIFICADO:** publicação em runner ligado apenas à rede
-  interna não produzia port mapping efetivo, embora constasse no HostConfig.
-  A sessão inacessível foi encerrada por ownership. A solução separa rede de
-  acesso do runner e rede privada do banco; o runner passa a permitir egress,
-  mas o envio continua bloqueado no perfil e nenhuma chave externa é fornecida.
-- **Estado operacional local — VERIFICADO:** sessão manual iniciada com envio
-  desabilitado e conta ainda a ser provisionada pelo responsável em prompt
-  privado. Sua duração e identificador efêmero ficam no relatório da atividade.
-  Recursos dos testes foram limpos; a sessão manual é mantida intencionalmente.
-- **Revisão — VERIFICADO:** outro agente Codex examinou código e correção de rede
-  sem encontrar bloqueante no diff local. Documentação, SHA e CI final da branch
-  ainda pendentes neste registro pré-publicação; o relatório operacional
-  registrará os resultados sem commit adicional apenas para atualizar SHA.
+- **Último marco publicado — VERIFICADO:** homologação HTTPS local sem e-mail
+  integrada por fast-forward na main no SHA
+  `8b945da7ba01dbabe492bd2314f7faa4a5f87dcc`.
+  [CI final 42413812922](https://github.com/edunxp/bello-flow/actions/runs/42413812922),
+  tentativa 1, push/main/SHA exato, com Quality, API integration, Browser E2E e
+  Required aprovados. Revisão independente favorável, sem ativação produtiva.
+- **Validação manual — RELATADO pelo responsável:** login, restauração após
+  recarga, logout e erro com senha incorreta exercitados com sucesso. Sessão
+  anterior mantida; não se acessou senha ou hash para essa conferência.
+- **Ciclo atual — VERIFICADO:** preparo do ensaio local Resend, autorizado sem
+  chave real e sem envio. Branch `work/pt009-resend-rehearsal`,
+  `BASE_MAIN_SHA=8b945da7ba01dbabe492bd2314f7faa4a5f87dcc`.
+  Git local/remoto inicialmente sincronizado e árvore limpa; nenhum arquivo
+  preexistente foi descartado. Risco alto por envolver credencial externa e
+  recuperação de senha; revisão independente e ensaio isolado são obrigatórios.
+- **Escopo implementado — VERIFICADO:** perfil separado em loopback 15444,
+  banco próprio tmpfs/rede interna e API real em development com entrega disabled.
+  Conta de homologação e destinatário fixos em belloflow@nextpartner.com.br;
+  remetente recuperacao@notify.nextpartner.com.br, ambos confirmados pelo responsável.
+  Não altera conta ou sessão da homologação anterior.
+- **Worker pontual — VERIFICADO:** comando interativo separado, autorização futura
+  própria, chave oculta somente em memória/IPC e ambiente filho somente runtime.
+  Configuração resend validada pelo loader existente, sem modificar endpoint,
+  payload, timeout ou classificação. Hook de agendamento suprimido exclusivamente
+  no harness; runCycle real limitado a um claim. Marcador wx/0600 anterior ao
+  processamento/efeito externo e guard de destinatário/orçamento impedem segunda
+  tentativa externa na mesma sessão, sem restauração após erro/UNKNOWN.
+  Nenhuma rota HTTP de envio ou exposição de link foi adicionada.
+- **Testes — VERIFICADO:** quality:local aprovado, cobertura vigente preservada;
+  ensaio com Chromium/API/PostgreSQL reais e servidor HTTP local simulado aprovou
+  API disabled, payload/link, uma chamada, estados SENT/token, bloqueio de nova
+  execução, redefinição, uso único e troca de senha. Apenas chave/senhas sintéticas,
+  sem egress e sem captura persistida do link. Gate inicialmente não iniciou por
+  conexão WSL indisponível e foi retomado; primeira execução do smoke corrigiu
+  apenas expectativas do teste para os contratos existentes 204/401.
+  Regressão dos 12 cenários E2E e da homologação disabled aprovadas.
+  Publicação loopback15444 conferiu health e shell Angular HTTPS, com limpeza
+  própria. Seis verificações negativas de CLI/perfil/IPC recusaram execução
+  indevida. Formatação, sintaxe dos scripts e git diff --check aprovados.
+- **Documentação e revisão — VERIFICADO:** procedimento do ensaio distingue
+  preparo de operação real, evidências pendentes e limites do resultado.
+  Revisão independente preliminar sem bloqueantes após ajuste da semântica
+  disabled/worker. Commit, publicação, CI e parecer no SHA final ainda pendentes
+  neste registro pré-publicação; os resultados serão registrados no relatório
+  operacional sem commit adicional apenas para inserir SHA ou CI.
 - **Provider — RELATADO por capturas do responsável:** conta Resend Free,
   domínio notify.nextpartner.com.br verificado, MFA habilitado, TLS Enforced e
-  chave Sending access restrita ao domínio. O valor da chave não foi recebido,
-  lido ou configurado. A ausência de tracking no envio real ainda não foi
-  comprovada. Não houve envio real nem autorização de ativação produtiva.
-- **Limites e próximo objetivo:** certificado local autoassinado não valida
-  infraestrutura produtiva; conta sintética não é bootstrap nem usuário real.
-  Ensaio Resend futuro requer escopo e autorização próprios, destinatário/volume
-  definidos e condições de tratamento externo aceitas. PT-009 e demais pendências
-  permanecem abertas. Hospedagem pública depende da avaliação de infraestrutura
-  e não integra este ciclo.
+  chave Sending access restrita ao domínio. Valor da chave não recebido, lido ou
+  configurado. Tracking desativado e mensagem real sem reescrita/pixel ainda não
+  comprovados; não houve envio real.
+- **Pendências — NÃO VERIFICADO:** condições operacionais atuais do provider,
+  guarda privada/secret manager, rotação/revogação, DMARC, quotas, tracking,
+  DPA/subprocessadores e aceitação aplicável do tratamento externo. Um envio
+  futuro exige evidências e autorização específica para uma tentativa ao
+  destinatário confirmado. PT-009 e demais pendências continuam abertas; não há
+  disponibilidade produtiva nem autorização para ngrok/hospedagem pública.
 
-Procedimentos: [homologação local](operacao/homologacao-local.md) e
+Procedimentos: [homologação local](operacao/homologacao-local.md),
+[ensaio de recuperação local](operacao/ensaio-recuperacao-local.md) e
 [validação E2E](operacao/validacao-autenticacao-e2e.md).
 Integração na main exige autorização posterior para o SHA final aprovado no CI
 e na revisão independente.

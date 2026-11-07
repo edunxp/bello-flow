@@ -103,6 +103,9 @@ O teste de host inicia o mesmo perfil, publica somente em loopback, confere
 health e shell Angular por HTTPS e encerra sua sessão ao terminar. No Windows/WSL,
 o acesso também é conferido pelo Windows, separado do teste Linux. O gate Browser E2E também executa o smoke no CI.
 
+O perfil separado de [preparo do ensaio Resend](ensaio-recuperacao-local.md)
+usa outra porta e mantém autorização própria para qualquer envio real.
+
 Nenhuma validação envia e-mail externo. Um ensaio Resend futuro exige escopo e
 autorização próprios: ambiente, chave privada, destinatário e volume definidos,
 tracking desativado confirmado e condições de tratamento externo aceitas.

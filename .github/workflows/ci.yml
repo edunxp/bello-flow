@@ -254,11 +254,19 @@ jobs:
           node --check scripts/e2e/local-api.mjs
           node --check scripts/e2e/local-account.mjs
           node --check scripts/e2e/local-control.mjs
+          node --check scripts/e2e/recovery-profile.mjs
+          node --check scripts/e2e/recovery-worker-client.mjs
+          node --check scripts/e2e/recovery-worker.mjs
+          node --check scripts/e2e/recovery-simulation-worker.mjs
+          node --check scripts/e2e/recovery-send.mjs
+          node --check scripts/e2e/recovery-smoke.mjs
       - name: Run isolated Chromium, API and PostgreSQL checks
         run: |
           node scripts/e2e/docker.mjs
           node scripts/e2e/docker.mjs --local-smoke
           node scripts/e2e/docker.mjs --local-check
+          node scripts/e2e/docker.mjs --recovery-smoke
+          node scripts/e2e/docker.mjs --recovery-check
 
   required:
     name: Required

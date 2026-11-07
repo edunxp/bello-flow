@@ -11,8 +11,11 @@ import {
   createLocalAccount,
   localEmail,
 } from "./local-account.mjs";
+import { recoveryOrigin } from "./recovery-profile.mjs";
+import { runRecoverySmoke } from "./recovery-smoke.mjs";
+const recovery = process.argv.includes("--recovery");
 const smoke = process.argv.includes("--smoke");
-const origin = "https://127.0.0.1:15443";
+const origin = recovery ? recoveryOrigin : "https://127.0.0.1:15443";
 let api, server, temporary, browser;
 const check = (value) => {
   if (!value) throw new Error();
@@ -26,6 +29,7 @@ try {
     process.env.BELLO_TEST_APP_PASSWORD &&
       process.env.BELLO_TEST_MIGRATOR_PASSWORD,
   );
+  check(recovery === (process.env.BELLO_RECOVERY_REHEARSAL === "true"));
   stage = "migrations";
   const migrationUrl = connection(
     "bello_test_migrator",
@@ -73,6 +77,7 @@ try {
       PATH: process.env.PATH,
       NODE_ENV: "development",
       BELLO_E2E_RUN: process.env.BELLO_E2E_RUN,
+      BELLO_RECOVERY_REHEARSAL: recovery ? "true" : "false",
       DATABASE_URL: connection(
         "bello_test_app",
         process.env.BELLO_TEST_APP_PASSWORD,
@@ -99,11 +104,15 @@ try {
   stage = "gateway";
   server = await openGateway({
     apiPort,
+    port: recovery ? 15444 : 15443,
     host: "0.0.0.0",
     key: await readFile(join(temporary, "key.pem")),
     cert: await readFile(join(temporary, "cert.pem")),
   });
-  if (smoke) {
+  if (smoke && recovery) {
+    stage = "recovery smoke";
+    await runRecoverySmoke({ origin, migrationUrl });
+  } else if (smoke) {
     stage = "smoke";
     const password = "Synthetic local smoke password 2026!";
     await createLocalAccount(password);
@@ -166,7 +175,11 @@ try {
       process.once("SIGINT", resolve);
     });
   }
-} catch {
+} catch (error) {
+  const frame = /recovery-smoke\.mjs:(\d+):\d+/.exec(
+    String(error?.stack ?? ""),
+  );
+  if (frame) console.error("Asserção do ensaio na linha " + frame[1] + ".");
   console.error(
     "Falha de homologação local na etapa " +
       stage +

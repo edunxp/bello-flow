@@ -7,17 +7,38 @@ const arguments_ = process.argv.slice(2);
 if (
   arguments_.length > 1 ||
   arguments_.some(
-    (value) => !["--local", "--local-smoke", "--local-check"].includes(value),
+    (value) =>
+      ![
+        "--local",
+        "--local-smoke",
+        "--local-check",
+        "--recovery",
+        "--recovery-smoke",
+        "--recovery-check",
+      ].includes(value),
   )
 ) {
   console.error(
-    "Modo inválido. Use sem argumentos, --local, --local-smoke ou --local-check.",
+    "Modo inválido. Consulte os comandos documentados de E2E e homologação.",
   );
   process.exit(1);
 }
-const localCheck = process.argv.includes("--local-check");
-const local = process.argv.includes("--local") || localCheck;
-const smoke = process.argv.includes("--local-smoke");
+const recovery =
+  process.argv.includes("--recovery") ||
+  process.argv.includes("--recovery-smoke") ||
+  process.argv.includes("--recovery-check");
+const port = recovery ? 15444 : 15443;
+const origin = "https://127.0.0.1:" + port;
+const localCheck =
+  process.argv.includes("--local-check") ||
+  process.argv.includes("--recovery-check");
+const local =
+  process.argv.includes("--local") ||
+  process.argv.includes("--recovery") ||
+  localCheck;
+const smoke =
+  process.argv.includes("--local-smoke") ||
+  process.argv.includes("--recovery-smoke");
 let keep = false;
 const run = "bello-e2e-" + randomUUID();
 const label = "bello.e2e.run=" + run;
@@ -43,6 +64,8 @@ for (const name of [
 environment.POSTGRES_USER = "bello_admin";
 environment.POSTGRES_DB = "postgres";
 environment.BELLO_E2E_RUN = run;
+environment.BELLO_RECOVERY_REHEARSAL = recovery ? "true" : "false";
+environment.BELLO_REHEARSAL_SIMULATION = recovery && smoke ? "true" : "false";
 environment.BELLO_LOCAL_ONLY = local || smoke ? "true" : "false";
 const owned = [];
 const extraNetworks = [];
@@ -141,18 +164,27 @@ try {
     local ? frontend : network,
     "--shm-size",
     "1g",
-    ...(local ? ["--publish", "127.0.0.1:15443:15443"] : []),
+    ...(local ? ["--publish", "127.0.0.1:" + port + ":" + port] : []),
     "--env",
     "BELLO_E2E_RUN",
     "--env",
     "BELLO_LOCAL_ONLY",
+    "--env",
+    "BELLO_RECOVERY_REHEARSAL",
+    "--env",
+    "BELLO_REHEARSAL_SIMULATION",
     "--env",
     "BELLO_TEST_APP_PASSWORD",
     "--env",
     "BELLO_TEST_MIGRATOR_PASSWORD",
     image,
     ...(local || smoke
-      ? ["node", "scripts/e2e/local.mjs", ...(smoke ? ["--smoke"] : [])]
+      ? [
+          "node",
+          "scripts/e2e/local.mjs",
+          ...(smoke ? ["--smoke"] : []),
+          ...(recovery ? ["--recovery"] : []),
+        ]
       : []),
   ]);
   if (!container) throw new Error("Runner creation failed");
@@ -163,9 +195,9 @@ try {
       .PortBindings;
     if (
       Object.keys(bindings).length !== 1 ||
-      bindings["15443/tcp"]?.length !== 1 ||
-      bindings["15443/tcp"][0].HostIp !== "127.0.0.1" ||
-      bindings["15443/tcp"][0].HostPort !== "15443"
+      bindings[port + "/tcp"]?.length !== 1 ||
+      bindings[port + "/tcp"][0].HostIp !== "127.0.0.1" ||
+      bindings[port + "/tcp"][0].HostPort !== String(port)
     )
       throw new Error("Loopback binding not proved");
     docker(["start", runner]);
@@ -183,7 +215,7 @@ try {
     }
     if (!ready) throw new Error("Local startup failed");
     const effective = JSON.parse(docker(["inspect", runner]))[0].NetworkSettings
-      .Ports["15443/tcp"];
+      .Ports[port + "/tcp"];
     if (effective?.length !== 1 || effective[0].HostIp !== "127.0.0.1")
       throw new Error("Effective loopback publication not proved");
     if (localCheck) {
@@ -191,7 +223,7 @@ try {
       for (const path of ["/health/live", "/login"]) {
         await new Promise((resolve, reject) => {
           const req = get(
-            "https://127.0.0.1:15443" + path,
+            origin + path,
             { rejectUnauthorized: false },
             (res) => {
               let body = "";
@@ -216,11 +248,15 @@ try {
     }
     keep = !localCheck;
     if (!localCheck) {
-      console.log("HTTPS local: https://127.0.0.1:15443");
+      console.log("HTTPS local: " + origin);
       console.log(
-        "E-mail desabilitado. Banco descartável. Identificador: " + run,
+        "API sem envio automático. Banco descartável. Identificador: " + run,
       );
       console.log("Criar conta: npm run homologacao:conta -- " + run);
+      if (recovery)
+        console.log(
+          "Perfil de preparo: nenhum envio feito. Ensaio exige autorização posterior própria.",
+        );
       console.log("Encerrar: npm run homologacao:parar -- " + run);
     }
   } else {

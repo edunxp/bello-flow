@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { BootstrapTerminal } from "../../apps/api/dist/bootstrap/bootstrap-terminal.js";
 import { PasswordCredentialService } from "../../apps/api/dist/credentials/password-credential.service.js";
+import {
+  recoveryRecipient,
+  assertRecoveryProfile,
+} from "./recovery-profile.mjs";
 export const localEmail = "homologacao@example.test";
 export function connection(user, password) {
   const url = new URL("postgresql://database:5432/bello_test");
@@ -10,7 +14,11 @@ export function connection(user, password) {
   url.password = password;
   return url.toString();
 }
-export async function createLocalAccount(password) {
+export async function createLocalAccount(password, email = localEmail) {
+  if (email !== localEmail) {
+    assertRecoveryProfile(process.env);
+    if (email !== recoveryRecipient) throw new Error();
+  }
   if (
     process.env.BELLO_LOCAL_ONLY !== "true" ||
     !/^bello-e2e-[0-9a-f-]{36}$/.test(process.env.BELLO_E2E_RUN ?? "")
@@ -36,7 +44,7 @@ export async function createLocalAccount(password) {
     await client.query(
       `INSERT INTO public.account(id,first_name,last_name,email,email_key,email_verified_at,status,created_at)
       VALUES($1,'Homologacao','Local',$2,$2,clock_timestamp(),'ACTIVE',clock_timestamp())`,
-      [id, localEmail],
+      [id, email],
     );
     await client.query(
       `INSERT INTO public.password_credential(account_id,password_hash,changed_at,changed_operation_id)
@@ -61,8 +69,12 @@ if (process.argv[1]?.endsWith("/local-account.mjs")) {
     );
     const confirmation = await terminal.promptSecret("Confirme a senha: ");
     if (password !== confirmation) throw new Error();
-    await createLocalAccount(password);
-    console.log("Conta sintética pronta: " + localEmail);
+    const email =
+      process.env.BELLO_RECOVERY_REHEARSAL === "true"
+        ? recoveryRecipient
+        : localEmail;
+    await createLocalAccount(password, email);
+    console.log("Conta de homologação pronta: " + email);
   } catch {
     console.error(
       "Conta não criada: confira senha, confirmação e se já existe nessa sessão.",
