@@ -548,6 +548,22 @@ e os endpoints de recuperação permanecem no
   rollback obrigatório e preservação do último Administrador ativo sob
   contenção real. Registro anterior ao CI remoto.
 
+## Datas e conclusão dos cartões
+
+- **Ciclo:** `work/datas-conclusao-cartoes`,
+  `BASE_MAIN_SHA=2e48c1e540577f68b3b9c8186d4fd6ddaa819ab5`.
+  Escopo BEL-024, com datas civis opcionais e conclusão manual independente
+  de lista. O [contrato](arquitetura/persistencia-e-auditoria.md#datas-e-conclusão-dos-cartões)
+  detalha fuso, atraso, reabertura e rastreabilidade.
+- **Privilégios autorizados:** UPDATE apenas nas quatro colunas de datas e
+  conclusão de `board_card` para `bello_runtime`.
+
+- **Validação local — VERIFICADO:** gate completo com 824 testes da API e
+  88 da web, cobertura acima de 90% e 16 cenários Docker aprovados.
+  Os cenários verificaram limite civil em PostgreSQL, reabertura com
+  histórico, autorização, mudança de fuso, preservação em movimento,
+  repetição e rollback da auditoria ou do feed. Registro anterior ao CI remoto.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,

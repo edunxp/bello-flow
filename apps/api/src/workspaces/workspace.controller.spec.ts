@@ -28,6 +28,7 @@ function setup() {
     read: vi.fn(),
     write: vi.fn(),
     revision: vi.fn(),
+    schedule: vi.fn(),
     move: vi.fn(),
   };
   const sharing = { changeBoardMember: vi.fn() };
@@ -306,6 +307,47 @@ describe('board membership change HTTP contract', () => {
     ]) {
       await expect(
         controller.changeBoardMember(request({ ...change, ...bad }), scope),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    }
+  });
+});
+
+describe('schedule HTTP contract', () => {
+  it('accepts dates or completion, validates civil order and rejects mixed changes', async () => {
+    const { controller, request, content } = setup();
+    const params = { workspaceId: id, boardId: id, listId: id, cardId: id };
+    const context = { workspaceId: id, boardId: id, accountId: id };
+    await controller.scheduleCard(
+      request({ operationId: id, completed: false }),
+      params,
+    );
+    expect(content.schedule).toHaveBeenLastCalledWith(
+      context,
+      id,
+      id,
+      { completed: false },
+      id,
+    );
+    await controller.scheduleCard(
+      request({ operationId: id, startDate: null, dueDate: '2026-11-10' }),
+      params,
+    );
+    expect(content.schedule).toHaveBeenLastCalledWith(
+      context,
+      id,
+      id,
+      { startDate: null, dueDate: new Date('2026-11-10') },
+      id,
+    );
+    for (const body of [
+      { completed: 'true' },
+      { completed: true, dueDate: null },
+      { completed: true, startDate: null },
+      { startDate: '2026-11-11', dueDate: '2026-11-10' },
+      { startDate: '2026-11-11', dueDate: '2026-11-11T00:00:00Z' },
+    ]) {
+      await expect(
+        controller.scheduleCard(request({ ...body, operationId: id }), params),
       ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     }
   });

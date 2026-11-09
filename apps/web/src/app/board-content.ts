@@ -7,6 +7,11 @@ interface Card {
   title: string;
   positionRevision: number;
   description: string | null;
+  startDate: string | null;
+  dueDate: string | null;
+  completedAt: string | null;
+  completedById: string | null;
+  overdue: boolean;
 }
 interface List {
   id: string;
@@ -19,6 +24,8 @@ interface Content {
   editable: boolean;
   orderRevision: number;
   syncRevision: number;
+  today: string;
+  timeZone: string;
   lists: List[];
 }
 
@@ -105,6 +112,30 @@ interface DragItem {
             <article>
               <h4>{{ card.title }}</h4>
               <p class="description">{{ card.description }}</p>
+              <p>
+                @if (card.completedAt) {
+                  Concluído em {{ completionTime(card.completedAt, board.timeZone) }}
+                  @if (card.completedById === accountId()) {
+                    por você
+                  }
+                } @else if (card.overdue) {
+                  Pendente · Atrasado
+                } @else {
+                  Pendente
+                }
+              </p>
+              @if (card.startDate) {
+                <p>
+                  Início: <time [attr.datetime]="card.startDate">{{ card.startDate }}</time>
+                </p>
+              }
+              @if (card.dueDate) {
+                <p>
+                  Vencimento: <time [attr.datetime]="card.dueDate">{{ card.dueDate }}</time> ({{
+                    board.timeZone
+                  }})
+                </p>
+              }
               @if (board.editable) {
                 <button
                   type="button"
@@ -147,6 +178,35 @@ interface DragItem {
                     Mover cartão
                   </button>
                 }
+                <button
+                  type="button"
+                  [disabled]="saving()"
+                  (click)="updateSchedule(list, card, { completed: !card.completedAt })"
+                >
+                  {{ card.completedAt ? 'Reabrir cartão' : 'Concluir cartão' }}
+                </button>
+                <details>
+                  <summary>Editar datas</summary>
+                  <form (submit)="saveDates($event, list, card, start.value, due.value)">
+                    <label [attr.for]="'start-' + card.id">Data de início</label>
+                    <input
+                      type="date"
+                      [id]="'start-' + card.id"
+                      #start
+                      [value]="card.startDate ?? ''"
+                      max="9999-12-31"
+                    />
+                    <label [attr.for]="'due-' + card.id">Data de vencimento</label>
+                    <input
+                      type="date"
+                      [id]="'due-' + card.id"
+                      #due
+                      [value]="card.dueDate ?? ''"
+                      max="9999-12-31"
+                    />
+                    <button [disabled]="saving()">Salvar datas</button>
+                  </form>
+                </details>
                 <details>
                   <summary>Editar cartão</summary>
                   <form
@@ -257,17 +317,27 @@ export class BoardContent {
       const poll = timer(5000, 5000)
         .pipe(
           exhaustMap(() =>
-            this.http.get<{ syncRevision: number }>(path + '/revision', this.options).pipe(
-              catchError((error: unknown) => {
-                if (this.rejectAccess(error)) return throwError(() => error);
-                return EMPTY;
-              }),
-            ),
+            this.http
+              .get<{ syncRevision: number; today: string; timeZone: string }>(
+                path + '/revision',
+                this.options,
+              )
+              .pipe(
+                catchError((error: unknown) => {
+                  if (this.rejectAccess(error)) return throwError(() => error);
+                  return EMPTY;
+                }),
+              ),
           ),
         )
         .pipe(catchError(() => EMPTY))
-        .subscribe(({ syncRevision }) => {
-          if (this.content()?.syncRevision !== syncRevision)
+        .subscribe(({ syncRevision, today, timeZone }) => {
+          const current = this.content();
+          if (
+            current?.syncRevision !== syncRevision ||
+            current?.today !== today ||
+            current?.timeZone !== timeZone
+          )
             this.reload.update((value) => value + 1);
         });
       onCleanup(() => poll.unsubscribe());
@@ -362,6 +432,54 @@ export class BoardContent {
       );
     } catch {
       this.message.set('Não foi possível confirmar o movimento. Confira a ordem atualizada.');
+    } finally {
+      this.reload.update((value) => value + 1);
+      this.saving.set(false);
+    }
+  }
+
+  completionTime(instant: string, timeZone: string) {
+    return new Intl.DateTimeFormat('pt-BR', {
+      timeZone,
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date(instant));
+  }
+
+  saveDates(event: Event, list: List, card: Card, start: string, due: string) {
+    event.preventDefault();
+    const startDate = start || null;
+    const dueDate = due || null;
+    if (startDate && dueDate && dueDate < startDate) {
+      this.message.set('A data de vencimento deve ser igual ou posterior à data de início.');
+      return;
+    }
+    if (startDate === card.startDate && dueDate === card.dueDate) return;
+    return this.updateSchedule(list, card, { startDate, dueDate });
+  }
+
+  async updateSchedule(
+    list: List,
+    card: Card,
+    change: { completed: boolean } | { startDate: string | null; dueDate: string | null },
+  ) {
+    if (!this.content()?.editable || this.saving()) return;
+    this.saving.set(true);
+    this.message.set('');
+    try {
+      await firstValueFrom(
+        this.http.post(
+          this.path() + '/' + list.id + '/cards/' + card.id + '/schedule',
+          { ...change, operationId: crypto.randomUUID() },
+          this.options,
+        ),
+      );
+    } catch (error) {
+      this.message.set(
+        error instanceof HttpErrorResponse && error.status === 400
+          ? 'Confira as datas informadas.'
+          : 'Não foi possível confirmar a alteração. Confira o estado atualizado do cartão.',
+      );
     } finally {
       this.reload.update((value) => value + 1);
       this.saving.set(false);

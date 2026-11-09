@@ -16,6 +16,7 @@ describe('BoardContentService', () => {
       lists: [],
       orderRevision: 0,
       syncRevision: 0,
+      workspace: { timeZone: 'Etc/UTC' },
     };
     const tx = {
       $queryRaw: vi.fn(),
@@ -61,6 +62,8 @@ describe('BoardContentService', () => {
         editable,
         orderRevision: 0,
         syncRevision: 0,
+        timeZone: 'Etc/UTC',
+        today: expect.any(String),
         lists: [],
       });
     },
@@ -296,6 +299,7 @@ describe('BoardContentService', () => {
         archived: false,
         members: [{ role: 'OBSERVER' }],
         syncRevision: 2,
+        workspace: { timeZone: 'Etc/UTC' },
       });
     await expect(service.move(context, 'LIST', intent)).rejects.toMatchObject({
       code: 'REQUEST_FORBIDDEN',
@@ -306,5 +310,136 @@ describe('BoardContentService', () => {
     await expect(service.revision(context)).resolves.toMatchObject({
       syncRevision: 2,
     });
+  });
+  const unscheduled = {
+    startDate: null,
+    dueDate: null,
+    completedAt: null,
+    completedById: null,
+  };
+
+  it('sets civil dates separately and reconciles an exact repeat', async () => {
+    const { service, tx } = setup();
+    tx.boardCard.findFirst.mockResolvedValue(unscheduled);
+    await expect(
+      service.schedule(
+        context,
+        'list',
+        'card',
+        { startDate: null, dueDate: null },
+        'dates',
+      ),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    const change = {
+      startDate: null,
+      dueDate: new Date('2026-11-10T00:00:00.000Z'),
+    };
+    await service.schedule(context, 'list', 'card', change, 'dates');
+    expect(tx.boardCard.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: change }),
+    );
+    expect(tx.auditEvent.createMany).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        operation: 'CARD_DATES_CHANGED',
+        afterData: { startDate: null, dueDate: '2026-11-10' },
+      }),
+    });
+    const { requestHash } = tx.boardFeedEvent.createMany.mock.calls[0]![0].data;
+    tx.boardFeedEvent.findUnique.mockResolvedValue({ requestHash });
+    await service.schedule(context, 'list', 'card', change, 'dates');
+    await expect(
+      service.schedule(context, 'list', 'card', { completed: true }, 'dates'),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    expect(tx.boardFeedEvent.createMany).toHaveBeenCalledOnce();
+  });
+
+  it('records the completion actor and instant and keeps them in audit on reopen', async () => {
+    const { service, tx } = setup();
+    tx.boardCard.findFirst.mockResolvedValue(unscheduled);
+    await service.schedule(
+      context,
+      'list',
+      'card',
+      { completed: true },
+      'complete',
+    );
+    const { completedAt } = tx.boardCard.update.mock.calls[0]![0].data;
+    expect(tx.boardCard.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { completedAt: expect.any(Date), completedById: 'actor' },
+      }),
+    );
+    tx.boardCard.findFirst.mockResolvedValue({
+      ...unscheduled,
+      completedAt,
+      completedById: 'actor',
+    });
+    await service.schedule(
+      context,
+      'list',
+      'card',
+      { completed: false },
+      'reopen',
+    );
+    expect(tx.auditEvent.createMany).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        operation: 'CARD_REOPENED',
+        beforeData: {
+          completedAt: completedAt.toISOString(),
+          completedById: 'actor',
+        },
+        afterData: { completedAt: null, completedById: null },
+      }),
+    });
+  });
+
+  it('denies observers and hides cards from foreign containers', async () => {
+    const { service, tx } = setup('OBSERVER');
+    const write = () =>
+      service.schedule(
+        context,
+        'list',
+        'card',
+        { completed: true },
+        'complete',
+      );
+    await expect(write()).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    tx.board.findFirst.mockResolvedValue({
+      archived: false,
+      members: [{ role: 'ADMIN' }],
+    });
+    await expect(write()).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    tx.board.findFirst.mockResolvedValue(null);
+    await expect(write()).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    expect(tx.boardCard.update).not.toHaveBeenCalled();
+  });
+  it('uses the workspace deadline for overdue cards in the authorized snapshot', async () => {
+    const { service, tx } = setup();
+    tx.board.findFirst.mockResolvedValue({
+      archived: false,
+      members: [{ role: 'OBSERVER' }],
+      orderRevision: 1,
+      syncRevision: 2,
+      workspace: { timeZone: 'America/Sao_Paulo' },
+      lists: [
+        {
+          id: 'list',
+          cards: [
+            {
+              ...unscheduled,
+              id: 'card',
+              dueDate: new Date('2026-11-09T00:00:00.000Z'),
+            },
+          ],
+        },
+      ],
+    });
+    tx.$queryRaw.mockResolvedValue([{ id: 'card' }]);
+    await expect(service.read(context)).resolves.toMatchObject({
+      editable: false,
+      timeZone: 'America/Sao_Paulo',
+      lists: [{ cards: [{ dueDate: '2026-11-09', overdue: true }] }],
+    });
+    expect(tx.$queryRaw).toHaveBeenCalledOnce();
   });
 });

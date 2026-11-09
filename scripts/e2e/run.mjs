@@ -814,6 +814,137 @@ try {
             JSON.stringify({ cards: 1, audit: 1, feed: 1 }),
         );
 
+        const schedule = cardPath + "/schedule";
+        const scheduleCard = (tab, data, path = schedule) =>
+          post(tab, path, {
+            ...data,
+            operationId: data.operationId ?? randomUUID(),
+          });
+        const readSchedule = async () =>
+          (await (await get(teamTab, lists)).json()).lists
+            .flatMap((list) => list.cards)
+            .find(({ id }) => id === createdCard.id);
+        check(
+          (
+            await scheduleCard(teamTab, {
+              startDate: "2026-11-10",
+              dueDate: "2026-11-09",
+            })
+          ).status() === 400,
+        );
+        check(
+          (
+            await scheduleCard(teamTab, {
+              startDate: "2025-02-29",
+              dueDate: null,
+            })
+          ).status() === 400,
+        );
+        await teamTab.page.getByText("Editar datas", { exact: true }).click();
+        await teamTab.page.getByLabel("Data de início").fill("2000-01-01");
+        await teamTab.page.getByLabel("Data de vencimento").fill("2000-01-02");
+        await teamTab.page
+          .getByRole("button", { name: "Salvar datas" })
+          .click();
+        await expect(
+          teamTab.page.getByText("Pendente · Atrasado", { exact: true }),
+        ).toBeVisible();
+        await teamTab.page
+          .getByRole("button", { name: "Concluir cartão" })
+          .click();
+        await expect(
+          teamTab.page.getByText("por você", { exact: false }),
+        ).toBeVisible();
+        const firstCompletion = await readSchedule();
+        check(
+          firstCompletion.completedAt &&
+            firstCompletion.completedById === team.id &&
+            !firstCompletion.overdue,
+        );
+        await teamTab.page
+          .getByRole("button", { name: "Reabrir cartão" })
+          .click();
+        await expect(
+          teamTab.page.getByText("Pendente · Atrasado", { exact: true }),
+        ).toBeVisible();
+        const reopened = await readSchedule();
+        check(
+          reopened.completedAt === null &&
+            reopened.completedById === null &&
+            reopened.startDate === "2000-01-01",
+        );
+        const completionHistory = await migrator.query(
+          "SELECT before_data FROM public.audit_event WHERE entity_id=$1 AND operation='CARD_REOPENED'",
+          [createdCard.id],
+        );
+        check(
+          completionHistory.rows[0].before_data.completedAt ===
+            firstCompletion.completedAt,
+        );
+        check(completionHistory.rows[0].before_data.completedById === team.id);
+        for (const table of ["audit_event", "board_feed_event"]) {
+          await migrator.query(`CREATE FUNCTION public.e2e_reject_schedule() RETURNS trigger
+            LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic schedule failure'; END; $$;
+            CREATE TRIGGER e2e_reject_schedule BEFORE INSERT ON public.${table}
+            FOR EACH ROW WHEN (NEW.operation = 'CARD_COMPLETED') EXECUTE FUNCTION public.e2e_reject_schedule();`);
+          try {
+            check(
+              (await scheduleCard(teamTab, { completed: true })).status() ===
+                500,
+            );
+            check(
+              JSON.stringify(await readSchedule()) === JSON.stringify(reopened),
+            );
+          } finally {
+            await migrator.query(
+              `DROP TRIGGER e2e_reject_schedule ON public.${table}; DROP FUNCTION public.e2e_reject_schedule();`,
+            );
+          }
+        }
+
+        const midnight = await migrator.query(`SELECT
+          ((DATE '2009-10-31' + 1)::timestamp AT TIME ZONE 'America/Goose_Bay') = TIMESTAMPTZ '2009-11-01 04:00:00+00' AS fold,
+          ((DATE '2026-03-08' + 1)::timestamp AT TIME ZONE 'America/Los_Angeles') = TIMESTAMPTZ '2026-03-09 07:00:00+00' AS dst`);
+        check(midnight.rows[0].fold && midnight.rows[0].dst);
+        const workspaceForDates = work.split("/").at(-1);
+        await migrator.query(
+          "UPDATE public.workspace SET time_zone='Pacific/Honolulu' WHERE id=$1",
+          [workspaceForDates],
+        );
+        const today = (await (await get(teamTab, lists + "/revision")).json())
+          .today;
+        check(
+          (
+            await scheduleCard(ownerTab, { startDate: null, dueDate: today })
+          ).status() === 204,
+        );
+        check(!(await readSchedule()).overdue);
+        await migrator.query(
+          "UPDATE public.workspace SET time_zone='Pacific/Kiritimati' WHERE id=$1",
+          [workspaceForDates],
+        );
+        const shifted = await readSchedule();
+        check(shifted.overdue && shifted.dueDate === today);
+        const confirmed = { completed: true, operationId: randomUUID() };
+        check((await scheduleCard(teamTab, confirmed)).status() === 204);
+        check((await scheduleCard(teamTab, confirmed)).status() === 204);
+        check(
+          (
+            await scheduleCard(teamTab, { ...confirmed, completed: false })
+          ).status() === 409,
+        );
+        const scheduled = await readSchedule();
+        check(
+          scheduled.dueDate === today &&
+            scheduled.completedAt &&
+            !scheduled.overdue,
+        );
+        await migrator.query(
+          "UPDATE public.workspace SET time_zone='America/Sao_Paulo' WHERE id=$1",
+          [workspaceForDates],
+        );
+        check((await readSchedule()).completedAt === scheduled.completedAt);
+
         await open(ownerTab, homeBoard);
         await createList(ownerTab, "Lista pessoal");
         const [personalList] = (
@@ -827,6 +958,31 @@ try {
         });
         check(personalCardResponse.status() === 201);
         const personalCard = await personalCardResponse.json();
+        const privateSchedule =
+          personalCards + "/" + personalCard.id + "/schedule";
+        check(
+          (
+            await scheduleCard(
+              ownerTab,
+              { startDate: null, dueDate: "2000-01-01" },
+              privateSchedule,
+            )
+          ).status() === 204,
+        );
+        check(
+          (
+            await scheduleCard(
+              personalTab,
+              { completed: true },
+              privateSchedule,
+            )
+          ).status() === 403,
+        );
+        check(
+          (
+            await scheduleCard(teamTab, { completed: true }, privateSchedule)
+          ).status() === 404,
+        );
         await open(personalTab, homeBoard);
         await expect(
           personalTab.page.getByRole("heading", { name: "Lista pessoal" }),
@@ -1109,6 +1265,11 @@ try {
             .cards.map(({ id }) => id)
             .join(",") === [anchor, extraA].join(","),
         );
+        const movedSchedule = await readSchedule();
+        check(
+          movedSchedule.completedAt === scheduled.completedAt &&
+            movedSchedule.dueDate === scheduled.dueDate,
+        );
         const repeatedCreate = await post(teamTab, cards, original);
         check(
           repeatedCreate.status() === 201 &&
@@ -1132,6 +1293,10 @@ try {
           "Âncora",
           "Concorrente A",
         ]);
+        check((await scheduleCard(teamTab, confirmed)).status() === 204);
+        check(
+          (await scheduleCard(teamTab, { completed: false })).status() === 404,
+        );
         const movedReplay = await post(teamTab, cards, original);
         check(
           movedReplay.status() === 201 &&

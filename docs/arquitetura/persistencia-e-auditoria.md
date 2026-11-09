@@ -1264,3 +1264,22 @@ autorizada da revisão atualiza os controles após alteração de papel ou limpa
 o quadro após revogação. O impacto do rebaixamento para Observador é zero
 enquanto BEL-021 estiver ausente. A entrega de responsáveis precisa acrescentar
 cálculo, confirmação e revalidação do impacto de RN-089 a RN-091.
+
+## Datas e conclusão dos cartões
+
+Início e vencimento são datas civis opcionais em colunas PostgreSQL DATE.
+A API aceita `AAAA-MM-DD` ou nulo e rejeita datas inválidas e vencimento
+anterior ao início. Para cartões pendentes, o atraso começa no limite do
+próximo dia no fuso regional do Workspace. PostgreSQL converte esse limite
+em um instante. A consulta periódica detecta a virada de dia e alterações
+de fuso. Mudar o fuso preserva as datas civis e os instantes históricos.
+
+O endpoint `POST /api/workspaces/{workspaceId}/boards/{boardId}/lists/{listId}/cards/{cardId}/schedule`
+recebe `operationId` e o par `startDate` e `dueDate`, ou `completed`.
+Administrador e Membro de quadro ativo podem alterar. Observadores consultam.
+Concluir grava instante e ator. Reabrir limpa o estado atual, preserva o par
+anterior na auditoria e mantém as datas. Mover o cartão preserva esses campos.
+
+A alteração confirmada grava dados, revisão do quadro, auditoria e feed na
+mesma transação. O registro no feed permite reconciliar o mesmo pedido,
+inclusive após movimento dentro do quadro enquanto o ator conserva acesso.

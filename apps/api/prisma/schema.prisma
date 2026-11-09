@@ -29,6 +29,7 @@ model Account {
   bootstrapStates         BootstrapState[]
   auditEvents             AuditEvent[]
   workspaceMemberships    WorkspaceMembership[]
+  completedCards          BoardCard[]
   accessNoticesReceived   AccessNotification[]      @relation("AccessNoticeRecipient")
   accessNoticesIssued     AccessNotification[]      @relation("AccessNoticeActor")
 
@@ -308,6 +309,11 @@ model BoardCard {
   title        String    @db.VarChar(200)
   description  String?   @db.VarChar(20000)
   creationHash String    @map("creation_hash") @db.Char(64)
+  startDate DateTime? @map("start_date") @db.Date
+  dueDate DateTime? @map("due_date") @db.Date
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  completedById String? @map("completed_by_id") @db.Uuid
+  completedBy Account? @relation(fields: [completedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   position BigInt
   positionRevision Int @default(0) @map("position_revision")
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

@@ -23,6 +23,7 @@ import {
   validateMutatingRequestOrigin,
 } from '../http/request-security.js';
 import { readSessionCookie } from '../http/session-cookie.js';
+import { parseCivilDate } from './card-schedule.js';
 import { BoardContentService } from './board-content.service.js';
 import { SharingService } from './sharing.service.js';
 import { WorkspaceService } from './workspace.service.js';
@@ -292,6 +293,45 @@ export class WorkspaceController {
           params.listId === undefined ? undefined : identifier(params.listId),
       },
       params.listId === undefined ? identifier(body?.operationId) : '',
+    );
+  }
+
+  @Post(':workspaceId/boards/:boardId/lists/:listId/cards/:cardId/schedule')
+  @HttpCode(204)
+  async scheduleCard(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const context = await this.contentContext(request, params, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    const listId = identifier(params.listId);
+    const cardId = identifier(params.cardId);
+    const operationId = identifier(body?.operationId);
+    if (body?.completed !== undefined) {
+      if (
+        typeof body.completed !== 'boolean' ||
+        body.startDate !== undefined ||
+        body.dueDate !== undefined
+      )
+        invalid();
+      await this.content.schedule(
+        context,
+        listId,
+        cardId,
+        { completed: body.completed },
+        operationId,
+      );
+      return;
+    }
+    const startDate = parseCivilDate(body?.startDate);
+    const dueDate = parseCivilDate(body?.dueDate);
+    if (startDate && dueDate && dueDate < startDate) invalid();
+    await this.content.schedule(
+      context,
+      listId,
+      cardId,
+      { startDate, dueDate },
+      operationId,
     );
   }
 

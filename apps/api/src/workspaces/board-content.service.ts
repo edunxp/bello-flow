@@ -14,6 +14,12 @@ import {
   type Container,
   type MoveIntent,
 } from './board-order.js';
+import {
+  civilDate,
+  scheduleView,
+  workspaceToday,
+  type CardScheduleChange,
+} from './card-schedule.js';
 import { creationId } from './workspace.service.js';
 
 export type BoardContext = {
@@ -33,6 +39,13 @@ type Mutation =
 
 const listFields = { id: true, name: true } as const;
 const cardFields = { id: true, title: true, description: true } as const;
+const scheduleFields = {
+  startDate: true,
+  dueDate: true,
+  completedAt: true,
+  completedById: true,
+} as const;
+const workspaceZone = { select: { timeZone: true } } as const;
 const orderBy = { position: 'asc' } as const;
 class SourceChanged extends Error {}
 
@@ -41,13 +54,14 @@ export class BoardContentService {
   constructor(private readonly db: PrismaService) {}
 
   async read(context: BoardContext) {
-    const board = await this.transaction((tx) =>
-      tx.board.findFirst({
+    const result = await this.transaction(async (tx) => {
+      const board = await tx.board.findFirst({
         where: this.boardScope(context),
         select: {
           archived: true,
           orderRevision: true,
           syncRevision: true,
+          workspace: workspaceZone,
           members: {
             where: { accountId: context.accountId },
             select: { role: true },
@@ -59,20 +73,56 @@ export class BoardContentService {
               positionRevision: true,
               cardOrderRevision: true,
               cards: {
-                select: { ...cardFields, positionRevision: true },
+                select: {
+                  ...cardFields,
+                  ...scheduleFields,
+                  positionRevision: true,
+                },
                 orderBy,
               },
             },
           },
         },
-      }),
-    );
-    if (!board) return this.deny(context, 'READ_BOARD_CONTENT', false);
+      });
+      if (!board) return null;
+      const timeZone = board.workspace.timeZone;
+      const now = new Date();
+      const today = workspaceToday(timeZone, now);
+      const overdue = board.lists.some(({ cards }) =>
+        cards.some(
+          (card) => card.dueDate !== null && card.completedAt === null,
+        ),
+      )
+        ? await tx.$queryRaw<{ id: string }[]>`
+            SELECT card.id FROM board_card card
+            JOIN board_list list ON list.id = card.list_id
+            WHERE list.board_id = ${context.boardId}::uuid
+              AND card.completed_at IS NULL AND card.due_date IS NOT NULL
+              AND ${now}::timestamptz >= ((card.due_date + 1)::timestamp AT TIME ZONE ${timeZone})
+          `
+        : [];
+      return {
+        board,
+        timeZone,
+        today,
+        overdue: new Set(overdue.map(({ id }) => id)),
+      };
+    });
+    if (!result) return this.deny(context, 'READ_BOARD_CONTENT', false);
+    const { board, timeZone, today, overdue } = result;
     return {
+      timeZone,
+      today,
       editable: this.editable(board),
       orderRevision: board.orderRevision,
       syncRevision: board.syncRevision,
-      lists: board.lists,
+      lists: board.lists.map(({ cards, ...list }) => ({
+        ...list,
+        cards: cards.map((card) => ({
+          ...card,
+          ...scheduleView(card, overdue.has(card.id)),
+        })),
+      })),
     };
   }
 
@@ -295,10 +345,154 @@ export class BoardContentService {
   async revision(context: BoardContext) {
     const board = await this.db.board.findFirst({
       where: this.boardScope(context),
-      select: { syncRevision: true },
+      select: { syncRevision: true, workspace: workspaceZone },
     });
     if (!board) return this.deny(context, 'READ_BOARD_CONTENT', false);
-    return board;
+    return {
+      syncRevision: board.syncRevision,
+      today: workspaceToday(board.workspace.timeZone),
+      timeZone: board.workspace.timeZone,
+    };
+  }
+
+  async schedule(
+    context: BoardContext,
+    listId: string,
+    cardId: string,
+    change: CardScheduleChange,
+    operationId: string,
+  ) {
+    const completion = 'completed' in change;
+    const operation = completion
+      ? change.completed
+        ? 'CARD_COMPLETED'
+        : 'CARD_REOPENED'
+      : 'CARD_DATES_CHANGED';
+    const eventId = creationId(
+      context.accountId,
+      operationId,
+      context.workspaceId,
+      context.boardId,
+      'CARD_SCHEDULE',
+    );
+    const requestHash = createHash('sha256')
+      .update(JSON.stringify([listId, cardId, change]))
+      .digest('hex');
+    const result = await this.transaction(async (tx) => {
+      const board = await tx.board.findFirst({
+        where: this.boardScope(context),
+        select: {
+          archived: true,
+          members: {
+            where: { accountId: context.accountId },
+            select: { role: true },
+          },
+        },
+      });
+      if (!board) return { denied: 'HIDDEN' } as const;
+      if (!this.editable(board)) return { denied: 'READ_ONLY' } as const;
+      const receipt = await tx.boardFeedEvent.findUnique({
+        where: { id: eventId },
+        select: { requestHash: true },
+      });
+      const current = await tx.boardCard.findFirst({
+        where: {
+          id: cardId,
+          ...(receipt ? {} : { listId }),
+          list: { boardId: context.boardId },
+        },
+        select: scheduleFields,
+      });
+      if (!current) return { denied: 'HIDDEN' } as const;
+      if (receipt) {
+        if (receipt.requestHash !== requestHash) conflict();
+        return { confirmed: true };
+      }
+
+      const occurredAt = new Date();
+      let data: Prisma.BoardCardUncheckedUpdateInput;
+      let beforeData: Prisma.InputJsonObject;
+      let afterData: Prisma.InputJsonObject;
+      if (completion) {
+        if ((current.completedAt !== null) === change.completed) conflict();
+        const completedAt = change.completed ? occurredAt : null;
+        const completedById = change.completed ? context.accountId : null;
+        data = { completedAt, completedById };
+        beforeData = {
+          completedAt: current.completedAt?.toISOString() ?? null,
+          completedById: current.completedById,
+        };
+        afterData = {
+          completedAt: completedAt?.toISOString() ?? null,
+          completedById,
+        };
+      } else {
+        beforeData = {
+          startDate: civilDate(current.startDate),
+          dueDate: civilDate(current.dueDate),
+        };
+        afterData = {
+          startDate: civilDate(change.startDate),
+          dueDate: civilDate(change.dueDate),
+        };
+        if (
+          beforeData.startDate === afterData.startDate &&
+          beforeData.dueDate === afterData.dueDate
+        )
+          conflict();
+        data = change;
+      }
+
+      await tx.boardCard.update({
+        where: { id: cardId },
+        data,
+        select: { id: true },
+      });
+      await tx.board.update({
+        where: { id: context.boardId },
+        select: { id: true },
+        data: { syncRevision: { increment: 1 } },
+      });
+      await tx.auditEvent.createMany({
+        data: {
+          id: randomUUID(),
+          occurredAt,
+          actorAccountId: context.accountId,
+          origin: 'HTTP',
+          scope: 'BOARD',
+          operation,
+          result: 'SUCCESS',
+          entityType: 'CARD',
+          entityId: cardId,
+          context: {
+            workspaceId: context.workspaceId,
+            boardId: context.boardId,
+            listId,
+          },
+          operationId: eventId,
+          correlationId: eventId,
+          sequence: 1,
+          beforeData,
+          afterData,
+        },
+      });
+      await tx.boardFeedEvent.createMany({
+        data: {
+          id: eventId,
+          boardId: context.boardId,
+          actorId: context.accountId,
+          occurredAt,
+          operation,
+          listId,
+          cardId,
+          requestHash,
+        },
+      });
+      return { confirmed: true };
+    });
+    if (result.denied)
+      return this.deny(context, operation, result.denied === 'READ_ONLY');
+    return result;
   }
 
   async move(

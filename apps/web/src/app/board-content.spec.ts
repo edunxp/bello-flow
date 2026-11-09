@@ -7,13 +7,29 @@ import { BoardContent } from './board-content';
 describe('BoardContent', () => {
   const path = '/api/workspaces/work/boards/board/lists';
   const key = 'bello.pending-create:synthetic:' + path;
+  const unscheduled = {
+    startDate: null,
+    dueDate: null,
+    completedAt: null,
+    completedById: null,
+    overdue: false,
+  };
+  const calendar = { timeZone: 'America/Sao_Paulo', today: '2026-11-09' };
   const lists = [
     {
       id: 'list',
       name: 'A fazer',
       positionRevision: 0,
       cardOrderRevision: 1,
-      cards: [{ id: 'card', title: 'Cartão', description: 'Conteúdo', positionRevision: 0 }],
+      cards: [
+        {
+          ...unscheduled,
+          id: 'card',
+          title: 'Cartão',
+          description: 'Conteúdo',
+          positionRevision: 0,
+        },
+      ],
     },
   ];
 
@@ -139,7 +155,13 @@ describe('BoardContent', () => {
       cardOrderRevision: 0,
       cards: [],
     };
-    const state = { editable: true, orderRevision: 2, syncRevision: 3, lists: [first, second] };
+    const state = {
+      ...calendar,
+      editable: true,
+      orderRevision: 2,
+      syncRevision: 3,
+      lists: [first, second],
+    };
     page.content.set(state);
     fixture.detectChanges();
     const element = fixture.nativeElement as HTMLElement;
@@ -223,7 +245,14 @@ describe('BoardContent', () => {
       ...lists[0],
       cards: [
         lists[0].cards[0],
-        { id: 'second-card', title: 'Outro', description: null, positionRevision: 0 },
+        {
+          ...unscheduled,
+          ...unscheduled,
+          id: 'second-card',
+          title: 'Outro',
+          description: null,
+          positionRevision: 0,
+        },
       ],
     };
     const second = {
@@ -233,7 +262,13 @@ describe('BoardContent', () => {
       cardOrderRevision: 0,
       cards: [],
     };
-    const state = { editable: true, orderRevision: 2, syncRevision: 3, lists: [first, second] };
+    const state = {
+      ...calendar,
+      editable: true,
+      orderRevision: 2,
+      syncRevision: 3,
+      lists: [first, second],
+    };
     page.content.set(state);
     fixture.detectChanges();
     const element = fixture.nativeElement as HTMLElement;
@@ -288,5 +323,66 @@ describe('BoardContent', () => {
       enabled(label).click();
       await confirm();
     }
+  });
+  it('validates civil dates and submits a complete date pair', async () => {
+    const { fixture, http, page } = setup();
+    const [list] = lists;
+    const [card] = list.cards;
+    const pathToSchedule = path + '/list/cards/card/schedule';
+    page.saveDates(new Event('submit'), list, card, '2026-11-11', '2026-11-10');
+    expect(page.message()).toContain('posterior');
+    page.saveDates(new Event('submit'), list, card, '', '');
+    http.expectNone(pathToSchedule);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const due = element.querySelector<HTMLInputElement>('#due-card')!;
+    due.value = '2026-11-10';
+    due.form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    const update = http.expectOne(pathToSchedule);
+    expect(update.request.body).toMatchObject({
+      startDate: null,
+      dueDate: '2026-11-10',
+      operationId: expect.any(String),
+    });
+    update.flush({}, { status: 400, statusText: 'Bad Request' });
+    await Promise.resolve();
+    expect(page.message()).toContain('Confira as datas');
+    fixture.detectChanges();
+    http.expectOne(path).flush({ ...calendar, editable: true, lists });
+  });
+
+  it('toggles completion and displays the confirmed time in the workspace zone', async () => {
+    const { fixture, http, page } = setup();
+    const element = fixture.nativeElement as HTMLElement;
+    const click = (label: string) =>
+      [...element.querySelectorAll('button')]
+        .find((button) => button.textContent?.trim() === label)!
+        .click();
+    click('Concluir cartão');
+    http.expectOne(path + '/list/cards/card/schedule').flush(null);
+    await Promise.resolve();
+    fixture.detectChanges();
+    const [list] = lists;
+    const completed = {
+      ...list.cards[0],
+      startDate: '2026-11-08',
+      dueDate: '2026-11-09',
+      completedAt: '2026-11-10T02:00:00.000Z',
+      completedById: 'synthetic',
+    };
+    http
+      .expectOne(path)
+      .flush({ ...calendar, editable: true, lists: [{ ...list, cards: [completed] }] });
+    fixture.detectChanges();
+    expect(element.textContent).toContain('Concluído em 09/11/2026');
+    expect(element.textContent).toContain('por você');
+    click('Reabrir cartão');
+    const reopen = http.expectOne(path + '/list/cards/card/schedule');
+    expect(reopen.request.body.completed).toBe(false);
+    reopen.error(new ProgressEvent('network'));
+    await Promise.resolve();
+    expect(page.message()).toContain('estado atualizado');
+    fixture.detectChanges();
+    http.expectOne(path).flush({ ...calendar, editable: true, lists });
   });
 });
