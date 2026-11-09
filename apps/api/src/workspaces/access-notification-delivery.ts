@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 export const ACCESS_NOTIFICATION_MAIL = Symbol('ACCESS_NOTIFICATION_MAIL');
 export interface AccessNotificationMail {
   deliver(message: {
-    recipient: string;
+    recipientId: string;
     subject: string;
     text: string;
   }): Promise<'SENT' | 'FAILED'>;
@@ -78,6 +78,7 @@ export class AccessNotificationDelivery
       const notice = await this.db.accessNotification.findUniqueOrThrow({
         where: { id: notificationId },
         select: {
+          recipientId: true,
           workspaceId: true,
           boardId: true,
           grantedRole: true,
@@ -86,16 +87,38 @@ export class AccessNotificationDelivery
           actor: { select: { emailKey: true } },
         },
       });
-      const [address] = await this.db.$queryRaw<
-        Array<{ email: string | null }>
-      >`
-        SELECT public.access_notification_recipient(${notificationId}::uuid) AS email
-      `;
-      if (address?.email) {
+      const recipient = await this.db.account.findFirst({
+        where: {
+          id: notice.recipientId,
+          status: 'ACTIVE',
+          emailVerifiedAt: { not: null },
+          deactivatedAt: null,
+          accessNoticesReceived: {
+            some: {
+              id: notificationId,
+              delivery: { is: { state: 'SENDING' } },
+            },
+          },
+          workspaceMemberships: {
+            some: {
+              workspaceId: notice.workspaceId,
+              ...(notice.boardId
+                ? { boards: { some: { boardId: notice.boardId } } }
+                : {}),
+            },
+          },
+        },
+        select: { id: true },
+      });
+      if (recipient) {
         const target = notice.board?.name ?? notice.workspace.name;
         const subject = 'Acesso concedido no Bello Flow';
         const text = `${notice.actor.emailKey} liberou seu acesso a ${target}. Papel: ${notice.grantedRole}. Abra o Bello Flow para consultar o acesso.`;
-        state = await mail.deliver({ recipient: address.email, subject, text });
+        state = await mail.deliver({
+          recipientId: recipient.id,
+          subject,
+          text,
+        });
       } else {
         state = 'CANCELLED';
       }

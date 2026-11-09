@@ -120,6 +120,32 @@ describe('SharingService', () => {
     expect(tx.accessNotification.createMany).not.toHaveBeenCalled();
   });
 
+  it('audits denied administrative queries without resource or participant data', async () => {
+    const { sharing, tx } = setup();
+    tx.workspaceMembership.findFirst.mockResolvedValue(null);
+    await expect(sharing.members(actor, workspace)).rejects.toMatchObject({
+      code: 'REQUEST_FORBIDDEN',
+    });
+    await expect(sharing.members(actor, board)).rejects.toMatchObject({
+      code: 'REQUEST_FORBIDDEN',
+    });
+    for (const [index, operation] of [
+      'LIST_WORKSPACE_MEMBERS',
+      'LIST_BOARD_MEMBERS',
+    ].entries()) {
+      expect(tx.auditEvent.createMany).toHaveBeenNthCalledWith(index + 1, {
+        data: expect.objectContaining({
+          actorAccountId: actor,
+          operation,
+          result: 'DENIED',
+          scope: 'SECURITY',
+        }),
+      });
+    }
+    expect(tx.workspaceMembership.findMany).not.toHaveBeenCalled();
+    expect(tx.boardMembership.findMany).not.toHaveBeenCalled();
+  });
+
   it('queries notifications only for the current recipient with current membership', () => {
     const { sharing, tx } = setup();
     void sharing.notifications(actor);

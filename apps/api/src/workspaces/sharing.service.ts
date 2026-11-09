@@ -17,8 +17,16 @@ export class SharingService {
   constructor(private readonly db: PrismaService) {}
 
   async members(actorId: string, scope: SharingScope) {
-    await this.authorize(this.db, actorId, scope);
     const { workspaceId, boardId } = scope;
+    try {
+      await this.authorize(this.db, actorId, scope);
+    } catch (error) {
+      return this.auditDenial(
+        error,
+        actorId,
+        boardId ? 'LIST_BOARD_MEMBERS' : 'LIST_WORKSPACE_MEMBERS',
+      );
+    }
     if (boardId) {
       const members = await this.db.boardMembership.findMany({
         where: { workspaceId, boardId },
@@ -171,31 +179,41 @@ export class SharingService {
         }
       });
     } catch (error) {
-      if (
-        error instanceof HttpContractError &&
-        error.code === HTTP_ERROR_CODE.REQUEST_FORBIDDEN
-      ) {
-        const operationId = randomUUID();
-        await this.db.auditEvent.createMany({
-          data: {
-            id: randomUUID(),
-            occurredAt: new Date(),
-            actorAccountId: actorId,
-            origin: 'HTTP',
-            scope: 'SECURITY',
-            operation: boardId
-              ? 'INCLUDE_BOARD_MEMBER'
-              : 'INCLUDE_WORKSPACE_MEMBER',
-            result: 'DENIED',
-            entityType: 'WORKSPACE_RESOURCE',
-            operationId,
-            correlationId: operationId,
-            sequence: 1,
-          },
-        });
-      }
-      throw error;
+      return this.auditDenial(
+        error,
+        actorId,
+        boardId ? 'INCLUDE_BOARD_MEMBER' : 'INCLUDE_WORKSPACE_MEMBER',
+      );
     }
+  }
+
+  private async auditDenial(
+    error: unknown,
+    actorId: string,
+    operation: string,
+  ): Promise<never> {
+    if (
+      error instanceof HttpContractError &&
+      error.code === HTTP_ERROR_CODE.REQUEST_FORBIDDEN
+    ) {
+      const operationId = randomUUID();
+      await this.db.auditEvent.createMany({
+        data: {
+          id: randomUUID(),
+          occurredAt: new Date(),
+          actorAccountId: actorId,
+          origin: 'HTTP',
+          scope: 'SECURITY',
+          operation,
+          result: 'DENIED',
+          entityType: 'WORKSPACE_RESOURCE',
+          operationId,
+          correlationId: operationId,
+          sequence: 1,
+        },
+      });
+    }
+    throw error;
   }
 
   notifications(accountId: string) {

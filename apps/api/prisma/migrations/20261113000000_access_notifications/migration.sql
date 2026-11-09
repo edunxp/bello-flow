@@ -53,32 +53,5 @@ ALTER TABLE public.access_notification_delivery
     (state IN ('SENDING', 'SENT', 'FAILED', 'UNKNOWN', 'CANCELLED') AND attempt_count = 1)
   );
 
-CREATE FUNCTION public.access_notification_recipient(p_notification_id uuid)
-RETURNS text
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
-AS $function$
-  SELECT account.email::text
-  FROM public.access_notification_delivery AS delivery
-  JOIN public.access_notification AS notice ON notice.id = delivery.notification_id
-  JOIN public.account AS account ON account.id = notice.recipient_id
-  JOIN public.workspace_membership AS membership
-    ON membership.workspace_id = notice.workspace_id AND membership.account_id = account.id
-  WHERE delivery.notification_id = p_notification_id
-    AND delivery.state = 'SENDING'
-    AND account.status = 'ACTIVE'
-    AND account.email_verified_at IS NOT NULL
-    AND account.deactivated_at IS NULL
-    AND (notice.board_id IS NULL OR EXISTS (
-      SELECT 1 FROM public.board_membership AS board_member
-      WHERE board_member.workspace_id = notice.workspace_id
-        AND board_member.board_id = notice.board_id AND board_member.account_id = account.id
-    ));
-$function$;
-
-REVOKE ALL ON FUNCTION public.access_notification_recipient(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.access_notification_recipient(uuid) TO bello_runtime;
 GRANT SELECT, INSERT ON public.access_notification, public.access_notification_delivery TO bello_runtime;
 GRANT UPDATE (state, attempt_count, updated_at) ON public.access_notification_delivery TO bello_runtime;

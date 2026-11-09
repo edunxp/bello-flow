@@ -459,16 +459,25 @@ e os endpoints de recuperação permanecem no
   entrega preserva a inclusão e o item da Central.
 - **Limites:** cadastro, convite pendente, remoção, mudanças de papel e envio
   real pertencem a outros recortes.
-- **Evidências — VERIFICADO:** `quality:local` aprovado com 795 testes da API,
+- **Evidências — VERIFICADO:** `quality:local` aprovado com 796 testes da API,
   75 da web e cobertura acima de 90% nas quatro métricas. Os 15 cenários em
   Chromium com PostgreSQL descartável passaram. O cenário do incremento
   confirmou isolamento, governança sem acesso ao conteúdo, inclusão explícita,
   repetição sem efeitos duplicados, entrega simulada, falha de entrega com
   acesso preservado e rollback por falhas na Central, na auditoria e no feed.
 - **Operação e segurança:** o processador usa transporte injetado no Docker de
-  teste, com uma tentativa por entrega. O runtime mantém os privilégios de
-  conta existentes e resolve o endereço por função protegida de entrega.
-  A revisão independente é necessária antes da integração.
+  teste, com uma tentativa por entrega. Antes do envio simulado, revalida o
+  estado da entrega e a elegibilidade e os vínculos da conta destinatária.
+- **Correção da revisão:** o simulador recebe somente o identificador da
+  conta no campo de destinatário. A migration não cria função para resolver o
+  endereço original e preserva os privilégios existentes da tabela de contas.
+  Negativas de listagem administrativa de participantes geram auditoria de
+  segurança sem identificar o recurso ou divulgar dados de participantes.
+- **Provas da correção:** a credencial de runtime usada no Docker tenta ler a
+  coluna de endereço e chamar a função ausente após recolocar uma entrega
+  concluída em processamento em uma transação revertida. As duas leituras
+  são recusadas. O cenário também confere as negativas auditadas de consulta
+  ao Workspace e ao quadro.
 
 ## Roadmap recomendado do Kanban
 

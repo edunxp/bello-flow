@@ -727,6 +727,27 @@ try {
         check((await get(teamTab, homeBoard)).status() === 403);
         check((await get(personalTab, erp)).status() === 403);
         check((await get(teamTab, work + "/members")).status() === 403);
+        check((await get(teamTab, erp + "/members")).status() === 403);
+        const denials = await migrator.query(
+          `SELECT operation, entity_id, context, before_data, after_data
+           FROM public.audit_event WHERE actor_account_id=$1 AND scope='SECURITY'
+             AND result='DENIED' AND operation IN ('LIST_WORKSPACE_MEMBERS', 'LIST_BOARD_MEMBERS')
+           ORDER BY operation`,
+          [team.id],
+        );
+        check(
+          denials.rows.map((row) => row.operation).join(",") ===
+            "LIST_BOARD_MEMBERS,LIST_WORKSPACE_MEMBERS",
+        );
+        check(
+          denials.rows.every(
+            (row) =>
+              row.entity_id === null &&
+              row.context === null &&
+              row.before_data === null &&
+              row.after_data === null,
+          ),
+        );
 
         const central = workspacePath + "/notifications";
         const ownerNotices = await (await get(ownerTab, central)).json();
@@ -776,11 +797,11 @@ try {
           )
           .toEqual({ sent: 3, failed: 1 });
         check(
-          accessMail.filter((message) => message.recipient === team.email)
+          accessMail.filter((message) => message.recipientId === team.id)
             .length === 2,
         );
         check(
-          accessMail.filter((message) => message.recipient === personal.email)
+          accessMail.filter((message) => message.recipientId === personal.id)
             .length === 2,
         );
         check((await get(personalTab, homeBoard)).status() === 200);
@@ -790,14 +811,47 @@ try {
           has_column_privilege('bello_runtime','public.account','email','SELECT') AS raw_email,
           has_column_privilege('bello_runtime','public.access_notification','recipient_id','UPDATE') AS change_recipient,
           has_column_privilege('bello_runtime','public.access_notification_delivery','state','UPDATE') AS change_state,
-          has_function_privilege('bello_runtime','public.access_notification_recipient(uuid)','EXECUTE') AS resolve_recipient`)
+          to_regprocedure('public.access_notification_recipient(uuid)') IS NULL AS no_recipient_function`)
         ).rows[0];
         check(
           !privileges.raw_email &&
             !privileges.change_recipient &&
             privileges.change_state &&
-            privileges.resolve_recipient,
+            privileges.no_recipient_function,
         );
+        const runtime = new Client({
+          connectionString: databaseUrl(
+            "bello_test_app",
+            process.env.BELLO_TEST_APP_PASSWORD,
+          ),
+        });
+        await runtime.connect();
+        try {
+          await runtime.query("BEGIN");
+          const reopened = await runtime.query(
+            "UPDATE public.access_notification_delivery SET state='SENDING' WHERE notification_id=$1 AND state='SENT'",
+            [teamNotices[0].id],
+          );
+          check(reopened.rowCount === 1);
+          for (const [sql, code] of [
+            ["SELECT public.access_notification_recipient($1::uuid)", "42883"],
+            ["SELECT email FROM public.account WHERE id=$1", "42501"],
+          ]) {
+            await runtime.query("SAVEPOINT denied_address");
+            let deniedCode;
+            try {
+              const id = code === "42883" ? teamNotices[0].id : team.id;
+              await runtime.query(sql, [id]);
+            } catch (error) {
+              deniedCode = error.code;
+            }
+            check(deniedCode === code);
+            await runtime.query("ROLLBACK TO SAVEPOINT denied_address");
+          }
+        } finally {
+          await runtime.query("ROLLBACK").finally(() => runtime.end());
+        }
+
         const extra = await fixture();
         const workspaceId = work.split("/").at(-1);
         const boardId = erp.split("/").at(-1);
