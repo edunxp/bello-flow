@@ -1197,3 +1197,30 @@ As consultas funcionais seguem DEC-010 e RN-113–RN-115: ordem cronológica dec
 - **Feed:** BEL-031; DEC-009; RN-026–RN-031 e RN-110–RN-112.
 - **Auditoria:** BEL-032; DEC-010; RN-032–RN-038, RN-095–RN-097 e RN-113–RN-130.
 - **Pendências de origem:** PEN-022–PEN-027 e PEN-037.
+
+## Listas e cartões básicos
+
+O conteúdo fica sob `/api/workspaces/{workspaceId}/boards/{boardId}/lists`.
+O GET retorna as listas com seus cartões e a capacidade de edição do
+participante atual. Um quadro novo retorna uma coleção vazia. O POST cria
+uma lista na coleção ou um cartão em `/{listId}/cards`. O PATCH da lista
+recebe o novo nome, e o PATCH do cartão em `/{listId}/cards/{cardId}` aceita
+título, descrição ou ambos. Campos omitidos no PATCH de cartão preservam o
+valor anterior. A descrição aceita nulo para limpeza.
+
+A leitura requer participação explícita no quadro. Administrador e Membro
+podem escrever em quadros ativos. Observador recebe 403 para mutações, e
+destinos fora do contexto autorizado retornam 404. As chaves estrangeiras
+preservam a hierarquia Workspace → Quadro → Lista → Cartão.
+
+O POST exige `operationId` UUID v4. Em nova tentativa com a mesma operação,
+o servidor revalida acesso e confronta a impressão dos dados originais antes
+de devolver o recurso atual ou responder 409 por divergência. A aba guarda o
+identificador pendente sem guardar os campos do formulário. Em edição com
+resultado indeterminado, a interface descarta o formulário anterior e consulta
+o conteúdo novamente antes de permitir uma nova edição.
+
+Cada alteração efetiva grava o recurso, os campos alterados na auditoria
+obrigatória e um evento de feed na mesma transação. O feed identifica quadro,
+lista e cartão aplicáveis, ator, operação e instante, sem copiar título ou
+descrição. A apresentação do feed pertence a BEL-031.

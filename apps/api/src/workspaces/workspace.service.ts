@@ -7,10 +7,11 @@ import { PrismaService } from '../prisma/prisma.service.js';
 type Fields = { name: string; description?: string };
 type BoardFields = Fields & { description: string };
 
-function creationId(
+export function creationId(
   accountId: string,
   operationId: string,
   workspaceId?: string,
+  ...scope: string[]
 ) {
   const bytes = createHash('sha256')
     .update(
@@ -19,6 +20,7 @@ function creationId(
         accountId,
         workspaceId ?? null,
         operationId,
+        ...scope,
       ]),
     )
     .digest();

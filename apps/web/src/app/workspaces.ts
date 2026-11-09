@@ -3,6 +3,7 @@ import { Component, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { BoardContent } from './board-content';
 import { Session } from './session';
 
 interface Resource {
@@ -13,7 +14,7 @@ interface Resource {
 
 @Component({
   selector: 'app-workspaces',
-  imports: [RouterLink],
+  imports: [RouterLink, BoardContent],
   styleUrl: './auth-page.scss',
   template: `
     <section class="card" aria-labelledby="page-title">
@@ -42,6 +43,9 @@ interface Resource {
           @if (board(); as selected) {
             <h2>{{ selected.name }}</h2>
             <p>{{ selected.description }}</p>
+            @if (session.identity(); as identity) {
+              <app-board-content [path]="path() + '/lists'" [accountId]="identity.account.id" />
+            }
           }
           @if (!boardId()) {
             <ul>
@@ -102,7 +106,7 @@ export class Workspaces {
   constructor() {
     effect((onCleanup) => {
       const path = this.path();
-      const authenticated = this.session.state() === 'authenticated';
+      const authenticated = this.session.state() === 'authenticated' && this.session.identity();
       this.resources.set([]);
       this.board.set(null);
       this.accessible.set(false);
@@ -155,7 +159,7 @@ export class Workspaces {
     return workspaceId ? ['/workspaces', workspaceId, 'boards', id] : ['/workspaces', id];
   }
 
-  private path() {
+  path() {
     const workspaceId = this.workspaceId();
     const boardId = this.boardId();
     return (

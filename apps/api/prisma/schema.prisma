@@ -218,6 +218,7 @@ model Board {
   workspace     Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   members       BoardMembership[]
   feed          BoardFeedEvent[]
+  lists         BoardList[]
   accessNotices AccessNotification[]
 
   @@unique([workspaceId, id])
@@ -243,6 +244,8 @@ model BoardFeedEvent {
   actorId    String   @map("actor_id") @db.Uuid
   occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
   operation  String   @db.VarChar(60)
+  listId     String?  @map("list_id") @db.Uuid
+  cardId     String?  @map("card_id") @db.Uuid
   board      Board    @relation(fields: [boardId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([boardId, occurredAt, id])
@@ -276,4 +279,30 @@ model AccessNotificationDelivery {
 
   @@index([state, updatedAt, notificationId])
   @@map("access_notification_delivery")
+}
+
+model BoardList {
+  id           String      @id @db.Uuid
+  boardId      String      @map("board_id") @db.Uuid
+  name         String      @db.VarChar(100)
+  creationHash String      @map("creation_hash") @db.Char(64)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  board        Board       @relation(fields: [boardId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cards        BoardCard[]
+
+  @@index([boardId, createdAt, id])
+  @@map("board_list")
+}
+
+model BoardCard {
+  id           String    @id @db.Uuid
+  listId       String    @map("list_id") @db.Uuid
+  title        String    @db.VarChar(200)
+  description  String?   @db.VarChar(20000)
+  creationHash String    @map("creation_hash") @db.Char(64)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  list         BoardList @relation(fields: [listId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([listId, createdAt, id])
+  @@map("board_card")
 }

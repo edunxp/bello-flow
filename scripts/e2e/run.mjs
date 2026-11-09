@@ -588,7 +588,7 @@ try {
   );
 
   await scenario(
-    "explicit sharing, private notifications and simulated email (real stack)",
+    "explicit sharing, private content, notifications and simulated email (real stack)",
     async () => {
       const owner = await fixture();
       const team = await fixture();
@@ -701,9 +701,252 @@ try {
           teamTab.page.getByText("Nenhum item disponível."),
         ).toBeVisible();
         check((await get(teamTab, erp)).status() === 403);
+        check((await get(teamTab, erp + "/lists")).status() === 404);
+        check(
+          (
+            await post(teamTab, erp + "/lists", {
+              name: "Negada",
+              operationId: randomUUID(),
+            })
+          ).status() === 404,
+        );
         await include(erp, team, "MEMBER");
         await include(home, personal, "MEMBER");
         await include(homeBoard, personal, "OBSERVER");
+
+        const lists = erp + "/lists";
+        const personalLists = homeBoard + "/lists";
+        const patch = (tab, path, data) =>
+          tab.context.request.patch(origin + path, { headers, data });
+        await open(ownerTab, erp);
+        await expect(
+          ownerTab.page.getByText("Este quadro ainda não tem listas."),
+        ).toBeVisible();
+        const createList = async (tab, name) => {
+          await tab.page.getByLabel("Nome da nova lista").fill(name);
+          await tab.page.getByRole("button", { name: "Criar lista" }).click();
+          await expect(
+            tab.page.getByRole("heading", { name, exact: true }),
+          ).toBeVisible();
+        };
+        await createList(ownerTab, "A fazer");
+        await createList(ownerTab, "Em andamento");
+        await open(teamTab, erp);
+        await createList(teamTab, "Concluído");
+        const workContent = await (await get(teamTab, lists)).json();
+        const todo = workContent.lists.find((item) => item.name === "A fazer");
+        const todoRegion = teamTab.page.getByRole("region", {
+          name: "A fazer",
+        });
+        await todoRegion.getByText("Renomear lista", { exact: true }).click();
+        await todoRegion.getByLabel("Novo nome da lista").fill("A fazer 📝");
+        await todoRegion.getByRole("button", { name: "Salvar nome" }).click();
+        const renamed = teamTab.page.getByRole("region", {
+          name: "A fazer 📝",
+        });
+        await expect(renamed).toBeVisible();
+
+        const cards = lists + "/" + todo.id + "/cards";
+        const route = origin + cards;
+        let original;
+        await teamTab.page.route(
+          route,
+          async (intercepted) => {
+            original = intercepted.request().postDataJSON();
+            const response = await intercepted.fetch();
+            check(response.status() === 201);
+            await intercepted.abort();
+          },
+          { times: 1 },
+        );
+        await renamed.getByLabel("Título do novo cartão").fill("Validar ERP");
+        await renamed
+          .getByLabel("Descrição do novo cartão")
+          .fill("Linha um\nLinha dois");
+        await renamed.getByRole("button", { name: "Criar cartão" }).click();
+        await expect(
+          teamTab.page.getByText("Não foi possível confirmar a criação.", {
+            exact: false,
+          }),
+        ).toBeVisible();
+        await renamed.getByRole("button", { name: "Criar cartão" }).click();
+        await expect(
+          renamed.getByRole("heading", { name: "Validar ERP", exact: true }),
+        ).toHaveCount(1);
+        const [createdCard] = (
+          await (await get(teamTab, lists)).json()
+        ).lists.find((item) => item.id === todo.id).cards;
+        const cardPath = cards + "/" + createdCard.id;
+        await renamed.getByText("Editar cartão", { exact: true }).click();
+        await renamed
+          .getByLabel("Título do cartão", { exact: true })
+          .fill("ERP validado");
+        await renamed
+          .getByLabel("Descrição do cartão", { exact: true })
+          .fill("Descrição atualizada");
+        await renamed.getByRole("button", { name: "Salvar cartão" }).click();
+        await expect(
+          renamed.getByRole("heading", { name: "ERP validado" }),
+        ).toBeVisible();
+        await teamTab.page.reload();
+        await expect(
+          renamed.getByText("Descrição atualizada", { exact: true }),
+        ).toBeVisible();
+        const replay = await post(teamTab, cards, original);
+        check(
+          replay.status() === 201 &&
+            (await replay.json()).title === "ERP validado",
+        );
+        check(
+          (
+            await post(teamTab, cards, { ...original, title: "Outro" })
+          ).status() === 409,
+        );
+        const persisted = await migrator.query(
+          `SELECT
+          (SELECT count(*)::int FROM public.board_card WHERE list_id=$1) AS cards,
+          (SELECT count(*)::int FROM public.audit_event WHERE entity_id=$2 AND operation='CARD_CREATED') AS audit,
+          (SELECT count(*)::int FROM public.board_feed_event WHERE card_id=$2 AND operation='CARD_CREATED') AS feed`,
+          [todo.id, createdCard.id],
+        );
+        check(
+          JSON.stringify(persisted.rows[0]) ===
+            JSON.stringify({ cards: 1, audit: 1, feed: 1 }),
+        );
+
+        await open(ownerTab, homeBoard);
+        await createList(ownerTab, "Lista pessoal");
+        const [personalList] = (
+          await (await get(ownerTab, personalLists)).json()
+        ).lists;
+        const personalCards = personalLists + "/" + personalList.id + "/cards";
+        const personalCardResponse = await post(ownerTab, personalCards, {
+          title: "Cartão pessoal",
+          description: "Conteúdo pessoal",
+          operationId: randomUUID(),
+        });
+        check(personalCardResponse.status() === 201);
+        const personalCard = await personalCardResponse.json();
+        await open(personalTab, homeBoard);
+        await expect(
+          personalTab.page.getByRole("heading", { name: "Lista pessoal" }),
+        ).toBeVisible();
+        await expect(
+          personalTab.page.getByRole("button", { name: "Criar lista" }),
+        ).toHaveCount(0);
+        check(
+          (
+            await post(personalTab, personalLists, {
+              name: "Negada",
+              operationId: randomUUID(),
+            })
+          ).status() === 403,
+        );
+        check(
+          (
+            await patch(personalTab, personalLists + "/" + personalList.id, {
+              name: "Negada",
+            })
+          ).status() === 403,
+        );
+        await expect(
+          personalTab.page.getByText("Conteúdo pessoal", { exact: true }),
+        ).toBeVisible();
+        await expect(
+          personalTab.page.getByRole("button", { name: "Criar cartão" }),
+        ).toHaveCount(0);
+        check(
+          (
+            await post(personalTab, personalCards, {
+              title: "Negado",
+              operationId: randomUUID(),
+            })
+          ).status() === 403,
+        );
+        check(
+          (
+            await patch(personalTab, personalCards + "/" + personalCard.id, {
+              description: null,
+            })
+          ).status() === 403,
+        );
+        const personalEdit = await patch(
+          ownerTab,
+          personalCards + "/" + personalCard.id,
+          { title: "Título alterado" },
+        );
+        check(
+          personalEdit.status() === 200 &&
+            (await personalEdit.json()).description === "Conteúdo pessoal",
+        );
+        check((await get(teamTab, personalLists)).status() === 404);
+        check((await get(personalTab, lists)).status() === 404);
+        check(
+          (
+            await patch(ownerTab, personalLists + "/" + todo.id, {
+              name: "Negada",
+            })
+          ).status() === 404,
+        );
+        check(
+          (
+            await patch(
+              ownerTab,
+              personalLists +
+                "/" +
+                personalList.id +
+                "/cards/" +
+                createdCard.id,
+              { title: "Negado" },
+            )
+          ).status() === 404,
+        );
+        await open(personalTab, erp);
+        await expect(
+          personalTab.page.getByText("Recurso indisponível."),
+        ).toBeVisible();
+        await expect(
+          personalTab.page.getByRole("heading", { name: "ERP validado" }),
+        ).toHaveCount(0);
+
+        for (const table of ["audit_event", "board_feed_event"]) {
+          await migrator.query(`CREATE FUNCTION public.e2e_reject_content() RETURNS trigger
+            LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic content failure'; END; $$;
+            CREATE TRIGGER e2e_reject_content BEFORE INSERT ON public.${table}
+            FOR EACH ROW WHEN (NEW.operation IN ('LIST_CREATED','CARD_EDITED'))
+            EXECUTE FUNCTION public.e2e_reject_content();`);
+          try {
+            check(
+              (
+                await post(teamTab, lists, {
+                  name: "Rollback",
+                  operationId: randomUUID(),
+                })
+              ).status() === 500,
+            );
+            check(
+              (
+                await patch(teamTab, cardPath, { title: "Rollback" })
+              ).status() === 500,
+            );
+            const fresh = await (await get(teamTab, lists)).json();
+            check(fresh.lists.length === 3);
+            check(
+              fresh.lists.find((item) => item.id === todo.id).cards[0].title ===
+                "ERP validado",
+            );
+            const events = await migrator.query(
+              `SELECT
+              (SELECT count(*)::int FROM public.audit_event WHERE operation='CARD_EDITED' AND entity_id=$1) AS audit,
+              (SELECT count(*)::int FROM public.board_feed_event WHERE operation='CARD_EDITED' AND card_id=$1) AS feed`,
+              [createdCard.id],
+            );
+            check(events.rows[0].audit === 1 && events.rows[0].feed === 1);
+          } finally {
+            await migrator.query(`DROP TRIGGER e2e_reject_content ON public.${table};
+              DROP FUNCTION public.e2e_reject_content();`);
+          }
+        }
 
         const repeats = await Promise.all([
           post(ownerTab, erp + "/members", {

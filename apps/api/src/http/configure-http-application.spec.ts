@@ -29,7 +29,23 @@ describe('configureHttpApplication', () => {
 
     expect(app.set).toHaveBeenCalledWith('trust proxy', false);
     expect(app.set).toHaveBeenCalledWith(HTTP_SECURITY_CONFIG_SETTING, config);
-    expect(app.useBodyParser).toHaveBeenCalledWith('json');
+    expect(app.useBodyParser).toHaveBeenNthCalledWith(1, 'json', {
+      limit: '256kb',
+      type: expect.any(Function),
+    });
+    expect(app.useBodyParser).toHaveBeenNthCalledWith(2, 'json');
+    const accepts = app.useBodyParser.mock.calls[0]![1].type;
+    const json = { 'content-type': 'application/json; charset=utf-8' };
+    const url = '/api/workspaces/work/boards/board/lists/list/cards';
+    expect(accepts({ method: 'POST', headers: json, url })).toBe(true);
+    expect(
+      accepts({ method: 'PATCH', headers: json, url: url + '/card' }),
+    ).toBe(true);
+    expect(accepts({ method: 'GET', headers: json, url })).toBe(false);
+    expect(accepts({ method: 'POST', headers: {}, url })).toBe(false);
+    expect(
+      accepts({ method: 'POST', headers: json, url: '/api/auth/login' }),
+    ).toBe(false);
     expect(app.use).toHaveBeenCalledTimes(2);
     expect(app.useGlobalFilters).toHaveBeenCalledOnce();
     expect(app.enableCors).not.toHaveBeenCalled();

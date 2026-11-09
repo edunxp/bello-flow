@@ -1,3 +1,4 @@
+import type { IncomingMessage } from 'node:http';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
@@ -37,6 +38,18 @@ export function configureHttpApplication(
     'trust proxy',
     config.trustedProxies.length === 0 ? false : [...config.trustedProxies],
   );
+  // A card description may contain 20,000 supplementary characters escaped as JSON pairs.
+  app.useBodyParser('json', {
+    limit: '256kb',
+    type: (request: IncomingMessage) =>
+      (request.method === 'POST' || request.method === 'PATCH') &&
+      /^application\/json(?:\s*;|$)/iu.test(
+        request.headers['content-type'] ?? '',
+      ) &&
+      /^\/api\/workspaces\/[^/?]+\/boards\/[^/?]+\/lists\/[^/?]+\/cards(?:\/[^/?]+)?\/?(?:\?|$)/iu.test(
+        request.url ?? '',
+      ),
+  });
   app.useBodyParser('json');
   app.use(retainParsedJsonBodyByteLength);
   app.use(bodyParserErrorHandler);

@@ -479,6 +479,32 @@ e os endpoints de recuperação permanecem no
   são recusadas. O cenário também confere as negativas auditadas de consulta
   ao Workspace e ao quadro.
 
+## Listas e cartões básicos — BEL-003, BEL-004 e BEL-005
+
+- **Ciclo — VERIFICADO:** branch `work/listas-cartoes-basicos`,
+  `BASE_MAIN_SHA=4b25faecf264eef8a381ed8fafa2ef32bfa89594`, com a base local
+  e remota conferidas antes da abertura. Os principais riscos são vazamento
+  entre quadros, duplicação após perda de resposta e gravação parcial.
+- **Escopo implementado:** quadro novo vazio, listas criadas e renomeadas
+  pelo usuário, cartões com edição de título e descrição, leitura por
+  Observadores e escrita por Administradores e Membros do quadro. A API
+  valida a hierarquia e exige participação no quadro, inclusive por URL direta.
+- **Consistência:** criação reconciliada por identificador de operação.
+  Alterações efetivas, auditoria e feed são gravados na mesma transação.
+  O contrato está em [persistência e auditoria](arquitetura/persistencia-e-auditoria.md#listas-e-cartões-básicos).
+- **Migration:** a autorização específica cobre SELECT e INSERT nas duas
+  tabelas novas, UPDATE de nome na lista e UPDATE de título e descrição
+  no cartão para `bello_runtime`. A validação usa banco descartável.
+- **Aceite em Docker — VERIFICADO:** 15 cenários passaram com contas sintéticas,
+  Chromium e PostgreSQL descartável
+  para isolamento entre Trabalho e Pessoal, acesso direto, persistência após
+  recarga, perda de resposta e rollback por falhas independentes na auditoria
+  e no feed.
+
+- **Qualidade local — VERIFICADO:** `quality:local` passou com 806 testes
+  da API, 81 da web e cobertura acima de 90% nas quatro métricas por aplicação
+  e no consolidado. Registro anterior ao commit, publicação e CI remoto.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,

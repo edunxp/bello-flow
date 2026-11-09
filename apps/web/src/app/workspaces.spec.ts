@@ -149,4 +149,25 @@ describe('Workspaces', () => {
     fixture.detectChanges();
     expect(page.board()).toBeNull();
   });
+  it('clears board content when the signed-in account changes', () => {
+    const { http, page, fixture, session } = setup({
+      workspaceId: workspace.id,
+      boardId: board.id,
+    });
+    const path = base + '/workspace/boards/board';
+    http.expectOne(path).flush(board);
+    fixture.detectChanges();
+    http
+      .expectOne(path + '/lists')
+      .flush({ editable: true, lists: [{ id: 'private', name: 'Lista privada', cards: [] }] });
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('Lista privada');
+
+    session.signedIn({ account: { id: 'outra-conta' } });
+    fixture.detectChanges();
+    expect(page.board()).toBeNull();
+    expect(element.textContent).not.toContain('Lista privada');
+    http.expectOne(path).flush({}, { status: 403, statusText: 'Forbidden' });
+  });
 });

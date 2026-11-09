@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AuthenticationService } from '../auth/authentication.service.js';
 import { HTTP_ERROR_CODE } from '../http/http-errors.js';
 import { loadHttpSecurityConfig } from '../http/http-security.config.js';
+import type { BoardContentService } from './board-content.service.js';
 import type { SharingService } from './sharing.service.js';
 import { WorkspaceController } from './workspace.controller.js';
 import type { WorkspaceService } from './workspace.service.js';
@@ -23,12 +24,14 @@ function setup() {
     board: vi.fn(),
     createBoard: vi.fn(),
   };
+  const content = { read: vi.fn(), write: vi.fn() };
   const controller = new WorkspaceController(
     workspaces as unknown as WorkspaceService,
     {
       resolveAuthenticatedSession: identity,
     } as unknown as AuthenticationService,
     {} as SharingService,
+    content as unknown as BoardContentService,
   );
   const headers = [
     'X-Bello-Flow-Request',
@@ -48,7 +51,7 @@ function setup() {
       body,
     } as unknown as Request;
   }
-  return { controller, workspaces, identity, request, headers };
+  return { controller, workspaces, content, identity, request, headers };
 }
 
 describe('WorkspaceController', () => {
@@ -150,5 +153,70 @@ describe('WorkspaceController', () => {
     await expect(controller.list(request())).rejects.toMatchObject({
       code: HTTP_ERROR_CODE.UNAUTHENTICATED,
     });
+  });
+});
+
+describe('WorkspaceController board content', () => {
+  const params = { workspaceId: id, boardId: id };
+  const item = { ...params, listId: id };
+  const card = { ...item, cardId: id };
+
+  it('scopes reads and writes to the authenticated board', async () => {
+    const { controller, request, content } = setup();
+    const context = { ...params, accountId: id };
+    await controller.lists(request(), params);
+    expect(content.read).toHaveBeenCalledWith(context);
+    await controller.writeList(
+      request({ name: ' A fazer ', operationId: id }),
+      params,
+    );
+    expect(content.write).toHaveBeenLastCalledWith(
+      context,
+      { name: 'A fazer' },
+      id,
+    );
+    await controller.editList(request({ name: 'Concluído' }), item);
+    expect(content.write).toHaveBeenLastCalledWith(
+      context,
+      { name: 'Concluído', listId: id },
+      '',
+    );
+    await controller.writeCard(
+      request({ title: 'Título', operationId: id }),
+      item,
+    );
+    expect(content.write).toHaveBeenLastCalledWith(
+      context,
+      { title: 'Título', description: null, listId: id },
+      id,
+    );
+    const description = ' 📝 '.repeat(6666);
+    await controller.editCard(request({ title: ' Novo ', description }), card);
+    expect(content.write).toHaveBeenLastCalledWith(
+      context,
+      {
+        title: 'Novo',
+        description,
+        listId: id,
+        cardId: id,
+      },
+      '',
+    );
+  });
+
+  it('rejects invalid fields and direct identifiers before calling the service', async () => {
+    const { controller, request, content } = setup();
+    await expect(
+      controller.lists(request(), { ...params, boardId: 'bad' }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    for (const description of [false, '\0', '\ud800', '📝'.repeat(20_001)]) {
+      await expect(
+        controller.editCard(request({ title: 'Título', description }), card),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    }
+    await expect(
+      controller.editList(request({ name: '  ' }), item),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    expect(content.write).not.toHaveBeenCalled();
   });
 });

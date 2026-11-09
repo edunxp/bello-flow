@@ -3,6 +3,7 @@ import {
   Get,
   HttpCode,
   Param,
+  Patch,
   Post,
   Req,
   UseFilters,
@@ -22,6 +23,7 @@ import {
   validateMutatingRequestOrigin,
 } from '../http/request-security.js';
 import { readSessionCookie } from '../http/session-cookie.js';
+import { BoardContentService } from './board-content.service.js';
 import { SharingService } from './sharing.service.js';
 import { WorkspaceService } from './workspace.service.js';
 
@@ -40,8 +42,12 @@ function identifier(value: unknown): string {
   return value;
 }
 
+function invalidText(value: string): boolean {
+  return value.includes('\0') || /\p{Surrogate}/u.test(value);
+}
+
 function text(value: unknown, max: number, trim: boolean): string {
-  if (typeof value !== 'string' || !value.trim() || value.includes('\0'))
+  if (typeof value !== 'string' || !value.trim() || invalidText(value))
     invalid();
   const result = trim ? value.trim() : value;
   if (Array.from(result).length > max) invalid();
@@ -55,6 +61,7 @@ export class WorkspaceController {
     private readonly workspaces: WorkspaceService,
     private readonly authentication: AuthenticationService,
     private readonly sharing: SharingService,
+    private readonly content: BoardContentService,
   ) {}
 
   @Get()
@@ -188,6 +195,91 @@ export class WorkspaceController {
         description: text(body?.description, 2000, false),
       },
     );
+  }
+
+  @Get(':workspaceId/boards/:boardId/lists')
+  async lists(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    return this.content.read(await this.contentContext(request, params));
+  }
+
+  @Patch(':workspaceId/boards/:boardId/lists/:listId')
+  editList(@Req() request: Request, @Param() params: Record<string, string>) {
+    return this.writeList(request, params);
+  }
+
+  @Post(':workspaceId/boards/:boardId/lists')
+  async writeList(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const context = await this.contentContext(request, params, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    return this.content.write(
+      context,
+      {
+        name: text(body?.name, 100, true),
+        listId:
+          params.listId === undefined ? undefined : identifier(params.listId),
+      },
+      params.listId === undefined ? identifier(body?.operationId) : '',
+    );
+  }
+
+  @Patch(':workspaceId/boards/:boardId/lists/:listId/cards/:cardId')
+  editCard(@Req() request: Request, @Param() params: Record<string, string>) {
+    return this.writeCard(request, params);
+  }
+
+  @Post(':workspaceId/boards/:boardId/lists/:listId/cards')
+  async writeCard(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const context = await this.contentContext(request, params, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    const editing = params.cardId !== undefined;
+    const title =
+      editing && body?.title === undefined
+        ? undefined
+        : text(body?.title, 200, true);
+    const description = editing
+      ? body?.description
+      : (body?.description ?? null);
+    if (title === undefined && description === undefined) invalid();
+    if (
+      description !== undefined &&
+      description !== null &&
+      (typeof description !== 'string' ||
+        invalidText(description) ||
+        Array.from(description).length > 20_000)
+    )
+      invalid();
+    return this.content.write(
+      context,
+      {
+        title,
+        description,
+        listId: identifier(params.listId),
+        cardId:
+          params.cardId === undefined ? undefined : identifier(params.cardId),
+      },
+      params.cardId === undefined ? identifier(body?.operationId) : '',
+    );
+  }
+
+  private async contentContext(
+    request: Request,
+    params: Record<string, string>,
+    mutating = false,
+  ) {
+    return {
+      accountId: await this.account(request, mutating),
+      workspaceId: identifier(params.workspaceId),
+      boardId: identifier(params.boardId),
+    };
   }
 
   private async account(request: Request, mutating = false) {
