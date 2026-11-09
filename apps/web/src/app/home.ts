@@ -23,7 +23,8 @@ import { Session } from './session';
         <a routerLink="/login">Ir para o login</a>
       }
       @case ('authenticated') {
-        <p>Sessão ativa. Os recursos de trabalho serão entregues nas próximas etapas.</p>
+        <p>Sessão ativa.</p>
+        <p><a routerLink="/workspaces">Abrir Workspaces</a></p>
         <button (click)="logout()" [disabled]="busy()">{{ busy() ? 'Saindo…' : 'Sair' }}</button>
       }
     }

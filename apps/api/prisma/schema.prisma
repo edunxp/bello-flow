@@ -28,6 +28,7 @@ model Account {
   globalRoles             GlobalRoleAssignment[]
   bootstrapStates         BootstrapState[]
   auditEvents             AuditEvent[]
+  workspaceMemberships    WorkspaceMembership[]
 
   @@map("account")
 }
@@ -178,4 +179,68 @@ model AuditEvent {
   @@unique([operationId, sequence], map: "audit_event_operation_id_sequence_key")
   @@index([occurredAt(sort: Desc), id(sort: Desc)], map: "audit_event_occurred_at_id_idx")
   @@map("audit_event")
+}
+
+model Workspace {
+  id          String                @id @db.Uuid
+  name        String                @db.VarChar(100)
+  description String?               @db.VarChar(2000)
+  timeZone    String                @map("time_zone") @db.VarChar(100)
+  members     WorkspaceMembership[]
+  boards      Board[]
+
+  @@map("workspace")
+}
+
+model WorkspaceMembership {
+  workspaceId String    @map("workspace_id") @db.Uuid
+  accountId   String    @map("account_id") @db.Uuid
+  role        String    @db.VarChar(20)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  boards      BoardMembership[]
+
+  @@id([workspaceId, accountId])
+  @@index([accountId, workspaceId])
+  @@map("workspace_membership")
+}
+
+model Board {
+  id          String            @id @db.Uuid
+  workspaceId String            @map("workspace_id") @db.Uuid
+  name        String            @db.VarChar(100)
+  description String            @db.VarChar(2000)
+  visibility  String            @default("PRIVATE") @db.VarChar(20)
+  archived    Boolean           @default(false)
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  members     BoardMembership[]
+  feed        BoardFeedEvent[]
+
+  @@unique([workspaceId, id])
+  @@map("board")
+}
+
+model BoardMembership {
+  workspaceId     String              @map("workspace_id") @db.Uuid
+  boardId         String              @map("board_id") @db.Uuid
+  accountId       String              @map("account_id") @db.Uuid
+  role            String              @db.VarChar(20)
+  board           Board               @relation(fields: [workspaceId, boardId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  workspaceMember WorkspaceMembership @relation(fields: [workspaceId, accountId], references: [workspaceId, accountId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([workspaceId, boardId, accountId])
+  @@index([workspaceId, accountId])
+  @@map("board_membership")
+}
+
+model BoardFeedEvent {
+  id          String   @id @db.Uuid
+  boardId     String   @map("board_id") @db.Uuid
+  actorId     String   @map("actor_id") @db.Uuid
+  occurredAt  DateTime @map("occurred_at") @db.Timestamptz(6)
+  operation   String   @db.VarChar(60)
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([boardId, occurredAt, id])
+  @@map("board_feed_event")
 }

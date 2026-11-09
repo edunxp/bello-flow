@@ -388,6 +388,40 @@ permanecem em
 e os endpoints de recuperação permanecem no
 [contrato aprovado da F1-B.4.5](arquitetura/seguranca-e-autorizacao.md#recuperação-de-senha--contrato-aprovado-da-f1-b45).
 
+## Múltiplos Workspaces — primeira etapa
+
+- **Estado — VERIFICADO:** implementado e validado localmente na branch
+  `work/multiplos-workspaces`, com
+  `BASE_MAIN_SHA=2cdb4bd8a34119891006fa91f9e2383e4f2c0694`. Este registro
+  antecede commit, publicação e CI remoto.
+- **Escopo:** criar e listar Workspaces e quadros privados pela interface e API.
+  A mesma conta pode criar os Workspaces Trabalho e Pessoal e os quadros Time
+  ERP e Pessoal. A criação concede ao autor o papel de Administrador inicial
+  explícito no recurso e registra a auditoria obrigatória e o feed aplicável
+  na mesma transação.
+- **Autorização:** listar Workspaces exige participação no Workspace. Listar ou
+  abrir conteúdo de quadro privado exige participação explícita no Workspace
+  e no quadro. A concessão inicial e as consultas seguem DEC-005 a DEC-010 e
+  as regras de privacidade, governança e auditoria aplicáveis.
+- **Aceite:** validar no navegador e na API com PostgreSQL descartável em Docker.
+  A conta criadora vê os dois Workspaces e seus respectivos quadros. Uma conta
+  sem vínculo não os vê nem obtém acesso direto. Uma conta vinculada apenas ao
+  Workspace não lista nem abre o quadro privado. Os vínculos adicionais desse
+  cenário são preparados como dados sintéticos de teste.
+- **Etapa seguinte:** gerenciamento de acesso pela interface com e-mail e Central
+  de Notificações conforme DEC-021. A homologação desta etapa não depende de
+  envio real pela Resend.
+- **Evidências — VERIFICADO:** `quality:local` aprovado com 785 testes da API,
+  69 da web e cobertura superior a 90% nas quatro métricas. Os 13 cenários em
+  Chromium e PostgreSQL descartável passaram. O cenário específico confirmou
+  criação e listagem, recusa de criação fora do Workspace, resposta equivalente
+  para quadro privado e inexistente, ausência de cache e registros de auditoria
+  e feed. A conta de teste com vínculo apenas no Workspace permaneceu sem
+  acesso ao quadro.
+- **Risco e autorização:** a migration concede ao runtime somente leitura e
+  inserção nas tabelas deste recorte, conforme autorizado. A fronteira de
+  acesso a dados privados exige revisão independente antes da integração.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,

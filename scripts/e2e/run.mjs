@@ -311,6 +311,132 @@ try {
     await context.close();
   });
 
+  await scenario(
+    "private Workspaces and boards are isolated (real stack)",
+    async () => {
+      const owner = await fixture();
+      const outsider = await fixture();
+      const creator = await pageFor();
+      const visitor = await pageFor();
+      try {
+        await login(creator.page, owner);
+        await creator.page
+          .getByRole("link", { name: "Abrir Workspaces" })
+          .click();
+
+        async function createWorkspace(name) {
+          await creator.page.getByLabel("Nome", { exact: true }).fill(name);
+          await creator.page
+            .getByLabel("Fuso horário regional")
+            .fill("America/Sao_Paulo");
+          await creator.page
+            .getByRole("button", { name: "Criar Workspace" })
+            .click();
+          const link = creator.page.getByRole("link", { name, exact: true });
+          await expect(link).toBeVisible();
+          return await link.getAttribute("href");
+        }
+
+        async function createBoard(name, workspacePath) {
+          await creator.page.goto(origin + workspacePath);
+          await creator.page.getByLabel("Nome", { exact: true }).fill(name);
+          await creator.page
+            .getByLabel("Descrição")
+            .fill("Descrição privada de teste");
+          await creator.page
+            .getByRole("button", { name: "Criar quadro" })
+            .click();
+          const link = creator.page.getByRole("link", { name, exact: true });
+          await expect(link).toBeVisible();
+          await link.click();
+          await expect(
+            creator.page.getByRole("heading", { name, exact: true }),
+          ).toBeVisible();
+          return new URL(creator.page.url()).pathname;
+        }
+
+        const work = await createWorkspace("Trabalho");
+        const personal = await createWorkspace("Pessoal");
+        const erp = await createBoard("Time ERP", work);
+        await createBoard("Pessoal", personal);
+        await login(visitor.page, outsider);
+        await visitor.page.goto(origin + "/workspaces");
+        await expect(
+          visitor.page.getByText("Nenhum item disponível."),
+        ).toBeVisible();
+        await visitor.page.goto(origin + erp);
+        await expect(
+          visitor.page.getByText("Recurso indisponível."),
+        ).toBeVisible();
+
+        const headers = { "X-Bello-Flow-Request": "1" };
+        const denied = await visitor.context.request.get(
+          origin + "/api" + erp,
+          { headers },
+        );
+        check(denied.status() === 403);
+        check(denied.headers()["cache-control"] === "private, no-store");
+        const unknown = await visitor.context.request.get(
+          origin +
+            "/api" +
+            work +
+            "/boards/40000000-0000-4000-8000-000000000001",
+          { headers },
+        );
+        check(unknown.status() === denied.status());
+        check(
+          JSON.stringify(await unknown.json()) ===
+            JSON.stringify(await denied.json()),
+        );
+        const blockedCreate = await visitor.context.request.post(
+          origin + "/api" + work + "/boards",
+          {
+            headers: { ...headers, Origin: origin },
+            data: { name: "Indevido", description: "Indevido" },
+          },
+        );
+        check(blockedCreate.status() === 403);
+        const workspaceId = work.split("/").at(-1);
+        const boardId = erp.split("/").at(-1);
+        await migrator.query(
+          "INSERT INTO public.workspace_membership (workspace_id, account_id, role) VALUES ($1, $2, 'MEMBER')",
+          [workspaceId, outsider.id],
+        );
+        await visitor.page.goto(origin + work);
+        await expect(
+          visitor.page.getByText("Nenhum item disponível."),
+        ).toBeVisible();
+        check(
+          (
+            await visitor.context.request.get(origin + "/api" + erp, {
+              headers,
+            })
+          ).status() === 403,
+        );
+
+        const evidence = await migrator.query(
+          `SELECT
+           (SELECT count(*)::int FROM public.audit_event WHERE actor_account_id=$1
+            AND operation IN ('WORKSPACE_CREATED','WORKSPACE_ADMIN_GRANTED','BOARD_CREATED','BOARD_ADMIN_GRANTED')) AS audit,
+           (SELECT count(*)::int FROM public.board_feed_event WHERE board_id=$2) AS feed`,
+          [owner.id, boardId],
+        );
+        check(evidence.rows[0].audit === 8 && evidence.rows[0].feed === 2);
+
+        await creator.page.goto(origin + "/workspaces");
+        await expect(
+          creator.page.getByRole("link", { name: "Trabalho", exact: true }),
+        ).toBeVisible();
+        await expect(
+          creator.page.getByRole("link", { name: "Pessoal", exact: true }),
+        ).toBeVisible();
+      } finally {
+        await creator.context.close();
+        await visitor.context.close();
+      }
+    },
+  );
+
   await scenario("generic rejected login (real stack)", async () => {
     const account = await fixture();
     const { page, context } = await pageFor();
