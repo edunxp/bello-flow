@@ -32,7 +32,10 @@ describe('Workspaces', () => {
     return { fixture, session, http, page, params };
   }
 
-  afterEach(() => TestBed.inject(HttpTestingController).verify());
+  afterEach(() => {
+    TestBed.inject(HttpTestingController).verify();
+    sessionStorage.clear();
+  });
 
   it('loads and creates Workspaces using the application request header', async () => {
     const { http, page, fixture } = setup();
@@ -70,11 +73,61 @@ describe('Workspaces', () => {
       element.querySelector('#workspace-zone'),
     );
     const create = http.expectOne({ method: 'POST', url: path });
-    expect(create.request.body).toEqual({ name: '', description: '' });
+    expect(create.request.body).toEqual({
+      name: '',
+      description: '',
+      operationId: expect.any(String),
+    });
     create.flush({}, { status: 400, statusText: 'Bad request' });
     await pending;
     expect(page.message()).toContain('Não foi possível criar');
     expect(page.saving()).toBe(false);
+  });
+
+  it('reuses the operation after an uncertain response and keeps one list item', async () => {
+    const { http, page, fixture } = setup();
+    http.expectOne(base).flush([workspace]);
+    fixture.detectChanges();
+    const element = fixture.nativeElement;
+    const submit = () =>
+      page.create(
+        new Event('submit'),
+        element.querySelector('#resource-name'),
+        element.querySelector('#resource-description'),
+        element.querySelector('#workspace-zone'),
+      );
+    const first = submit();
+    const request = http.expectOne({ method: 'POST', url: base });
+    request.error(new ProgressEvent('network error'));
+    await first;
+    expect(page.message()).toContain('Não foi possível confirmar');
+    const second = submit();
+    const replay = http.expectOne({ method: 'POST', url: base });
+    expect(replay.request.body).toEqual(request.request.body);
+    replay.flush(workspace);
+    await second;
+    expect(page.resources()).toEqual([workspace]);
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it('preserves a newer operation when an older response arrives', async () => {
+    const { http, page, fixture } = setup();
+    http.expectOne(base).flush([]);
+    fixture.detectChanges();
+    const element = fixture.nativeElement;
+    const pending = page.create(
+      new Event('submit'),
+      element.querySelector('#resource-name'),
+      element.querySelector('#resource-description'),
+      element.querySelector('#workspace-zone'),
+    );
+    const request = http.expectOne({ method: 'POST', url: base });
+    const key = 'bello.pending-create:synthetic:' + base;
+    const newer = crypto.randomUUID();
+    sessionStorage.setItem(key, newer);
+    request.flush(workspace);
+    await pending;
+    expect(sessionStorage.getItem(key)).toBe(newer);
   });
 
   it('clears private content before loading a different board', () => {

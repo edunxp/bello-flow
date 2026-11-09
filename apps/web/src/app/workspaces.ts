@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -166,7 +166,18 @@ export class Workspaces {
     if (this.saving()) return;
     const path = this.path();
     const identity = this.session.identity();
-    const body = { name: name.value, description: description.value };
+    if (!identity) return;
+    const pendingKey = 'bello.pending-create:' + identity.account.id + ':' + path;
+    let operationId: string;
+    try {
+      operationId = sessionStorage.getItem(pendingKey) ?? crypto.randomUUID();
+      sessionStorage.setItem(pendingKey, operationId);
+    } catch {
+      this.message.set('Não foi possível guardar a operação nesta aba. A criação não foi enviada.');
+      return;
+    }
+    let confirmed = false;
+    const body = { name: name.value, description: description.value, operationId };
     this.message.set('');
     this.saving.set(true);
     try {
@@ -177,17 +188,32 @@ export class Workspaces {
           this.options,
         ),
       );
+      confirmed = true;
       if (path === this.path() && identity === this.session.identity()) {
-        this.resources.update((resources) => [...resources, resource]);
+        this.resources.update((resources) =>
+          resources.some((item) => item.id === resource.id) ? resources : [...resources, resource],
+        );
         name.value = '';
         description.value = '';
       }
-    } catch {
-      this.message.set(
-        'Não foi possível criar. Confira os dados e a listagem antes de tentar novamente.',
-      );
+    } catch (error) {
+      if (error instanceof HttpErrorResponse && error.status === 409) {
+        confirmed = true;
+        this.message.set(
+          'Uma criação anterior já foi concluída. Atualize a listagem antes de criar outro item.',
+        );
+      } else if (error instanceof HttpErrorResponse && error.status === 400) {
+        this.message.set('Não foi possível criar. Confira os dados informados.');
+      } else {
+        this.message.set(
+          'Não foi possível confirmar a criação. Repita com os mesmos dados para recuperar o resultado.',
+        );
+      }
     } finally {
       this.saving.set(false);
+      if (confirmed && sessionStorage.getItem(pendingKey) === operationId) {
+        sessionStorage.removeItem(pendingKey);
+      }
     }
   }
 }

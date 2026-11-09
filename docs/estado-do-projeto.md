@@ -421,6 +421,17 @@ e os endpoints de recuperação permanecem no
 - **Risco e autorização:** a migration concede ao runtime somente leitura e
   inserção nas tabelas deste recorte, conforme autorizado. A fronteira de
   acesso a dados privados exige revisão independente antes da integração.
+- **Correção da revisão — VERIFICADO localmente:** as criações recebem um UUID
+  de operação. A API vincula o resultado à conta e ao escopo do recurso.
+  A repetição com os mesmos dados devolve o recurso já criado após verificar
+  o acesso; dados divergentes retornam conflito. A interface guarda somente o
+  UUID pendente na sessão da aba para preservar a operação após recarga.
+- **Evidência da correção:** os testes em Docker descartaram uma resposta
+  depois da confirmação pelo servidor, repetiram a operação após recarga e
+  exercitaram dois POSTs simultâneos para o mesmo quadro. Falhas forçadas na
+  auditoria de Workspace e quadro e no feed do quadro deixaram inalteradas as
+  contagens de recursos, vínculos, auditoria e feed. A revisão independente
+  final e o CI da correção são verificados no SHA publicado.
 
 ## Roadmap recomendado do Kanban
 

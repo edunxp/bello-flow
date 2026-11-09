@@ -71,26 +71,35 @@ describe('WorkspaceController', () => {
   it('normalizes names and preserves descriptions', async () => {
     const { controller, request, workspaces } = setup();
     await controller.create(
-      request({ name: ' Trabalho ', timeZone: 'America/Sao_Paulo' }),
+      request({
+        operationId: id,
+        name: ' Trabalho ',
+        timeZone: 'America/Sao_Paulo',
+      }),
     );
     await controller.create(
-      request({ name: 'Pessoal', description: ' Texto ', timeZone: 'Etc/UTC' }),
+      request({
+        operationId: id,
+        name: 'Pessoal',
+        description: ' Texto ',
+        timeZone: 'Etc/UTC',
+      }),
     );
     await controller.createBoard(
-      request({ name: ' ERP ', description: ' Descrição ' }),
+      request({ operationId: id, name: ' ERP ', description: ' Descrição ' }),
       id,
     );
-    expect(workspaces.create).toHaveBeenNthCalledWith(1, id, {
+    expect(workspaces.create).toHaveBeenNthCalledWith(1, id, id, {
       name: 'Trabalho',
       description: undefined,
       timeZone: 'America/Sao_Paulo',
     });
-    expect(workspaces.create).toHaveBeenNthCalledWith(2, id, {
+    expect(workspaces.create).toHaveBeenNthCalledWith(2, id, id, {
       name: 'Pessoal',
       description: ' Texto ',
       timeZone: 'Etc/UTC',
     });
-    expect(workspaces.createBoard).toHaveBeenCalledWith(id, id, {
+    expect(workspaces.createBoard).toHaveBeenCalledWith(id, id, id, {
       name: 'ERP',
       description: ' Descrição ',
     });
@@ -102,6 +111,7 @@ describe('WorkspaceController', () => {
     { name: 'a'.repeat(101), timeZone: 'Etc/UTC' },
     { name: 'Pessoal', timeZone: '+01:00' },
     { name: 'Pessoal', timeZone: 'Invalid/Zone' },
+    { name: 'Pessoal', timeZone: 'Etc/UTC' },
   ])('rejects invalid workspace input', async (body) => {
     const { controller, request, workspaces } = setup();
     await expect(controller.create(request(body))).rejects.toMatchObject({

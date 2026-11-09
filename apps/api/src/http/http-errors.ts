@@ -8,6 +8,7 @@ import type { NextFunction, Request, Response } from 'express';
 
 export const HTTP_ERROR_CODE = Object.freeze({
   INVALID_REQUEST: 'INVALID_REQUEST',
+  OPERATION_CONFLICT: 'OPERATION_CONFLICT',
   AUTHENTICATION_FAILED: 'AUTHENTICATION_FAILED',
   UNAUTHENTICATED: 'UNAUTHENTICATED',
   REQUEST_FORBIDDEN: 'REQUEST_FORBIDDEN',
@@ -31,6 +32,11 @@ export const HTTP_ERROR_DEFINITION = Object.freeze({
     code: HTTP_ERROR_CODE.INVALID_REQUEST,
     status: 400,
     message: 'Invalid request',
+  }),
+  [HTTP_ERROR_CODE.OPERATION_CONFLICT]: Object.freeze({
+    code: HTTP_ERROR_CODE.OPERATION_CONFLICT,
+    status: 409,
+    message: 'Operation conflicts with an earlier request',
   }),
   [HTTP_ERROR_CODE.AUTHENTICATION_FAILED]: Object.freeze({
     code: HTTP_ERROR_CODE.AUTHENTICATION_FAILED,

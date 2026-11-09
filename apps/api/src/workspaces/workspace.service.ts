@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client.js';
 import { HTTP_ERROR_CODE, HttpContractError } from '../http/http-errors.js';
@@ -6,6 +6,33 @@ import { PrismaService } from '../prisma/prisma.service.js';
 
 type Fields = { name: string; description?: string };
 type BoardFields = Fields & { description: string };
+
+function creationId(
+  accountId: string,
+  operationId: string,
+  workspaceId?: string,
+) {
+  const bytes = createHash('sha256')
+    .update(
+      JSON.stringify([
+        'bello-resource-creation-v1',
+        accountId,
+        workspaceId ?? null,
+        operationId,
+      ]),
+    )
+    .digest();
+  bytes[6] = (bytes[6]! & 15) | 64;
+  bytes[8] = (bytes[8]! & 63) | 128;
+  const hex = bytes.subarray(0, 16).toString('hex');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join('-');
+}
 
 @Injectable()
 export class WorkspaceService {
@@ -18,11 +45,27 @@ export class WorkspaceService {
     });
   }
 
-  async create(accountId: string, fields: Fields & { timeZone: string }) {
+  async create(
+    accountId: string,
+    operationId: string,
+    fields: Fields & { timeZone: string },
+  ) {
+    const id = creationId(accountId, operationId);
     const workspace = await this.db.$transaction(async (tx) => {
       if (!(await this.eligible(tx, accountId))) return null;
-      const id = randomUUID();
-      const workspace = await tx.workspace.create({ data: { ...fields, id } });
+      const inserted = await tx.workspace.createMany({
+        data: { ...fields, id },
+        skipDuplicates: true,
+      });
+      const workspace = await tx.workspace.findFirstOrThrow({
+        where: {
+          id,
+          ...(inserted.count === 0 ? { members: { some: { accountId } } } : {}),
+        },
+      });
+      if (inserted.count === 0) {
+        return this.replay(workspace, fields);
+      }
       await tx.workspaceMembership.create({
         data: { workspaceId: id, accountId, role: 'ADMIN' },
       });
@@ -58,18 +101,30 @@ export class WorkspaceService {
   async createBoard(
     accountId: string,
     workspaceId: string,
+    operationId: string,
     fields: BoardFields,
   ) {
+    const id = creationId(accountId, operationId, workspaceId);
     const board = await this.db.$transaction(async (tx) => {
       const membership = await tx.workspaceMembership.findUnique({
         where: { workspaceId_accountId: { workspaceId, accountId } },
       });
       if (!membership || !(await this.eligible(tx, accountId))) return null;
 
-      const id = randomUUID();
-      const created = await tx.board.create({
+      const inserted = await tx.board.createMany({
         data: { ...fields, id, workspaceId },
+        skipDuplicates: true,
       });
+      const created = await tx.board.findFirstOrThrow({
+        where: {
+          id,
+          workspaceId,
+          ...(inserted.count === 0 ? { members: { some: { accountId } } } : {}),
+        },
+      });
+      if (inserted.count === 0) {
+        return this.replay(created, fields);
+      }
       await tx.boardMembership.create({
         data: { workspaceId, boardId: id, accountId, role: 'ADMIN' },
       });
@@ -87,6 +142,19 @@ export class WorkspaceService {
     });
     if (!board) return this.deny(accountId, 'CREATE_BOARD');
     return board;
+  }
+
+  private replay<
+    T extends { name: string; description: string | null; timeZone?: string },
+  >(resource: T, fields: Fields & { timeZone?: string }): T {
+    if (
+      resource.name !== fields.name ||
+      resource.description !== (fields.description ?? null) ||
+      resource.timeZone !== fields.timeZone
+    ) {
+      throw new HttpContractError(HTTP_ERROR_CODE.OPERATION_CONFLICT);
+    }
+    return resource;
   }
 
   private eligible(tx: Prisma.TransactionClient, accountId: string) {
@@ -128,7 +196,7 @@ export class WorkspaceService {
     entityType: 'WORKSPACE' | 'BOARD',
     resource: { id: string } & Prisma.InputJsonObject,
   ) {
-    const operationId = randomUUID();
+    const operationId = resource.id;
     const common = {
       occurredAt: new Date(),
       actorAccountId,

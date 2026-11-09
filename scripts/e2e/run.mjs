@@ -392,7 +392,11 @@ try {
           origin + "/api" + work + "/boards",
           {
             headers: { ...headers, Origin: origin },
-            data: { name: "Indevido", description: "Indevido" },
+            data: {
+              operationId: randomUUID(),
+              name: "Indevido",
+              description: "Indevido",
+            },
           },
         );
         check(blockedCreate.status() === 403);
@@ -433,6 +437,150 @@ try {
       } finally {
         await creator.context.close();
         await visitor.context.close();
+      }
+    },
+  );
+
+  await scenario(
+    "creation replay and rollback on mandatory writes (real stack)",
+    async () => {
+      const owner = await fixture();
+      const { page, context } = await pageFor();
+      try {
+        await login(page, owner);
+        const headers = { "X-Bello-Flow-Request": "1", Origin: origin };
+        const workspacePath = "/api/workspaces";
+        const post = (path, data) =>
+          context.request.post(origin + path, { headers, data });
+        const workspaceFields = {
+          name: "Trabalho",
+          timeZone: "America/Sao_Paulo",
+        };
+        const boardFields = { name: "Time ERP", description: "Quadro privado" };
+        const workspaceData = { ...workspaceFields, operationId: randomUUID() };
+        const first = await post(workspacePath, workspaceData);
+        check(first.status() === 201);
+        const workspace = await first.json();
+        const replay = await post(workspacePath, workspaceData);
+        check(
+          replay.status() === 201 && (await replay.json()).id === workspace.id,
+        );
+        check(
+          (
+            await post(workspacePath, { ...workspaceData, name: "Outro" })
+          ).status() === 409,
+        );
+
+        const boardsPath = workspacePath + "/" + workspace.id + "/boards";
+        const boardData = { ...boardFields, operationId: randomUUID() };
+        const competing = await Promise.all([
+          post(boardsPath, boardData),
+          post(boardsPath, boardData),
+        ]);
+        check(competing.every((response) => response.status() === 201));
+        const [board, repeated] = await Promise.all(
+          competing.map((response) => response.json()),
+        );
+        check(board.id === repeated.id);
+        check(
+          (await post(boardsPath, { ...boardData, name: "Outro" })).status() ===
+            409,
+        );
+
+        await page.goto(origin + "/workspaces");
+        const routeUrl = origin + workspacePath;
+        let discardedStatus;
+        await page.route(routeUrl, async (route) => {
+          if (
+            route.request().method() !== "POST" ||
+            discardedStatus !== undefined
+          ) {
+            return route.fallback();
+          }
+          discardedStatus = (await route.fetch()).status();
+          await route.abort();
+        });
+        async function submitUncertain() {
+          await page.getByLabel("Nome", { exact: true }).fill("Pessoal");
+          await page
+            .getByLabel("Fuso horário regional")
+            .fill("America/Sao_Paulo");
+          await page.getByRole("button", { name: "Criar Workspace" }).click();
+        }
+        await submitUncertain();
+        await expect(
+          page.getByText("Não foi possível confirmar a criação.", {
+            exact: false,
+          }),
+        ).toBeVisible();
+        check(discardedStatus === 201);
+        await page.reload();
+        await submitUncertain();
+        await expect(
+          page.getByRole("link", { name: "Pessoal", exact: true }),
+        ).toHaveCount(1);
+        await expect(page.getByLabel("Nome", { exact: true })).toHaveValue("");
+
+        async function snapshot() {
+          const result = await migrator.query(
+            `SELECT
+          (SELECT count(*)::int FROM public.workspace) AS workspaces,
+          (SELECT count(*)::int FROM public.workspace_membership) AS workspace_memberships,
+          (SELECT count(*)::int FROM public.board) AS boards,
+          (SELECT count(*)::int FROM public.board_membership) AS board_memberships,
+          (SELECT count(*)::int FROM public.audit_event WHERE actor_account_id=$1 AND scope='WORKSPACE') AS audits,
+          (SELECT count(*)::int FROM public.board_feed_event) AS feed`,
+            [owner.id],
+          );
+          return result.rows[0];
+        }
+        const baseline = await snapshot();
+        check(baseline.audits === 6);
+        check(
+          (
+            await migrator.query(
+              "SELECT count(*)::int AS count FROM public.board_feed_event WHERE board_id=$1",
+              [board.id],
+            )
+          ).rows[0].count === 2,
+        );
+        for (const fault of [
+          {
+            table: "audit_event",
+            condition: "NEW.operation = 'WORKSPACE_ADMIN_GRANTED'",
+            path: workspacePath,
+            data: workspaceFields,
+          },
+          {
+            table: "audit_event",
+            condition: "NEW.operation = 'BOARD_ADMIN_GRANTED'",
+            path: boardsPath,
+            data: boardFields,
+          },
+          {
+            table: "board_feed_event",
+            condition: "NEW.operation = 'BOARD_ADMIN_GRANTED'",
+            path: boardsPath,
+            data: boardFields,
+          },
+        ]) {
+          const data = { ...fault.data, operationId: randomUUID() };
+          await migrator.query(`CREATE FUNCTION public.e2e_reject_creation() RETURNS trigger
+          LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic write failure'; END; $$;
+          CREATE TRIGGER e2e_reject_creation BEFORE INSERT ON public.${fault.table}
+            FOR EACH ROW WHEN (${fault.condition}) EXECUTE FUNCTION public.e2e_reject_creation();`);
+          try {
+            check((await post(fault.path, data)).status() === 500);
+            check(
+              JSON.stringify(await snapshot()) === JSON.stringify(baseline),
+            );
+          } finally {
+            await migrator.query(`DROP TRIGGER e2e_reject_creation ON public.${fault.table};
+            DROP FUNCTION public.e2e_reject_creation();`);
+          }
+        }
+      } finally {
+        await context.close();
       }
     },
   );

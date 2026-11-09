@@ -20,8 +20,9 @@ function invalid(): never {
   throw new HttpContractError(HTTP_ERROR_CODE.INVALID_REQUEST);
 }
 
-function identifier(value: string): string {
+function identifier(value: unknown): string {
   if (
+    typeof value !== 'string' ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
       value,
     )
@@ -67,7 +68,11 @@ export class WorkspaceController {
     } catch {
       invalid();
     }
-    return this.workspaces.create(accountId, { name, description, timeZone });
+    return this.workspaces.create(accountId, identifier(body?.operationId), {
+      name,
+      description,
+      timeZone,
+    });
   }
 
   @Get(':workspaceId/boards')
@@ -101,10 +106,15 @@ export class WorkspaceController {
   ) {
     const accountId = await this.account(request, true);
     const body = request.body as Record<string, unknown> | undefined;
-    return this.workspaces.createBoard(accountId, identifier(workspaceId), {
-      name: text(body?.name, 100, true),
-      description: text(body?.description, 2000, false),
-    });
+    return this.workspaces.createBoard(
+      accountId,
+      identifier(workspaceId),
+      identifier(body?.operationId),
+      {
+        name: text(body?.name, 100, true),
+        description: text(body?.description, 2000, false),
+      },
+    );
   }
 
   private async account(request: Request, mutating = false) {
