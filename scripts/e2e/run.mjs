@@ -1485,6 +1485,234 @@ try {
     },
   );
 
+  await scenario(
+    "board membership changes, live revocation and administrator continuity",
+    async () => {
+      const [owner, member, deputy] = await Promise.all([
+        fixture(),
+        fixture(),
+        fixture(),
+      ]);
+      const [admin, participant] = await Promise.all([pageFor(), pageFor()]);
+      const headers = { "X-Bello-Flow-Request": "1", Origin: origin };
+      const request = (tab, path, data) =>
+        tab.context.request.post(origin + path, { headers, data });
+      const get = (tab, path) =>
+        tab.context.request.get(origin + path, { headers });
+      const create = async (path, fields) => {
+        const response = await request(admin, path, {
+          ...fields,
+          operationId: randomUUID(),
+        });
+        check(response.status() === 201);
+        return (await response.json()).id;
+      };
+      const open = (tab, path) =>
+        tab.page.goto(origin + path.replace(/^\/api/, ""));
+      try {
+        await login(admin.page, owner);
+        await login(participant.page, member);
+        const workspaces = "/api/workspaces";
+        const workspace =
+          workspaces +
+          "/" +
+          (await create(workspaces, {
+            name: "Equipe",
+            timeZone: "America/Sao_Paulo",
+          }));
+        const boardId = await create(workspace + "/boards", {
+          name: "Planejamento",
+          description: "Privado",
+        });
+        const board = workspace + "/boards/" + boardId;
+        const members = board + "/members";
+        const lists = board + "/lists";
+        await create(lists, { name: "Entrega" });
+        for (const [account, role] of [
+          [member, "MEMBER"],
+          [deputy, "ADMIN"],
+        ]) {
+          check(
+            (
+              await request(admin, workspace + "/members", {
+                email: account.email,
+                role: "MEMBER",
+              })
+            ).status() === 204,
+          );
+          check(
+            (
+              await request(admin, members, { email: account.email, role })
+            ).status() === 204,
+          );
+        }
+        const change = (
+          account,
+          expectedRole,
+          role,
+          operationId = randomUUID(),
+        ) => ({
+          accountId: account.id,
+          expectedRole,
+          role,
+          operationId,
+        });
+        const write = (tab, mutation) =>
+          request(tab, members + "/change", mutation);
+        check(
+          (
+            await write(participant, change(member, "MEMBER", "ADMIN"))
+          ).status() === 403,
+        );
+        await open(participant, board);
+        await expect(
+          participant.page.getByRole("button", { name: "Criar lista" }),
+        ).toBeVisible();
+        await open(admin, members);
+        async function manage(option) {
+          await admin.page
+            .getByLabel("Alterar acesso de " + member.email, { exact: true })
+            .selectOption(option);
+          await admin.page
+            .getByRole("listitem")
+            .filter({ hasText: member.email })
+            .getByRole("button", { name: "Revisar alteração" })
+            .click();
+          await admin.page
+            .getByRole("button", { name: "Confirmar alteração" })
+            .click();
+        }
+        await manage("OBSERVER");
+        await expect(admin.page.getByText("Papel atualizado.")).toBeVisible();
+        await expect(
+          participant.page.getByRole("button", { name: "Criar lista" }),
+        ).toHaveCount(0, { timeout: 10000 });
+        await expect(
+          participant.page.getByRole("heading", { name: "Entrega" }),
+        ).toBeVisible();
+        check(
+          (
+            await request(participant, lists, {
+              name: "Negada",
+              operationId: randomUUID(),
+            })
+          ).status() === 403,
+        );
+        check(
+          (await write(admin, change(member, "MEMBER", "ADMIN"))).status() ===
+            409,
+        );
+
+        const remove = change(member, "OBSERVER", null);
+        for (const table of ["audit_event", "board_feed_event"]) {
+          const revision = await (
+            await get(participant, lists + "/revision")
+          ).json();
+          await migrator.query(`CREATE FUNCTION public.e2e_reject_member_change() RETURNS trigger
+          LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic membership failure'; END; $$;
+          CREATE TRIGGER e2e_reject_member_change BEFORE INSERT ON public.${table}
+          FOR EACH ROW WHEN (NEW.operation='BOARD_MEMBER_REMOVED') EXECUTE FUNCTION public.e2e_reject_member_change();`);
+          try {
+            check((await write(admin, remove)).status() === 500);
+            check(
+              JSON.stringify(
+                await (await get(participant, lists + "/revision")).json(),
+              ) === JSON.stringify(revision),
+            );
+            check((await get(participant, lists)).status() === 200);
+          } finally {
+            await migrator.query(`DROP TRIGGER e2e_reject_member_change ON public.${table};
+            DROP FUNCTION public.e2e_reject_member_change();`);
+          }
+        }
+        // Drop the successful response and repeat the exact operation.
+        let original;
+        await admin.page.route(
+          origin + members + "/change",
+          async (intercepted) => {
+            original = intercepted.request().postDataJSON();
+            check((await intercepted.fetch()).status() === 204);
+            await intercepted.abort();
+          },
+          { times: 1 },
+        );
+        await manage("REMOVE");
+        await expect(
+          admin.page.getByText("Repita a confirmação", { exact: false }),
+        ).toBeVisible();
+        await admin.page
+          .getByRole("button", { name: "Confirmar alteração" })
+          .click();
+        await expect(
+          admin.page.getByText("Participante removido."),
+        ).toBeVisible();
+        check(
+          (await write(admin, { ...original, role: "MEMBER" })).status() ===
+            409,
+        );
+        await expect(
+          participant.page.getByText("Recurso indisponível."),
+        ).toBeVisible({ timeout: 10000 });
+        await expect(
+          participant.page.getByRole("heading", { name: "Planejamento" }),
+        ).toHaveCount(0);
+        check((await get(participant, lists)).status() === 404);
+        check((await get(participant, workspace + "/boards")).status() === 200);
+        await open(participant, board);
+        await expect(
+          participant.page.getByText("Recurso indisponível."),
+        ).toBeVisible();
+        const history = await migrator.query(
+          "SELECT operation, count(*)::int AS total FROM public.audit_event WHERE entity_id=$1 AND operation IN ('BOARD_MEMBER_ROLE_CHANGED','BOARD_MEMBER_REMOVED') GROUP BY operation",
+          [boardId],
+        );
+        check(
+          history.rows.length === 2 &&
+            history.rows.every(({ total }) => total === 1),
+        );
+
+        await migrator.query("BEGIN");
+        let competing;
+        try {
+          await migrator.query(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+            ["bello-members:" + boardId],
+          );
+          competing = Promise.all([
+            write(admin, change(owner, "ADMIN", "MEMBER")),
+            write(admin, change(deputy, "ADMIN", null)),
+          ]);
+          let waiting = false;
+          for (let attempt = 0; attempt < 60; attempt++) {
+            const { rows } = await migrator.query(
+              "SELECT count(*)::int AS n FROM pg_locks WHERE locktype='advisory' AND NOT granted",
+            );
+            if (rows[0].n >= 2) {
+              waiting = true;
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 25));
+          }
+          check(waiting);
+        } finally {
+          await migrator.query("ROLLBACK");
+        }
+        check(
+          (await competing)
+            .map((response) => response.status())
+            .sort()
+            .join(",") === "204,409",
+        );
+        const final = await (await get(admin, members)).json();
+        check(
+          final.members.filter(({ role }) => role === "ADMIN").length === 1,
+        );
+      } finally {
+        await Promise.all([admin.context.close(), participant.context.close()]);
+      }
+    },
+  );
+
   await scenario("generic rejected login (real stack)", async () => {
     const account = await fixture();
     const { page, context } = await pageFor();

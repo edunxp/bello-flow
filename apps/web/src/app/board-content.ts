@@ -1,5 +1,5 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Component, effect, inject, input, signal } from '@angular/core';
+import { Component, effect, inject, input, output, signal } from '@angular/core';
 import { catchError, EMPTY, exhaustMap, firstValueFrom, throwError, timer } from 'rxjs';
 
 interface Card {
@@ -226,6 +226,7 @@ interface DragItem {
 export class BoardContent {
   readonly path = input.required<string>();
   readonly accountId = input.required<string>();
+  readonly revoked = output<void>();
   readonly content = signal<Content | null>(null);
   readonly message = signal('');
   readonly saving = signal(false);
@@ -243,7 +244,8 @@ export class BoardContent {
         next: (content) => {
           if (!this.accessLost) this.content.set(content);
         },
-        error: () => {
+        error: (error: unknown) => {
+          this.rejectAccess(error);
           this.content.set(null);
           this.message.set('Conteúdo do quadro indisponível.');
         },
@@ -257,12 +259,7 @@ export class BoardContent {
           exhaustMap(() =>
             this.http.get<{ syncRevision: number }>(path + '/revision', this.options).pipe(
               catchError((error: unknown) => {
-                if (error instanceof HttpErrorResponse && [401, 403, 404].includes(error.status)) {
-                  this.accessLost = true;
-                  this.content.set(null);
-                  this.message.set('Conteúdo do quadro indisponível.');
-                  return throwError(() => error);
-                }
+                if (this.rejectAccess(error)) return throwError(() => error);
                 return EMPTY;
               }),
             ),
@@ -275,6 +272,16 @@ export class BoardContent {
         });
       onCleanup(() => poll.unsubscribe());
     });
+  }
+
+  private rejectAccess(error: unknown) {
+    if (!(error instanceof HttpErrorResponse) || ![401, 403, 404].includes(error.status))
+      return false;
+    this.accessLost = true;
+    this.content.set(null);
+    this.message.set('Conteúdo do quadro indisponível.');
+    this.revoked.emit();
+    return true;
   }
 
   private moving(list: List, card?: Card): DragItem {

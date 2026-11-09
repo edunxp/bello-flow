@@ -530,6 +530,24 @@ e os endpoints de recuperação permanecem no
   sob intervalo esgotado, atualização entre abas, repetição idempotente e
   rollback por falha de auditoria ou feed. Registro anterior ao CI remoto.
 
+## Gestão de acesso ao quadro
+
+- **Ciclo:** `work/gestao-participantes-quadro`,
+  `BASE_MAIN_SHA=baf62dcab7b8c0b17cf119f4f2f70a05d8d5973b`.
+  Recorte de BEL-026 a BEL-028 para alterar papéis e remover participantes
+  com confirmação, proteção do último Administrador ativo e revogação
+  de acesso na API e em abas abertas.
+- **Privilégios autorizados:** UPDATE apenas de role e DELETE na tabela
+  `board_membership` para `bello_runtime`. Validação em PostgreSQL
+  descartável. O [contrato](arquitetura/persistencia-e-auditoria.md#alterações-de-participantes-do-quadro)
+  descreve a revalidação e os registros transacionais.
+
+- **Validação local — VERIFICADO:** gate completo e 16 cenários em Docker
+  com Chromium e PostgreSQL descartável aprovados. A prova confirmou
+  rebaixamento e remoção em duas sessões, autorização na API, replay,
+  rollback obrigatório e preservação do último Administrador ativo sob
+  contenção real. Registro anterior ao CI remoto.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,

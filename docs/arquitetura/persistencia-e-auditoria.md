@@ -1243,3 +1243,24 @@ Cada alteração efetiva grava o recurso, os campos alterados na auditoria
 obrigatória e um evento de feed na mesma transação. O feed identifica quadro,
 lista e cartão aplicáveis, ator, operação e instante, sem copiar título ou
 descrição. A apresentação do feed pertence a BEL-031.
+
+## Alterações de participantes do quadro
+
+A consulta de participantes usa o mesmo snapshot PostgreSQL para verificar a
+governança e ler a lista. A API recebe a confirmação em
+`POST /api/workspaces/{workspaceId}/boards/{boardId}/members/change`, com
+`accountId`, `expectedRole`, `role` e um `operationId` UUID v4.
+`role: null` remove o vínculo do quadro. Um papel anterior diferente do
+confirmado ou a perda do último Administrador ativo retorna 409.
+
+Inclusões e alterações de membros do quadro usam o mesmo bloqueio transacional
+por quadro. A autorização é conferida novamente após a espera. O registro da
+operação no feed permite reconciliar a repetição autorizada do mesmo pedido.
+A alteração, a revisão de sincronização, a auditoria e o feed confirmam na mesma
+transação. Alterações de papel também registram a notificação aplicável.
+
+A remoção preserva o vínculo do Workspace e o histórico. A próxima consulta
+autorizada da revisão atualiza os controles após alteração de papel ou limpa
+o quadro após revogação. O impacto do rebaixamento para Observador é zero
+enquanto BEL-021 estiver ausente. A entrega de responsáveis precisa acrescentar
+cálculo, confirmação e revalidação do impacto de RN-089 a RN-091.

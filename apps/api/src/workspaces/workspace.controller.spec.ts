@@ -30,12 +30,13 @@ function setup() {
     revision: vi.fn(),
     move: vi.fn(),
   };
+  const sharing = { changeBoardMember: vi.fn() };
   const controller = new WorkspaceController(
     workspaces as unknown as WorkspaceService,
     {
       resolveAuthenticatedSession: identity,
     } as unknown as AuthenticationService,
-    {} as SharingService,
+    sharing as unknown as SharingService,
     content as unknown as BoardContentService,
   );
   const headers = [
@@ -56,7 +57,15 @@ function setup() {
       body,
     } as unknown as Request;
   }
-  return { controller, workspaces, content, identity, request, headers };
+  return {
+    controller,
+    workspaces,
+    content,
+    identity,
+    request,
+    headers,
+    sharing,
+  };
 }
 
 describe('WorkspaceController', () => {
@@ -263,6 +272,40 @@ describe('order HTTP contract', () => {
     ]) {
       await expect(
         controller.move(request({ ...move, ...change }), scope),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    }
+  });
+});
+
+describe('board membership change HTTP contract', () => {
+  it('requires valid confirmation, role and operation identity', async () => {
+    const { controller, request, sharing } = setup();
+    const scope = { workspaceId: id, boardId: id };
+    const change = {
+      accountId: id,
+      expectedRole: 'MEMBER',
+      role: 'OBSERVER',
+      operationId: id,
+    };
+    await controller.changeBoardMember(request(change), scope);
+    await controller.changeBoardMember(
+      request({ ...change, role: null }),
+      scope,
+    );
+    expect(sharing.changeBoardMember).toHaveBeenNthCalledWith(
+      1,
+      id,
+      { ...scope, accountId: id },
+      change,
+    );
+    expect(sharing.changeBoardMember).toHaveBeenCalledTimes(2);
+    for (const bad of [
+      { role: undefined },
+      { expectedRole: null },
+      { operationId: 'bad' },
+    ]) {
+      await expect(
+        controller.changeBoardMember(request({ ...change, ...bad }), scope),
       ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     }
   });

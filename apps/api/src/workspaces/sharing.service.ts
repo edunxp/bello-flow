@@ -1,11 +1,20 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client.js';
 import { HTTP_ERROR_CODE, HttpContractError } from '../http/http-errors.js';
 import { normalizeAccountEmail } from '../identity/account-email.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { creationId } from './workspace.service.js';
 
 export type SharingScope = { workspaceId: string; boardId?: string };
+type BoardScope = Required<SharingScope>;
+export type BoardRole = 'ADMIN' | 'MEMBER' | 'OBSERVER';
+export interface BoardMemberChange {
+  accountId: string;
+  expectedRole: BoardRole;
+  role: BoardRole | null;
+  operationId: string;
+}
 const eligible = {
   status: 'ACTIVE',
   emailVerifiedAt: { not: null },
@@ -17,20 +26,32 @@ export class SharingService {
   constructor(private readonly db: PrismaService) {}
 
   async members(actorId: string, scope: SharingScope) {
-    const { workspaceId, boardId } = scope;
     try {
-      await this.authorize(this.db, actorId, scope);
+      return await this.db.$transaction(
+        async (tx) => {
+          await this.authorize(tx, actorId, scope);
+          return this.readMembers(tx, scope);
+        },
+        { isolationLevel: 'RepeatableRead' },
+      );
     } catch (error) {
       return this.auditDenial(
         error,
         actorId,
-        boardId ? 'LIST_BOARD_MEMBERS' : 'LIST_WORKSPACE_MEMBERS',
+        scope.boardId ? 'LIST_BOARD_MEMBERS' : 'LIST_WORKSPACE_MEMBERS',
       );
     }
+  }
+
+  private async readMembers(
+    tx: Prisma.TransactionClient,
+    { workspaceId, boardId }: SharingScope,
+  ) {
     if (boardId) {
-      const members = await this.db.boardMembership.findMany({
+      const members = await tx.boardMembership.findMany({
         where: { workspaceId, boardId },
         select: {
+          accountId: true,
           role: true,
           workspaceMember: {
             select: { account: { select: { emailKey: true } } },
@@ -40,6 +61,7 @@ export class SharingService {
       });
       return {
         members: members.map((member) => ({
+          accountId: member.accountId,
           role: member.role,
           email: member.workspaceMember.account.emailKey,
         })),
@@ -48,12 +70,12 @@ export class SharingService {
     }
 
     const [members, boards] = await Promise.all([
-      this.db.workspaceMembership.findMany({
+      tx.workspaceMembership.findMany({
         where: { workspaceId },
         select: { role: true, account: { select: { emailKey: true } } },
         orderBy: { accountId: 'asc' },
       }),
-      this.db.board.findMany({
+      tx.board.findMany({
         where: { workspaceId },
         select: { id: true, name: true },
         orderBy: [{ name: 'asc' }, { id: 'asc' }],
@@ -87,6 +109,10 @@ export class SharingService {
     try {
       await this.db.$transaction(async (tx) => {
         await this.authorize(tx, actorId, scope);
+        if (boardId) {
+          await this.lockBoardMembers(tx, boardId);
+          await this.authorize(tx, actorId, scope);
+        }
         const recipient = await tx.account.findFirst({
           where: { ...eligible, emailKey: normalized.emailKey },
           select: { id: true },
@@ -132,20 +158,7 @@ export class SharingService {
 
         const id = randomUUID();
         const now = new Date();
-        await tx.accessNotification.createMany({
-          data: {
-            id,
-            workspaceId,
-            boardId,
-            recipientId: recipient.id,
-            actorId,
-            grantedRole: role,
-            createdAt: now,
-          },
-        });
-        await tx.accessNotificationDelivery.createMany({
-          data: { notificationId: id, updatedAt: now },
-        });
+        await this.notify(tx, scope, actorId, recipient.id, role, id, now);
         await tx.auditEvent.createMany({
           data: {
             id: randomUUID(),
@@ -174,6 +187,7 @@ export class SharingService {
               actorId,
               occurredAt: now,
               operation: 'BOARD_MEMBER_INCLUDED',
+              subjectAccountId: recipient.id,
             },
           });
         }
@@ -185,6 +199,182 @@ export class SharingService {
         boardId ? 'INCLUDE_BOARD_MEMBER' : 'INCLUDE_WORKSPACE_MEMBER',
       );
     }
+  }
+
+  async changeBoardMember(
+    actorId: string,
+    scope: BoardScope,
+    change: BoardMemberChange,
+  ) {
+    const { workspaceId, boardId } = scope;
+    const operation =
+      change.role === null
+        ? 'BOARD_MEMBER_REMOVED'
+        : 'BOARD_MEMBER_ROLE_CHANGED';
+    const id = creationId(
+      actorId,
+      change.operationId,
+      workspaceId,
+      boardId,
+      'BOARD_MEMBER_CHANGE',
+    );
+    const requestHash = createHash('sha256')
+      .update(
+        JSON.stringify([change.accountId, change.expectedRole, change.role]),
+      )
+      .digest('hex');
+    try {
+      await this.db.$transaction(
+        async (tx) => {
+          await this.authorize(tx, actorId, scope);
+          await this.lockBoardMembers(tx, boardId);
+          await this.authorize(tx, actorId, scope);
+          const receipt = await tx.boardFeedEvent.findUnique({
+            where: { id },
+            select: { requestHash: true },
+          });
+          if (receipt) {
+            if (receipt.requestHash !== requestHash) this.conflict();
+            return;
+          }
+          const member = { workspaceId, boardId, accountId: change.accountId };
+          const where = { workspaceId_boardId_accountId: member };
+          const before = await tx.boardMembership.findUnique({
+            where,
+            select: { role: true },
+          });
+          if (
+            before?.role !== change.expectedRole ||
+            before.role === change.role
+          )
+            this.conflict();
+
+          if (
+            before.role === 'ADMIN' &&
+            !(await tx.boardMembership.findFirst({
+              where: {
+                workspaceId,
+                boardId,
+                role: 'ADMIN',
+                accountId: { not: change.accountId },
+                workspaceMember: { account: eligible },
+              },
+              select: { accountId: true },
+            }))
+          )
+            this.conflict();
+
+          if (change.role === null) {
+            await tx.boardMembership.delete({
+              where,
+              select: { accountId: true },
+            });
+          } else {
+            const account = await tx.account.findFirst({
+              where: { id: change.accountId, ...eligible },
+              select: { id: true },
+            });
+            if (!account)
+              throw new HttpContractError(HTTP_ERROR_CODE.REQUEST_FORBIDDEN);
+            await tx.boardMembership.update({
+              where,
+              data: { role: change.role },
+              select: { accountId: true },
+            });
+          }
+
+          const now = new Date();
+          if (change.role !== null)
+            await this.notify(
+              tx,
+              scope,
+              actorId,
+              change.accountId,
+              change.role,
+              id,
+              now,
+            );
+          await tx.board.update({
+            where: { id: boardId },
+            select: { id: true },
+            data: { syncRevision: { increment: 1 } },
+          });
+          await tx.auditEvent.createMany({
+            data: {
+              id: randomUUID(),
+              occurredAt: now,
+              actorAccountId: actorId,
+              origin: 'HTTP',
+              scope: 'WORKSPACE',
+              operation,
+              result: 'SUCCESS',
+              entityType: 'BOARD',
+              entityId: boardId,
+              beforeData: { accountId: change.accountId, role: before.role },
+              afterData: { accountId: change.accountId, role: change.role },
+              context: { workspaceId },
+              operationId: id,
+              correlationId: id,
+              sequence: 1,
+            },
+          });
+          await tx.boardFeedEvent.createMany({
+            data: {
+              id,
+              boardId,
+              actorId,
+              occurredAt: now,
+              operation,
+              requestHash,
+              subjectAccountId: change.accountId,
+            },
+          });
+        },
+        { isolationLevel: 'ReadCommitted' },
+      );
+    } catch (error) {
+      return this.auditDenial(error, actorId, operation);
+    }
+  }
+
+  private conflict(): never {
+    throw new HttpContractError(HTTP_ERROR_CODE.OPERATION_CONFLICT);
+  }
+
+  private async lockBoardMembers(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+  ) {
+    await tx.$queryRaw`
+      SELECT count(*) FROM (
+        SELECT pg_advisory_xact_lock(hashtextextended('bello-members:' || ${boardId}, 0))
+      ) locked
+    `;
+  }
+
+  private async notify(
+    tx: Prisma.TransactionClient,
+    { workspaceId, boardId }: SharingScope,
+    actorId: string,
+    recipientId: string,
+    role: BoardRole,
+    id: string,
+    now: Date,
+  ) {
+    await tx.accessNotification.createMany({
+      data: {
+        id,
+        workspaceId,
+        boardId,
+        recipientId,
+        actorId,
+        grantedRole: role,
+        createdAt: now,
+      },
+    });
+    await tx.accessNotificationDelivery.createMany({
+      data: { notificationId: id, updatedAt: now },
+    });
   }
 
   private async auditDenial(

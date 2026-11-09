@@ -155,6 +155,27 @@ export class WorkspaceController {
     );
   }
 
+  @Post(':workspaceId/boards/:boardId/members/change')
+  @HttpCode(204)
+  async changeBoardMember(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const context = await this.contentContext(request, params, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    const role = (value: unknown) => {
+      if (value !== 'ADMIN' && value !== 'MEMBER' && value !== 'OBSERVER')
+        invalid();
+      return value;
+    };
+    await this.sharing.changeBoardMember(context.accountId, context, {
+      accountId: identifier(body?.accountId),
+      expectedRole: role(body?.expectedRole),
+      role: body?.role === null ? null : role(body?.role),
+      operationId: identifier(body?.operationId),
+    });
+  }
+
   @Get(':workspaceId/boards')
   async boards(
     @Req() request: Request,

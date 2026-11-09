@@ -117,4 +117,67 @@ describe('AccessSharing', () => {
       .flush({}, { status: 403, statusText: 'Forbidden' });
     expect(page.message()).toBe('Recurso indisponível.');
   });
+  it('confirms a role change, retries the same operation and refreshes the roster', async () => {
+    const { fixture, http, page } = setup('board');
+    const member = { accountId: 'target', email: 'member@example.test', role: 'MEMBER' };
+    const listing = { members: [member], boards: [] };
+    http.expectOne(boardPath).flush(listing);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const select = element.querySelector<HTMLSelectElement>('#change-target')!;
+    select.value = 'OBSERVER';
+    select.form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    fixture.detectChanges();
+    expect(element.textContent).toContain('para Observador');
+    const confirm = () =>
+      [...element.querySelectorAll('button')]
+        .find((button) => button.textContent?.trim() === 'Confirmar alteração')!
+        .click();
+    confirm();
+    const first = http.expectOne({ url: boardPath + '/change', method: 'POST' });
+    expect(first.request.body).toMatchObject({
+      accountId: 'target',
+      expectedRole: 'MEMBER',
+      role: 'OBSERVER',
+      operationId: expect.any(String),
+    });
+    first.error(new ProgressEvent('network'));
+    await Promise.resolve();
+    expect(page.message()).toContain('Repita a confirmação');
+    confirm();
+    const repeat = http.expectOne(boardPath + '/change');
+    expect(repeat.request.body).toEqual(first.request.body);
+    repeat.flush(null);
+    await Promise.resolve();
+    http.expectOne(boardPath).flush({ members: [{ ...member, role: 'OBSERVER' }], boards: [] });
+    await Promise.resolve();
+    expect(page.change()).toBeNull();
+    expect(page.message()).toBe('Papel atualizado.');
+  });
+
+  it('requires review for removal and clears the roster when access was lost', async () => {
+    const { fixture, http, page } = setup('board');
+    const member = { accountId: 'target', email: 'member@example.test', role: 'ADMIN' };
+    http.expectOne(boardPath).flush({ members: [member], boards: [] });
+    page.prepareChange(new Event('submit'), member, '');
+    expect(page.change()).toBeNull();
+    page.prepareChange(new Event('submit'), member, 'REMOVE');
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('será revogado');
+    const cancelled = [...(fixture.nativeElement as HTMLElement).querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Cancelar',
+    )!;
+    cancelled.click();
+    expect(page.change()).toBeNull();
+    page.prepareChange(new Event('submit'), member, 'REMOVE');
+    const result = page.confirmChange();
+    const request = http.expectOne(boardPath + '/change');
+    expect(request.request.body.role).toBeNull();
+    request.flush({}, { status: 403, statusText: 'Forbidden' });
+    await Promise.resolve();
+    http.expectOne(boardPath).flush({}, { status: 403, statusText: 'Forbidden' });
+    await result;
+    expect(page.participants()).toBeNull();
+    expect(page.message()).toContain('indisponível');
+  });
 });

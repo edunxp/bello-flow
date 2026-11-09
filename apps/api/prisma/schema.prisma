@@ -244,6 +244,7 @@ model BoardFeedEvent {
   id         String   @id @db.Uuid
   boardId    String   @map("board_id") @db.Uuid
   actorId    String   @map("actor_id") @db.Uuid
+  subjectAccountId String? @map("subject_account_id") @db.Uuid
   requestHash String? @map("request_hash") @db.Char(64)
   occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
   operation  String   @db.VarChar(60)

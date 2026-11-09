@@ -11,6 +11,7 @@ const email = 'target@example.test';
 
 function setup() {
   const tx = {
+    $queryRaw: vi.fn(),
     account: { findFirst: vi.fn().mockResolvedValue({ id: 'recipient' }) },
     workspaceMembership: {
       findFirst: vi.fn().mockResolvedValue({ role: 'ADMIN' }),
@@ -22,22 +23,32 @@ function setup() {
       createMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     board: {
+      update: vi.fn(),
       findFirst: vi.fn().mockResolvedValue({ id: boardId }),
       findMany: vi.fn().mockResolvedValue([{ id: boardId, name: 'Privado' }]),
     },
     boardMembership: {
-      findMany: vi
-        .fn()
-        .mockResolvedValue([
-          { role: 'MEMBER', workspaceMember: { account: { emailKey: email } } },
-        ]),
+      findUnique: vi.fn().mockResolvedValue({ role: 'MEMBER' }),
+      findFirst: vi.fn().mockResolvedValue({ accountId: 'another' }),
+      update: vi.fn(),
+      delete: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([
+        {
+          accountId: 'recipient',
+          role: 'MEMBER',
+          workspaceMember: { account: { emailKey: email } },
+        },
+      ]),
       findUniqueOrThrow: vi.fn().mockResolvedValue({ role: 'MEMBER' }),
       createMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     accessNotification: { createMany: vi.fn(), findMany: vi.fn() },
     accessNotificationDelivery: { createMany: vi.fn() },
     auditEvent: { createMany: vi.fn() },
-    boardFeedEvent: { createMany: vi.fn() },
+    boardFeedEvent: {
+      createMany: vi.fn(),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
   };
   const db = {
     ...tx,
@@ -55,7 +66,7 @@ describe('SharingService', () => {
     });
     tx.workspaceMembership.findFirst.mockResolvedValue({ role: 'MEMBER' });
     await expect(sharing.members(actor, board)).resolves.toEqual({
-      members: [{ role: 'MEMBER', email }],
+      members: [{ accountId: 'recipient', role: 'MEMBER', email }],
       boards: [],
     });
     expect(tx.board.findFirst).toHaveBeenCalledWith(
@@ -161,5 +172,74 @@ describe('SharingService', () => {
         },
       }),
     );
+  });
+  const change = {
+    accountId: 'recipient',
+    expectedRole: 'MEMBER',
+    role: 'OBSERVER',
+    operationId: 'change',
+  } as const;
+
+  it('confirms a role change and reconciles an exact repeat', async () => {
+    const { sharing, tx } = setup();
+    await sharing.changeBoardMember(actor, board, change);
+    expect(tx.boardMembership.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { role: 'OBSERVER' } }),
+    );
+    expect(tx.accessNotification.createMany).toHaveBeenCalledOnce();
+    expect(tx.board.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { syncRevision: { increment: 1 } } }),
+    );
+    const { requestHash } = tx.boardFeedEvent.createMany.mock.calls[0]![0].data;
+    tx.boardFeedEvent.findUnique.mockResolvedValue({ requestHash });
+    await sharing.changeBoardMember(actor, board, change);
+    await expect(
+      sharing.changeBoardMember(actor, board, { ...change, role: null }),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    expect(tx.auditEvent.createMany).toHaveBeenCalledOnce();
+  });
+
+  it('removes a participant and protects a board without another active administrator', async () => {
+    const { sharing, tx } = setup();
+    tx.boardMembership.findUnique.mockResolvedValue({ role: 'ADMIN' });
+    tx.boardMembership.findFirst.mockResolvedValueOnce(null);
+    await expect(
+      sharing.changeBoardMember(actor, board, {
+        ...change,
+        expectedRole: 'ADMIN',
+        role: null,
+      }),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    await sharing.changeBoardMember(actor, board, {
+      ...change,
+      expectedRole: 'ADMIN',
+      role: null,
+    });
+    expect(tx.boardMembership.delete).toHaveBeenCalledOnce();
+    expect(tx.accessNotification.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects stale confirmations, ineligible recipients and access lost while waiting', async () => {
+    const { sharing, tx } = setup();
+    for (const stale of [
+      { ...change, expectedRole: 'OBSERVER' },
+      { ...change, role: 'MEMBER' },
+    ] as const) {
+      await expect(
+        sharing.changeBoardMember(actor, board, stale),
+      ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    }
+    tx.account.findFirst.mockResolvedValue(null);
+    await expect(
+      sharing.changeBoardMember(actor, board, change),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    tx.workspaceMembership.findFirst
+      .mockResolvedValueOnce({ role: 'MEMBER' })
+      .mockResolvedValue(null);
+    await expect(
+      sharing.changeBoardMember(actor, board, change),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    expect(tx.boardMembership.update).not.toHaveBeenCalled();
+    expect(tx.boardFeedEvent.createMany).not.toHaveBeenCalled();
   });
 });

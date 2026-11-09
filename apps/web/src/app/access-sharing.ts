@@ -5,8 +5,14 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { Session } from './session';
 
+interface Member {
+  accountId?: string;
+  email: string;
+  role: string;
+}
+
 interface Participants {
-  members: { email: string; role: string }[];
+  members: Member[];
   boards: { id: string; name: string }[];
 }
 interface Notice {
@@ -59,7 +65,26 @@ const options = { headers: { 'X-Bello-Flow-Request': '1' }, timeout: 15000 };
           } @else if (participants(); as data) {
             <ul aria-label="Participantes">
               @for (member of data.members; track member.email) {
-                <li>{{ member.email }} · {{ roleName(member.role) }}</li>
+                <li>
+                  {{ member.email }} · {{ roleName(member.role) }}
+                  @if (boardId() && member.accountId && !pending() && !change()) {
+                    <form (submit)="prepareChange($event, member, newRole.value)">
+                      <label [attr.for]="'change-' + member.accountId"
+                        >Alterar acesso de {{ member.email }}</label
+                      >
+                      <select [id]="'change-' + member.accountId" #newRole required>
+                        <option value="">Escolher ação</option>
+                        @for (role of roles; track role) {
+                          @if (role !== member.role) {
+                            <option [value]="role">{{ roleName(role) }}</option>
+                          }
+                        }
+                        <option value="REMOVE">Remover do quadro</option>
+                      </select>
+                      <button type="submit">Revisar alteração</button>
+                    </form>
+                  }
+                </li>
               }
             </ul>
             @if (data.boards.length) {
@@ -75,7 +100,31 @@ const options = { headers: { 'X-Bello-Flow-Request': '1' }, timeout: 15000 };
                 }
               </ul>
             }
-            @if (pending(); as selection) {
+            @if (change(); as selection) {
+              @if (selection.role === null) {
+                <p>
+                  Remover {{ selection.member.email }} do quadro? O acesso ao conteúdo será
+                  revogado.
+                </p>
+              } @else {
+                <p>
+                  Alterar o papel de {{ selection.member.email }} de
+                  {{ roleName(selection.member.role) }} para {{ roleName(selection.role) }}?
+                </p>
+              }
+              @if (selection.role === 'OBSERVER') {
+                <p>
+                  O papel Observador permite apenas consulta. Nenhuma atribuição de cartão será
+                  removida.
+                </p>
+              }
+              <button type="button" [disabled]="saving()" (click)="confirmChange()">
+                Confirmar alteração
+              </button>
+              <button type="button" [disabled]="saving()" (click)="change.set(null)">
+                Cancelar
+              </button>
+            } @else if (pending(); as selection) {
               <p>Conceder acesso de {{ roleName(selection.role) }} a {{ selection.email }}?</p>
               <button type="button" [disabled]="saving()" (click)="confirm()">
                 Confirmar inclusão
@@ -114,6 +163,10 @@ export class AccessSharing {
   readonly notices = signal<Notice[]>([]);
   readonly loaded = signal(false);
   readonly pending = signal<{ email: string; role: string } | null>(null);
+  readonly roles = ['MEMBER', 'ADMIN', 'OBSERVER'];
+  readonly change = signal<{ member: Member; role: string | null; operationId: string } | null>(
+    null,
+  );
   readonly message = signal('');
   readonly saving = signal(false);
 
@@ -124,8 +177,9 @@ export class AccessSharing {
       this.notices.set([]);
       this.loaded.set(false);
       this.pending.set(null);
+      this.change.set(null);
       this.message.set('');
-      if (this.session.state() !== 'authenticated') return;
+      if (this.session.state() !== 'authenticated' || !this.session.identity()) return;
       const loading = this.http.get<Participants | Notice[]>(path, options).subscribe({
         next: (data) => {
           if (Array.isArray(data)) this.notices.set(data);
@@ -167,6 +221,70 @@ export class AccessSharing {
   prepare(event: Event, email: string, role: string) {
     event.preventDefault();
     this.pending.set({ email: email.trim(), role });
+  }
+
+  prepareChange(event: Event, member: Member, choice: string) {
+    event.preventDefault();
+    if (!member.accountId || (choice !== 'REMOVE' && !this.roles.includes(choice))) return;
+    this.change.set({
+      member,
+      role: choice === 'REMOVE' ? null : choice,
+      operationId: crypto.randomUUID(),
+    });
+  }
+
+  async confirmChange() {
+    const change = this.change();
+    const identity = this.session.identity();
+    if (!change || this.saving() || !identity) return;
+    const path = this.path();
+    const current = () => path === this.path() && identity === this.session.identity();
+    this.saving.set(true);
+    this.message.set('');
+    try {
+      await firstValueFrom(
+        this.http.post(
+          path + '/change',
+          {
+            accountId: change.member.accountId,
+            expectedRole: change.member.role,
+            role: change.role,
+            operationId: change.operationId,
+          },
+          options,
+        ),
+      );
+      if (!current()) return;
+      this.change.set(null);
+      this.message.set(change.role === null ? 'Participante removido.' : 'Papel atualizado.');
+      await this.refreshParticipants(path, current);
+    } catch (error) {
+      if (!current()) return;
+      if (error instanceof HttpErrorResponse && [403, 409].includes(error.status)) {
+        this.change.set(null);
+        this.message.set(
+          error.status === 409
+            ? 'A alteração não é mais válida ou deixaria o quadro sem Administrador ativo.'
+            : 'A alteração está indisponível para esta conta.',
+        );
+        await this.refreshParticipants(path, current);
+      } else {
+        this.message.set(
+          'Não foi possível confirmar a alteração. Repita a confirmação para verificar o resultado.',
+        );
+      }
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async refreshParticipants(path: string, current: () => boolean) {
+    try {
+      const data = await firstValueFrom(this.http.get<Participants>(path, options));
+      if (current()) this.participants.set(data);
+    } catch {
+      if (current()) this.participants.set(null);
+    }
   }
 
   async confirm() {

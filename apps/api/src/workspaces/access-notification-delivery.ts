@@ -103,7 +103,14 @@ export class AccessNotificationDelivery
             some: {
               workspaceId: notice.workspaceId,
               ...(notice.boardId
-                ? { boards: { some: { boardId: notice.boardId } } }
+                ? {
+                    boards: {
+                      some: {
+                        boardId: notice.boardId,
+                        role: notice.grantedRole,
+                      },
+                    },
+                  }
                 : {}),
             },
           },

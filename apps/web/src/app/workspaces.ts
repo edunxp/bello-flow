@@ -44,7 +44,11 @@ interface Resource {
             <h2>{{ selected.name }}</h2>
             <p>{{ selected.description }}</p>
             @if (session.identity(); as identity) {
-              <app-board-content [path]="path() + '/lists'" [accountId]="identity.account.id" />
+              <app-board-content
+                [path]="path() + '/lists'"
+                [accountId]="identity.account.id"
+                (revoked)="clearBoard()"
+              />
             }
           }
           @if (!boardId()) {
@@ -131,6 +135,12 @@ export class Workspaces {
   }
 
   private readonly options = { headers: { 'X-Bello-Flow-Request': '1' }, timeout: 15000 };
+
+  clearBoard() {
+    this.board.set(null);
+    this.accessible.set(false);
+    this.message.set('Recurso indisponível.');
+  }
 
   workspaceId() {
     return this.params().get('workspaceId');
