@@ -27,6 +27,7 @@ let api, server, browser, migrator, temporary;
 const contexts = [];
 let observations = [];
 const deliveries = new Map();
+const accessMail = [];
 const timeLimit = 20000;
 let failures = 0;
 function safeFailure(error) {
@@ -243,6 +244,7 @@ try {
         if (message.type === "ready") resolve(message.port);
         else if (message.type === "delivery")
           deliveries.set(message.recipient, message.url);
+        else if (message.type === "access-mail") accessMail.push(message);
         else if (message.type === "failed")
           reject(new Error("API startup failed"));
       });
@@ -581,6 +583,311 @@ try {
         }
       } finally {
         await context.close();
+      }
+    },
+  );
+
+  await scenario(
+    "explicit sharing, private notifications and simulated email (real stack)",
+    async () => {
+      const owner = await fixture();
+      const team = await fixture();
+      const personal = await fixture();
+      const ownerTab = await pageFor();
+      const teamTab = await pageFor();
+      const personalTab = await pageFor();
+      const headers = { "X-Bello-Flow-Request": "1", Origin: origin };
+      const workspacePath = "/api/workspaces";
+      const post = (tab, path, data) =>
+        tab.context.request.post(origin + path, { headers, data });
+      const get = (tab, path) =>
+        tab.context.request.get(origin + path, { headers });
+      const open = (tab, path) =>
+        tab.page.goto(origin + path.replace(/^\/api/, ""));
+      try {
+        await login(ownerTab.page, owner);
+        await login(teamTab.page, team);
+        await login(personalTab.page, personal);
+        async function create(path, data) {
+          const response = await post(ownerTab, path, {
+            operationId: randomUUID(),
+            ...data,
+          });
+          check(response.status() === 201);
+          return (await response.json()).id;
+        }
+        const work =
+          workspacePath +
+          "/" +
+          (await create(workspacePath, {
+            name: "Trabalho",
+            timeZone: "America/Sao_Paulo",
+          }));
+        const home =
+          workspacePath +
+          "/" +
+          (await create(workspacePath, {
+            name: "Pessoal",
+            timeZone: "America/Sao_Paulo",
+          }));
+        const erp =
+          work +
+          "/boards/" +
+          (await create(work + "/boards", {
+            name: "Time ERP",
+            description: "Privado",
+          }));
+        const homeBoard =
+          home +
+          "/boards/" +
+          (await create(home + "/boards", {
+            name: "Pessoal",
+            description: "Privado",
+          }));
+
+        check(
+          (
+            await post(ownerTab, erp + "/members", {
+              email: team.email,
+              role: "MEMBER",
+            })
+          ).status() === 403,
+        );
+        check(
+          (
+            await post(teamTab, work + "/members", {
+              email: team.email,
+              role: "MEMBER",
+            })
+          ).status() === 403,
+        );
+        check(
+          (
+            await post(ownerTab, work + "/members", {
+              email: "absent@example.test",
+              role: "MEMBER",
+            })
+          ).status() === 403,
+        );
+
+        async function include(path, account, role) {
+          await open(ownerTab, path + "/members");
+          await ownerTab.page.getByLabel("E-mail da conta").fill(account.email);
+          await ownerTab.page
+            .getByLabel("Papel", { exact: true })
+            .selectOption(role);
+          await ownerTab.page
+            .getByRole("button", { name: "Revisar inclusão" })
+            .click();
+          await expect(
+            ownerTab.page.getByText(account.email, { exact: false }),
+          ).toBeVisible();
+          await ownerTab.page
+            .getByRole("button", { name: "Confirmar inclusão" })
+            .click();
+          await expect(
+            ownerTab.page.getByText("Acesso concedido.", { exact: true }),
+          ).toBeVisible();
+          await expect(
+            ownerTab.page
+              .getByRole("list", { name: "Participantes" })
+              .getByText(account.email, { exact: false }),
+          ).toBeVisible();
+        }
+
+        await include(work, team, "MEMBER");
+        await open(teamTab, work);
+        await expect(
+          teamTab.page.getByText("Nenhum item disponível."),
+        ).toBeVisible();
+        check((await get(teamTab, erp)).status() === 403);
+        await include(erp, team, "MEMBER");
+        await include(home, personal, "MEMBER");
+        await include(homeBoard, personal, "OBSERVER");
+
+        const repeats = await Promise.all([
+          post(ownerTab, erp + "/members", {
+            email: team.email,
+            role: "MEMBER",
+          }),
+          post(ownerTab, erp + "/members", {
+            email: team.email,
+            role: "MEMBER",
+          }),
+        ]);
+        check(repeats.every((response) => response.status() === 204));
+        check(
+          (
+            await post(ownerTab, erp + "/members", {
+              email: team.email,
+              role: "OBSERVER",
+            })
+          ).status() === 409,
+        );
+        check((await get(teamTab, homeBoard)).status() === 403);
+        check((await get(personalTab, erp)).status() === 403);
+        check((await get(teamTab, work + "/members")).status() === 403);
+
+        const central = workspacePath + "/notifications";
+        const ownerNotices = await (await get(ownerTab, central)).json();
+        const teamNotices = await (await get(teamTab, central)).json();
+        const personalNotices = await (await get(personalTab, central)).json();
+        check(
+          ownerNotices.length === 0 &&
+            teamNotices.length === 2 &&
+            personalNotices.length === 2,
+        );
+        check(
+          teamNotices.every((notice) => notice.workspace.name === "Trabalho"),
+        );
+        check(
+          personalNotices.every(
+            (notice) => notice.workspace.name === "Pessoal",
+          ),
+        );
+
+        await teamTab.page.goto(origin + "/notifications");
+        await expect(
+          teamTab.page.getByRole("link", { name: "Time ERP" }),
+        ).toBeVisible();
+        await teamTab.page.getByRole("link", { name: "Time ERP" }).click();
+        await expect(
+          teamTab.page.getByRole("heading", { name: "Time ERP" }),
+        ).toBeVisible();
+        await open(personalTab, homeBoard);
+        await expect(
+          personalTab.page.getByRole("heading", { name: "Pessoal" }),
+        ).toBeVisible();
+
+        await expect
+          .poll(
+            async () => {
+              const result = await migrator.query(
+                `SELECT count(*) FILTER (WHERE d.state='SENT')::int AS sent,
+                  count(*) FILTER (WHERE d.state='FAILED')::int AS failed
+           FROM public.access_notification_delivery d
+           JOIN public.access_notification n ON n.id=d.notification_id
+           WHERE n.actor_id=$1 AND d.attempt_count=1`,
+                [owner.id],
+              );
+              return result.rows[0];
+            },
+            { timeout: timeLimit },
+          )
+          .toEqual({ sent: 3, failed: 1 });
+        check(
+          accessMail.filter((message) => message.recipient === team.email)
+            .length === 2,
+        );
+        check(
+          accessMail.filter((message) => message.recipient === personal.email)
+            .length === 2,
+        );
+        check((await get(personalTab, homeBoard)).status() === 200);
+
+        const privileges = (
+          await migrator.query(`SELECT
+          has_column_privilege('bello_runtime','public.account','email','SELECT') AS raw_email,
+          has_column_privilege('bello_runtime','public.access_notification','recipient_id','UPDATE') AS change_recipient,
+          has_column_privilege('bello_runtime','public.access_notification_delivery','state','UPDATE') AS change_state,
+          has_function_privilege('bello_runtime','public.access_notification_recipient(uuid)','EXECUTE') AS resolve_recipient`)
+        ).rows[0];
+        check(
+          !privileges.raw_email &&
+            !privileges.change_recipient &&
+            privileges.change_state &&
+            privileges.resolve_recipient,
+        );
+        const extra = await fixture();
+        const workspaceId = work.split("/").at(-1);
+        const boardId = erp.split("/").at(-1);
+        await migrator.query(
+          "INSERT INTO public.workspace_membership (workspace_id, account_id, role) VALUES ($1,$2,'MEMBER')",
+          [workspaceId, extra.id],
+        );
+        async function snapshot() {
+          return (
+            await migrator.query(`SELECT
+            (SELECT count(*)::int FROM public.workspace_membership) AS workspace_members,
+            (SELECT count(*)::int FROM public.board_membership) AS board_members,
+            (SELECT count(*)::int FROM public.access_notification) AS notices,
+            (SELECT count(*)::int FROM public.access_notification_delivery) AS deliveries,
+            (SELECT count(*)::int FROM public.audit_event WHERE scope='WORKSPACE') AS audit,
+            (SELECT count(*)::int FROM public.board_feed_event) AS feed`)
+          ).rows[0];
+        }
+        const baseline = await snapshot();
+        for (const fault of [
+          { table: "access_notification", condition: "true", path: home },
+          {
+            table: "audit_event",
+            condition: "NEW.operation = 'WORKSPACE_MEMBER_INCLUDED'",
+            path: home,
+          },
+          {
+            table: "board_feed_event",
+            condition: "NEW.operation = 'BOARD_MEMBER_INCLUDED'",
+            path: erp,
+          },
+        ]) {
+          await migrator.query(`CREATE FUNCTION public.e2e_reject_access_notice() RETURNS trigger
+            LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic notification failure'; END; $$;
+            CREATE TRIGGER e2e_reject_access_notice BEFORE INSERT ON public.${fault.table}
+            FOR EACH ROW WHEN (${fault.condition}) EXECUTE FUNCTION public.e2e_reject_access_notice();`);
+          try {
+            check(
+              (
+                await post(ownerTab, fault.path + "/members", {
+                  email: extra.email,
+                  role: "MEMBER",
+                })
+              ).status() === 500,
+            );
+            check(
+              JSON.stringify(await snapshot()) === JSON.stringify(baseline),
+            );
+          } finally {
+            await migrator.query(`DROP TRIGGER e2e_reject_access_notice ON public.${fault.table};
+              DROP FUNCTION public.e2e_reject_access_notice();`);
+          }
+        }
+
+        const delegated = await fixture();
+        const delegatedTab = await pageFor();
+        await login(delegatedTab.page, delegated);
+        check(
+          (
+            await post(ownerTab, work + "/members", {
+              email: delegated.email,
+              role: "ADMIN",
+            })
+          ).status() === 204,
+        );
+        check((await get(delegatedTab, erp)).status() === 403);
+        const governance = await (
+          await get(delegatedTab, work + "/members")
+        ).json();
+        check(
+          governance.boards.some(
+            (item) => item.id === boardId && !("description" in item),
+          ),
+        );
+        check(
+          (
+            await post(delegatedTab, erp + "/members", {
+              email: delegated.email,
+              role: "ADMIN",
+            })
+          ).status() === 204,
+        );
+        check((await get(delegatedTab, erp)).status() === 200);
+        await delegatedTab.context.close();
+      } finally {
+        await Promise.all([
+          ownerTab.context.close(),
+          teamTab.context.close(),
+          personalTab.context.close(),
+        ]);
       }
     },
   );

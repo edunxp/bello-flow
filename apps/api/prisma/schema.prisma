@@ -29,6 +29,8 @@ model Account {
   bootstrapStates         BootstrapState[]
   auditEvents             AuditEvent[]
   workspaceMemberships    WorkspaceMembership[]
+  accessNoticesReceived   AccessNotification[]      @relation("AccessNoticeRecipient")
+  accessNoticesIssued     AccessNotification[]      @relation("AccessNoticeActor")
 
   @@map("account")
 }
@@ -182,22 +184,23 @@ model AuditEvent {
 }
 
 model Workspace {
-  id          String                @id @db.Uuid
-  name        String                @db.VarChar(100)
-  description String?               @db.VarChar(2000)
-  timeZone    String                @map("time_zone") @db.VarChar(100)
-  members     WorkspaceMembership[]
-  boards      Board[]
+  id            String                @id @db.Uuid
+  name          String                @db.VarChar(100)
+  description   String?               @db.VarChar(2000)
+  timeZone      String                @map("time_zone") @db.VarChar(100)
+  members       WorkspaceMembership[]
+  boards        Board[]
+  accessNotices AccessNotification[]
 
   @@map("workspace")
 }
 
 model WorkspaceMembership {
-  workspaceId String    @map("workspace_id") @db.Uuid
-  accountId   String    @map("account_id") @db.Uuid
-  role        String    @db.VarChar(20)
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  account     Account   @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  workspaceId String            @map("workspace_id") @db.Uuid
+  accountId   String            @map("account_id") @db.Uuid
+  role        String            @db.VarChar(20)
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  account     Account           @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   boards      BoardMembership[]
 
   @@id([workspaceId, accountId])
@@ -206,15 +209,16 @@ model WorkspaceMembership {
 }
 
 model Board {
-  id          String            @id @db.Uuid
-  workspaceId String            @map("workspace_id") @db.Uuid
-  name        String            @db.VarChar(100)
-  description String            @db.VarChar(2000)
-  visibility  String            @default("PRIVATE") @db.VarChar(20)
-  archived    Boolean           @default(false)
-  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  members     BoardMembership[]
-  feed        BoardFeedEvent[]
+  id            String               @id @db.Uuid
+  workspaceId   String               @map("workspace_id") @db.Uuid
+  name          String               @db.VarChar(100)
+  description   String               @db.VarChar(2000)
+  visibility    String               @default("PRIVATE") @db.VarChar(20)
+  archived      Boolean              @default(false)
+  workspace     Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  members       BoardMembership[]
+  feed          BoardFeedEvent[]
+  accessNotices AccessNotification[]
 
   @@unique([workspaceId, id])
   @@map("board")
@@ -234,13 +238,42 @@ model BoardMembership {
 }
 
 model BoardFeedEvent {
-  id          String   @id @db.Uuid
-  boardId     String   @map("board_id") @db.Uuid
-  actorId     String   @map("actor_id") @db.Uuid
-  occurredAt  DateTime @map("occurred_at") @db.Timestamptz(6)
-  operation   String   @db.VarChar(60)
-  board       Board    @relation(fields: [boardId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  id         String   @id @db.Uuid
+  boardId    String   @map("board_id") @db.Uuid
+  actorId    String   @map("actor_id") @db.Uuid
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
+  operation  String   @db.VarChar(60)
+  board      Board    @relation(fields: [boardId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([boardId, occurredAt, id])
   @@map("board_feed_event")
+}
+
+model AccessNotification {
+  id          String                      @id @db.Uuid
+  recipientId String                      @map("recipient_id") @db.Uuid
+  actorId     String                      @map("actor_id") @db.Uuid
+  workspaceId String                      @map("workspace_id") @db.Uuid
+  boardId     String?                     @map("board_id") @db.Uuid
+  grantedRole String                      @map("granted_role") @db.VarChar(20)
+  createdAt   DateTime                    @map("created_at") @db.Timestamptz(6)
+  recipient   Account                     @relation("AccessNoticeRecipient", fields: [recipientId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actor       Account                     @relation("AccessNoticeActor", fields: [actorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  workspace   Workspace                   @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  board       Board?                      @relation(fields: [workspaceId, boardId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  delivery    AccessNotificationDelivery?
+
+  @@index([recipientId, createdAt, id])
+  @@map("access_notification")
+}
+
+model AccessNotificationDelivery {
+  notificationId String             @id @map("notification_id") @db.Uuid
+  state          String             @default("PENDING") @db.VarChar(20)
+  attemptCount   Int                @default(0) @map("attempt_count")
+  updatedAt      DateTime           @map("updated_at") @db.Timestamptz(6)
+  notification   AccessNotification @relation(fields: [notificationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([state, updatedAt, notificationId])
+  @@map("access_notification_delivery")
 }

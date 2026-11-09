@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AuthenticationService } from '../auth/authentication.service.js';
 import { HTTP_ERROR_CODE } from '../http/http-errors.js';
 import { loadHttpSecurityConfig } from '../http/http-security.config.js';
+import type { SharingService } from './sharing.service.js';
 import { WorkspaceController } from './workspace.controller.js';
 import type { WorkspaceService } from './workspace.service.js';
 
@@ -27,6 +28,7 @@ function setup() {
     {
       resolveAuthenticatedSession: identity,
     } as unknown as AuthenticationService,
+    {} as SharingService,
   );
   const headers = [
     'X-Bello-Flow-Request',

@@ -433,6 +433,43 @@ e os endpoints de recuperação permanecem no
   contagens de recursos, vínculos, auditoria e feed. A revisão independente
   final e o CI da correção são verificados no SHA publicado.
 
+## Compartilhamento de Workspaces e quadros — segunda etapa
+
+- **Estado — VERIFICADO:** implementado e validado localmente na branch
+  `work/compartilhamento-notificacoes`, com
+  `BASE_MAIN_SHA=7192cad01aefe42f72fbbb54d7920bedf559d438`. Este registro
+  antecede commit, publicação e CI remoto.
+- **Escopo:** consultar e incluir participantes pela interface e API, com
+  identificação por e-mail exato, verificação de elegibilidade, confirmação
+  do destinatário e escolha de papel. Workspace e quadro têm vínculos
+  explícitos, e a inclusão em quadro exige participação no Workspace.
+- **Autorização:** Administrador do Workspace gerencia participantes do
+  Workspace e dos quadros vinculados. Administrador de quadro gerencia
+  participantes daquele quadro. Governança administrativa não concede
+  conteúdo. Autoconcessão ao quadro é explícita e auditada.
+- **Consistência:** o vínculo, a auditoria, o feed aplicável, a notificação
+  do destinatário e a solicitação de e-mail são registrados na mesma
+  transação. O processador interno trata o e-mail depois do commit.
+  A Central é individual e reavalia o acesso ao destino.
+- **Aceite:** testar no navegador e na API com PostgreSQL descartável e
+  transporte local simulado. O time vê Trabalho e Time ERP conforme os dois
+  vínculos, e a conta pessoal vê apenas Pessoal. Recusar acesso cruzado e
+  inclusão indevida. Repetição ou concorrência não duplica vínculo nem
+  notificações. Falha em gravação obrigatória reverte a operação. Falha de
+  entrega preserva a inclusão e o item da Central.
+- **Limites:** cadastro, convite pendente, remoção, mudanças de papel e envio
+  real pertencem a outros recortes.
+- **Evidências — VERIFICADO:** `quality:local` aprovado com 795 testes da API,
+  75 da web e cobertura acima de 90% nas quatro métricas. Os 15 cenários em
+  Chromium com PostgreSQL descartável passaram. O cenário do incremento
+  confirmou isolamento, governança sem acesso ao conteúdo, inclusão explícita,
+  repetição sem efeitos duplicados, entrega simulada, falha de entrega com
+  acesso preservado e rollback por falhas na Central, na auditoria e no feed.
+- **Operação e segurança:** o processador usa transporte injetado no Docker de
+  teste, com uma tentativa por entrega. O runtime mantém os privilégios de
+  conta existentes e resolve o endereço por função protegida de entrega.
+  A revisão independente é necessária antes da integração.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,

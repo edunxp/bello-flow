@@ -25,6 +25,7 @@ import { Session } from './session';
       @case ('authenticated') {
         <p>Sessão ativa.</p>
         <p><a routerLink="/workspaces">Abrir Workspaces</a></p>
+        <p><a routerLink="/notifications">Central de Notificações</a></p>
         <button (click)="logout()" [disabled]="busy()">{{ busy() ? 'Saindo…' : 'Sair' }}</button>
       }
     }

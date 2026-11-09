@@ -2,6 +2,7 @@
 import { Test } from "@nestjs/testing";
 import { AppModule } from "../../apps/api/dist/app.module.js";
 import { PASSWORD_RECOVERY_DELIVERY_ADAPTER } from "../../apps/api/dist/auth/password-recovery-delivery.adapter.js";
+import { ACCESS_NOTIFICATION_MAIL } from "../../apps/api/dist/workspaces/access-notification-delivery.js";
 import { configureHttpApplication } from "../../apps/api/dist/http/configure-http-application.js";
 import { loadHttpSecurityConfig } from "../../apps/api/dist/http/http-security.config.js";
 
@@ -24,6 +25,17 @@ try {
           url: input.recoveryUrl,
         });
         return { status: "ACCEPTED" };
+      },
+    })
+    .overrideProvider(ACCESS_NOTIFICATION_MAIL)
+    .useValue({
+      async deliver(message) {
+        process.send({ type: "access-mail", ...message });
+        return message.text.endsWith(
+          "OBSERVER. Abra o Bello Flow para consultar o acesso.",
+        )
+          ? "FAILED"
+          : "SENT";
       },
     })
     .compile();

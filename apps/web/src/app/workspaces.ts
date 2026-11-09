@@ -36,6 +36,9 @@ interface Resource {
           @if (message()) {
             <p role="status">{{ message() }}</p>
           }
+          @if (workspaceId() && accessible()) {
+            <p><a [routerLink]="sharingLink()">Participantes</a></p>
+          }
           @if (board(); as selected) {
             <h2>{{ selected.name }}</h2>
             <p>{{ selected.description }}</p>
@@ -139,6 +142,12 @@ export class Workspaces {
       : this.workspaceId()
         ? 'Quadros privados'
         : 'Workspaces';
+  }
+
+  sharingLink() {
+    const path = ['/workspaces', this.workspaceId()];
+    const boardId = this.boardId();
+    return boardId ? [...path, 'boards', boardId, 'members'] : [...path, 'members'];
   }
 
   resourceLink(id: string) {

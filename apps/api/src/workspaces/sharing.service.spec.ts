@@ -1,0 +1,139 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { PrismaService } from '../prisma/prisma.service.js';
+import { SharingService } from './sharing.service.js';
+
+const workspaceId = 'workspace';
+const boardId = 'board';
+const workspace = { workspaceId };
+const board = { workspaceId, boardId };
+const actor = 'actor';
+const email = 'target@example.test';
+
+function setup() {
+  const tx = {
+    account: { findFirst: vi.fn().mockResolvedValue({ id: 'recipient' }) },
+    workspaceMembership: {
+      findFirst: vi.fn().mockResolvedValue({ role: 'ADMIN' }),
+      findUnique: vi.fn().mockResolvedValue({ accountId: 'recipient' }),
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ role: 'MEMBER' }),
+      findMany: vi
+        .fn()
+        .mockResolvedValue([{ role: 'ADMIN', account: { emailKey: email } }]),
+      createMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+    board: {
+      findFirst: vi.fn().mockResolvedValue({ id: boardId }),
+      findMany: vi.fn().mockResolvedValue([{ id: boardId, name: 'Privado' }]),
+    },
+    boardMembership: {
+      findMany: vi
+        .fn()
+        .mockResolvedValue([
+          { role: 'MEMBER', workspaceMember: { account: { emailKey: email } } },
+        ]),
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ role: 'MEMBER' }),
+      createMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+    accessNotification: { createMany: vi.fn(), findMany: vi.fn() },
+    accessNotificationDelivery: { createMany: vi.fn() },
+    auditEvent: { createMany: vi.fn() },
+    boardFeedEvent: { createMany: vi.fn() },
+  };
+  const db = {
+    ...tx,
+    $transaction: (run: (value: typeof tx) => unknown) => run(tx),
+  };
+  return { tx, sharing: new SharingService(db as unknown as PrismaService) };
+}
+
+describe('SharingService', () => {
+  it('returns administrative board metadata and explicit participant roles', async () => {
+    const { sharing, tx } = setup();
+    await expect(sharing.members(actor, workspace)).resolves.toEqual({
+      members: [{ role: 'ADMIN', email }],
+      boards: [{ id: boardId, name: 'Privado' }],
+    });
+    tx.workspaceMembership.findFirst.mockResolvedValue({ role: 'MEMBER' });
+    await expect(sharing.members(actor, board)).resolves.toEqual({
+      members: [{ role: 'MEMBER', email }],
+      boards: [],
+    });
+    expect(tx.board.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: boardId,
+          workspaceId,
+          members: { some: { accountId: actor, role: 'ADMIN' } },
+        },
+      }),
+    );
+  });
+
+  it('records Central, delivery, audit and the applicable feed only on new membership', async () => {
+    const { sharing, tx } = setup();
+    await sharing.include(actor, workspace, email.toUpperCase(), 'MEMBER');
+    await sharing.include(actor, board, email, 'OBSERVER');
+    expect(tx.accessNotification.createMany).toHaveBeenCalledTimes(2);
+    expect(tx.accessNotificationDelivery.createMany).toHaveBeenCalledTimes(2);
+    expect(tx.auditEvent.createMany).toHaveBeenCalledTimes(2);
+    expect(tx.boardFeedEvent.createMany).toHaveBeenCalledOnce();
+    expect(tx.account.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ emailKey: email, status: 'ACTIVE' }),
+      }),
+    );
+  });
+
+  it('replays an existing grant and refuses to change its role', async () => {
+    const { sharing, tx } = setup();
+    tx.workspaceMembership.createMany.mockResolvedValue({ count: 0 });
+    tx.boardMembership.createMany.mockResolvedValue({ count: 0 });
+    await sharing.include(actor, workspace, email, 'MEMBER');
+    await sharing.include(actor, board, email, 'MEMBER');
+    await expect(
+      sharing.include(actor, board, email, 'OBSERVER'),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    expect(tx.accessNotification.createMany).not.toHaveBeenCalled();
+  });
+
+  it('validates input, authorization and the prerequisite Workspace membership', async () => {
+    const { sharing, tx } = setup();
+    await expect(
+      sharing.include(actor, workspace, 'invalid', 'ADMIN'),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(
+      sharing.include(actor, workspace, email, 'OBSERVER'),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    tx.workspaceMembership.findUnique.mockResolvedValue(null);
+    await expect(
+      sharing.include(actor, board, email, 'ADMIN'),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    tx.account.findFirst.mockResolvedValue(null);
+    await expect(
+      sharing.include(actor, workspace, email, 'ADMIN'),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    tx.workspaceMembership.findFirst.mockResolvedValue(null);
+    await expect(
+      sharing.include(actor, workspace, email, 'ADMIN'),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    expect(tx.auditEvent.createMany).toHaveBeenCalledTimes(3);
+    expect(tx.accessNotification.createMany).not.toHaveBeenCalled();
+  });
+
+  it('queries notifications only for the current recipient with current membership', () => {
+    const { sharing, tx } = setup();
+    void sharing.notifications(actor);
+    expect(tx.accessNotification.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          recipientId: actor,
+          workspace: { members: { some: { accountId: actor } } },
+          OR: [
+            { boardId: null },
+            { board: { members: { some: { accountId: actor } } } },
+          ],
+        },
+      }),
+    );
+  });
+});

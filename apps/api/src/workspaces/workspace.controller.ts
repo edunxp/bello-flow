@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Post, Req, UseFilters } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Req,
+  UseFilters,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthenticationService } from '../auth/authentication.service.js';
 import { HTTP_SECURITY_CONFIG_SETTING } from '../http/configure-http-application.js';
@@ -14,6 +22,7 @@ import {
   validateMutatingRequestOrigin,
 } from '../http/request-security.js';
 import { readSessionCookie } from '../http/session-cookie.js';
+import { SharingService } from './sharing.service.js';
 import { WorkspaceService } from './workspace.service.js';
 
 function invalid(): never {
@@ -45,6 +54,7 @@ export class WorkspaceController {
   constructor(
     private readonly workspaces: WorkspaceService,
     private readonly authentication: AuthenticationService,
+    private readonly sharing: SharingService,
   ) {}
 
   @Get()
@@ -73,6 +83,69 @@ export class WorkspaceController {
       description,
       timeZone,
     });
+  }
+
+  @Get('notifications')
+  async notifications(@Req() request: Request) {
+    return this.sharing.notifications(await this.account(request));
+  }
+
+  @Get(':workspaceId/members')
+  async members(
+    @Req() request: Request,
+    @Param('workspaceId') workspaceId: string,
+  ) {
+    return this.sharing.members(await this.account(request), {
+      workspaceId: identifier(workspaceId),
+    });
+  }
+
+  @Get(':workspaceId/boards/:boardId/members')
+  async boardMembers(
+    @Req() request: Request,
+    @Param('workspaceId') workspaceId: string,
+    @Param('boardId') boardId: string,
+  ) {
+    return this.sharing.members(await this.account(request), {
+      workspaceId: identifier(workspaceId),
+      boardId: identifier(boardId),
+    });
+  }
+
+  @Post(':workspaceId/members')
+  @HttpCode(204)
+  async include(
+    @Req() request: Request,
+    @Param('workspaceId') workspaceId: string,
+  ) {
+    const accountId = await this.account(request, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    await this.sharing.include(
+      accountId,
+      { workspaceId: identifier(workspaceId) },
+      body?.email,
+      body?.role,
+    );
+  }
+
+  @Post(':workspaceId/boards/:boardId/members')
+  @HttpCode(204)
+  async includeBoardMember(
+    @Req() request: Request,
+    @Param('workspaceId') workspaceId: string,
+    @Param('boardId') boardId: string,
+  ) {
+    const accountId = await this.account(request, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    await this.sharing.include(
+      accountId,
+      {
+        workspaceId: identifier(workspaceId),
+        boardId: identifier(boardId),
+      },
+      body?.email,
+      body?.role,
+    );
   }
 
   @Get(':workspaceId/boards')
