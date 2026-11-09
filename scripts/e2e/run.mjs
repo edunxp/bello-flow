@@ -948,6 +948,299 @@ try {
           }
         }
 
+        const order = async (tab = teamTab) => (await get(tab, lists)).json();
+        const move = (intent, tab = teamTab, path = lists) =>
+          post(tab, path + "/move", intent);
+        const boardIdForOrder = erp.split("/").at(-1);
+        const currentOrder = await order();
+        const [firstList, secondList, thirdList] = currentOrder.lists;
+        const listIntent = (item, leftId, rightId) => ({
+          kind: "LIST",
+          itemId: item.id,
+          itemRevision: item.positionRevision,
+          sourceId: boardIdForOrder,
+          destinationId: boardIdForOrder,
+          sourceRevision: currentOrder.orderRevision,
+          destinationRevision: currentOrder.orderRevision,
+          leftId,
+          rightId,
+          operationId: randomUUID(),
+        });
+        // Force an exhausted gap without changing the visible order.
+        await migrator.query(
+          "UPDATE public.board_list SET position = CASE id WHEN $1 THEN 100 WHEN $2 THEN 101 ELSE 102 END WHERE board_id=$3",
+          [firstList.id, secondList.id, boardIdForOrder],
+        );
+        const compactingMove = listIntent(
+          thirdList,
+          firstList.id,
+          secondList.id,
+        );
+        check((await move(compactingMove)).status() === 204);
+        check((await move(compactingMove)).status() === 204);
+        check(
+          (await move({ ...compactingMove, leftId: null })).status() === 409,
+        );
+        const compacted = await order();
+        check(
+          compacted.lists.map(({ id }) => id).join(",") ===
+            [firstList.id, thirdList.id, secondList.id].join(","),
+        );
+        check(compacted.orderRevision === currentOrder.orderRevision + 1);
+        const positions = await migrator.query(
+          "SELECT position::text FROM public.board_list WHERE board_id=$1 ORDER BY position",
+          [boardIdForOrder],
+        );
+        check(
+          positions.rows.map(({ position }) => position).join(",") ===
+            "4294967296,6442450944,8589934592",
+        );
+
+        await open(teamTab, erp);
+        await open(ownerTab, erp);
+        const drag = async (source, target) => {
+          const dataTransfer = await teamTab.page.evaluateHandle(
+            () => new DataTransfer(),
+          );
+          try {
+            await source.dispatchEvent("dragstart", { dataTransfer });
+            await target.dispatchEvent("dragover", { dataTransfer });
+            await target.dispatchEvent("drop", { dataTransfer });
+            await source.dispatchEvent("dragend", { dataTransfer });
+          } finally {
+            await dataTransfer.dispose();
+          }
+        };
+        await teamTab.page.setViewportSize({ width: 1280, height: 2400 });
+        await teamTab.page
+          .getByRole("button", { name: "Arrastar lista " + secondList.name })
+          .dragTo(
+            teamTab.page.getByRole("button", {
+              name: "Arrastar lista " + firstList.name,
+            }),
+          );
+        await expect(teamTab.page.locator("h3")).toHaveText([
+          secondList.name,
+          firstList.name,
+          thirdList.name,
+        ]);
+        await expect(ownerTab.page.locator("h3")).toHaveText(
+          [secondList.name, firstList.name, thirdList.name],
+          { timeout: 10000 },
+        );
+        await teamTab.page.reload();
+        await expect(teamTab.page.locator("h3")).toHaveText([
+          secondList.name,
+          firstList.name,
+          thirdList.name,
+        ]);
+
+        const addCard = (listId, title) =>
+          create(lists + "/" + listId + "/cards", { title });
+        const extraA = await addCard(firstList.id, "Concorrente A");
+        const extraB = await addCard(secondList.id, "Concorrente B");
+        const anchor = await addCard(secondList.id, "Âncora");
+        const from = await order();
+        const cardIntent = (id, sourceId, destinationId, leftId, rightId) => {
+          const src = from.lists.find((list) => list.id === sourceId);
+          const dst = from.lists.find((list) => list.id === destinationId);
+          return {
+            kind: "CARD",
+            itemId: id,
+            itemRevision: src.cards.find((card) => card.id === id)
+              .positionRevision,
+            sourceId,
+            destinationId,
+            sourceRevision: src.cardOrderRevision,
+            destinationRevision: dst.cardOrderRevision,
+            leftId,
+            rightId,
+            operationId: randomUUID(),
+          };
+        };
+        const intentA = cardIntent(
+          extraA,
+          firstList.id,
+          secondList.id,
+          anchor,
+          null,
+        );
+        const intentB = cardIntent(
+          extraB,
+          secondList.id,
+          firstList.id,
+          createdCard.id,
+          extraA,
+        );
+        await migrator.query("BEGIN");
+        let pending;
+        try {
+          await migrator.query(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+            ["bello-order:CARD:" + firstList.id],
+          );
+          pending = Promise.all([move(intentA), move(intentB, ownerTab)]);
+          let blocked = false;
+          for (let i = 0; i < 60; i++) {
+            const { rows } = await migrator.query(
+              "SELECT count(*)::int AS waiting FROM pg_locks WHERE locktype='advisory' AND NOT granted",
+            );
+            if (rows[0].waiting >= 2) {
+              blocked = true;
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 25));
+          }
+          check(blocked);
+        } finally {
+          await migrator.query("ROLLBACK");
+        }
+        check((await pending).every((result) => result.status() === 204));
+        const crossed = await order();
+        check(
+          crossed.lists
+            .find(({ id }) => id === firstList.id)
+            .cards.map(({ id }) => id)
+            .join(",") === [createdCard.id, extraB].join(","),
+        );
+        check(
+          crossed.lists
+            .find(({ id }) => id === secondList.id)
+            .cards.map(({ id }) => id)
+            .join(",") === [anchor, extraA].join(","),
+        );
+        const repeatedCreate = await post(teamTab, cards, original);
+        check(
+          repeatedCreate.status() === 201 &&
+            (await repeatedCreate.json()).id === createdCard.id,
+        );
+        await open(teamTab, erp);
+        const sourceRegion = teamTab.page.getByRole("region", {
+          name: firstList.name,
+        });
+        const targetRegion = teamTab.page.getByRole("region", {
+          name: secondList.name,
+        });
+        await drag(
+          sourceRegion.getByRole("button", {
+            name: "Arrastar cartão ERP validado",
+          }),
+          targetRegion.getByRole("button", { name: "Arrastar cartão Âncora" }),
+        );
+        await expect(targetRegion.locator("h4")).toHaveText([
+          "ERP validado",
+          "Âncora",
+          "Concorrente A",
+        ]);
+        const movedReplay = await post(teamTab, cards, original);
+        check(
+          movedReplay.status() === 201 &&
+            (await movedReplay.json()).id === createdCard.id,
+        );
+        check(
+          (
+            await move({
+              ...intentA,
+              destinationId: personalList.id,
+              operationId: randomUUID(),
+            })
+          ).status() === 404,
+        );
+        check(
+          (
+            await move(
+              {
+                ...intentA,
+                sourceId: personalList.id,
+                destinationId: personalList.id,
+                itemId: personalCard.id,
+                operationId: randomUUID(),
+              },
+              personalTab,
+              personalLists,
+            )
+          ).status() === 403,
+        );
+        check((await get(personalTab, lists + "/revision")).status() === 404);
+
+        const beforeSame = await order();
+        const currentSource = beforeSame.lists.find(
+          ({ id }) => id === secondList.id,
+        );
+        const movingCard = currentSource.cards.find(
+          ({ id }) => id === createdCard.id,
+        );
+        const sameItemIntent = (targetId) => {
+          const target = beforeSame.lists.find(({ id }) => id === targetId);
+          return {
+            kind: "CARD",
+            itemId: movingCard.id,
+            itemRevision: movingCard.positionRevision,
+            sourceId: currentSource.id,
+            sourceRevision: currentSource.cardOrderRevision,
+            destinationId: target.id,
+            destinationRevision: target.cardOrderRevision,
+            leftId: target.cards.at(-1)?.id ?? null,
+            rightId: null,
+            operationId: randomUUID(),
+          };
+        };
+        const competing = [
+          sameItemIntent(firstList.id),
+          sameItemIntent(thirdList.id),
+        ];
+        check(
+          (await Promise.all(competing.map((intent) => move(intent)))).every(
+            (response) => response.status() === 204,
+          ),
+        );
+        const afterSame = await order();
+        const occurrence = afterSame.lists
+          .flatMap((list) => list.cards)
+          .filter(({ id }) => id === movingCard.id);
+        check(
+          occurrence.length === 1 &&
+            occurrence[0].positionRevision === movingCard.positionRevision + 2,
+        );
+        const history = await migrator.query(
+          "SELECT before_data, after_data FROM public.audit_event WHERE entity_id=$1 AND operation='CARD_MOVED' ORDER BY occurred_at DESC LIMIT 2",
+          [movingCard.id],
+        );
+        const finalList = afterSame.lists.find((list) =>
+          list.cards.some(({ id }) => id === movingCard.id),
+        );
+        check(history.rows[0].after_data.containerId === finalList.id);
+        check(
+          history.rows[0].before_data.containerId ===
+            history.rows[1].after_data.containerId,
+        );
+        check(history.rows[1].before_data.containerId === currentSource.id);
+
+        const failedMove = {
+          ...sameItemIntent(secondList.id),
+          itemRevision: occurrence[0].positionRevision,
+          sourceId: finalList.id,
+          sourceRevision: finalList.cardOrderRevision,
+          destinationRevision: afterSame.lists.find(
+            ({ id }) => id === secondList.id,
+          ).cardOrderRevision,
+          leftId: extraA,
+        };
+        for (const table of ["audit_event", "board_feed_event"]) {
+          await migrator.query(`CREATE FUNCTION public.e2e_reject_move() RETURNS trigger
+            LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic ordering failure'; END; $$;
+            CREATE TRIGGER e2e_reject_move BEFORE INSERT ON public.${table}
+            FOR EACH ROW WHEN (NEW.operation = 'CARD_MOVED') EXECUTE FUNCTION public.e2e_reject_move();`);
+          try {
+            check((await move(failedMove)).status() === 500);
+            check(JSON.stringify(await order()) === JSON.stringify(afterSame));
+          } finally {
+            await migrator.query(
+              `DROP TRIGGER e2e_reject_move ON public.${table}; DROP FUNCTION public.e2e_reject_move();`,
+            );
+          }
+        }
+
         const repeats = await Promise.all([
           post(ownerTab, erp + "/members", {
             email: team.email,
@@ -1020,7 +1313,10 @@ try {
         ).toBeVisible();
         await open(personalTab, homeBoard);
         await expect(
-          personalTab.page.getByRole("heading", { name: "Pessoal" }),
+          personalTab.page.getByRole("heading", {
+            name: "Pessoal",
+            exact: true,
+          }),
         ).toBeVisible();
 
         await expect

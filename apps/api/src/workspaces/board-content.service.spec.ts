@@ -10,25 +10,39 @@ describe('BoardContentService', () => {
   };
 
   function setup(role = 'MEMBER', archived = false) {
-    const board = { archived, members: [{ role }], lists: [] };
+    const board = {
+      archived,
+      members: [{ role }],
+      lists: [],
+      orderRevision: 0,
+      syncRevision: 0,
+    };
     const tx = {
-      board: { findFirst: vi.fn().mockResolvedValue(board) },
+      $queryRaw: vi.fn(),
+      board: { findFirst: vi.fn().mockResolvedValue(board), update: vi.fn() },
       boardList: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn(),
         findFirst: vi.fn().mockResolvedValue(null),
         createMany: vi.fn(),
         update: vi.fn(),
       },
       boardCard: {
+        findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue(null),
         createMany: vi.fn(),
         update: vi.fn(),
       },
       auditEvent: { createMany: vi.fn() },
-      boardFeedEvent: { createMany: vi.fn() },
+      boardFeedEvent: {
+        createMany: vi.fn(),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
     };
     const db = {
       $transaction: vi.fn((run: (client: typeof tx) => unknown) => run(tx)),
       auditEvent: tx.auditEvent,
+      board: tx.board,
     };
     const service = new BoardContentService(db as unknown as PrismaService);
     return { service, tx, db };
@@ -45,6 +59,8 @@ describe('BoardContentService', () => {
       const { service } = setup(role, archived);
       await expect(service.read(context)).resolves.toEqual({
         editable,
+        orderRevision: 0,
+        syncRevision: 0,
         lists: [],
       });
     },
@@ -152,5 +168,143 @@ describe('BoardContentService', () => {
     db.$transaction.mockRejectedValue(conflict);
     await expect(service.read(context)).rejects.toBe(conflict);
     expect(db.$transaction).toHaveBeenCalledTimes(6);
+  });
+  const intent = {
+    itemId: 'item',
+    sourceId: 'board',
+    destinationId: 'board',
+    leftId: null,
+    rightId: 'anchor',
+    itemRevision: 0,
+    sourceRevision: 0,
+    destinationRevision: 0,
+    operationId: 'move',
+  };
+
+  it('moves a list and reconciles a committed repeat from its feed receipt', async () => {
+    const { service, tx, db } = setup();
+    tx.boardList.findFirst.mockResolvedValue({ positionRevision: 0 });
+    tx.boardList.findMany.mockResolvedValue([
+      { id: 'anchor', position: 100n },
+      { id: 'item', position: 200n },
+    ]);
+    await expect(service.move(context, 'LIST', intent)).resolves.toEqual({
+      confirmed: true,
+    });
+    expect(db.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: 'ReadCommitted',
+    });
+    expect(tx.boardList.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { position: 50n, positionRevision: { increment: 1 } },
+      }),
+    );
+    const { requestHash } = tx.boardFeedEvent.createMany.mock.calls[0]![0].data;
+    tx.boardFeedEvent.findUnique.mockResolvedValue({ requestHash });
+    await expect(service.move(context, 'LIST', intent)).resolves.toEqual({
+      confirmed: true,
+    });
+    await expect(
+      service.move(context, 'LIST', { ...intent, rightId: null }),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    expect(tx.auditEvent.createMany).toHaveBeenCalledOnce();
+  });
+
+  it('rereads a changed card source before moving it and advances both container revisions', async () => {
+    const { service, tx, db } = setup();
+    const current = { listId: 'actual', positionRevision: 1 };
+    tx.boardCard.findFirst
+      .mockResolvedValueOnce({ listId: 'old', positionRevision: 0 })
+      .mockResolvedValue(current);
+    tx.boardList.findFirst.mockResolvedValue({ id: 'new' });
+    tx.boardList.findMany.mockResolvedValue([
+      { id: 'old', cardOrderRevision: 1 },
+      { id: 'new', cardOrderRevision: 0 },
+    ]);
+    tx.boardCard.findMany
+      .mockResolvedValueOnce([{ id: 'item', position: 20n }])
+      .mockResolvedValueOnce([]);
+    await service.move(context, 'CARD', {
+      ...intent,
+      sourceId: 'old',
+      destinationId: 'new',
+      rightId: null,
+    });
+    expect(db.$transaction).toHaveBeenCalledTimes(2);
+    expect(tx.boardCard.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ listId: 'new' }),
+      }),
+    );
+    expect(tx.boardList.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { in: ['actual', 'new'] } },
+      }),
+    );
+  });
+
+  it('rejects hidden containers, invalid revisions and no-op moves', async () => {
+    const { service, tx } = setup();
+    await expect(
+      service.move(context, 'LIST', { ...intent, destinationId: 'foreign' }),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    await expect(service.move(context, 'CARD', intent)).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    tx.boardCard.findFirst.mockResolvedValue({
+      listId: 'actual',
+      positionRevision: 0,
+    });
+    await expect(service.move(context, 'CARD', intent)).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    await expect(service.move(context, 'LIST', intent)).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    tx.boardList.findFirst.mockResolvedValue({ positionRevision: 0 });
+    tx.boardList.findMany.mockResolvedValue([
+      { id: 'item', position: 100n },
+      { id: 'anchor', position: 200n },
+    ]);
+    for (const change of [
+      { itemRevision: 1 },
+      { sourceRevision: 1 },
+      { destinationRevision: 1 },
+      {},
+    ]) {
+      await expect(
+        service.move(context, 'LIST', { ...intent, ...change }),
+      ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    }
+    expect(tx.boardFeedEvent.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rechecks membership after the locks and protects revision reads', async () => {
+    const { service, tx } = setup();
+    tx.board.findFirst
+      .mockResolvedValueOnce({ archived: false, members: [{ role: 'ADMIN' }] })
+      .mockResolvedValue(null);
+    await expect(service.move(context, 'LIST', intent)).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    await expect(service.revision(context)).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    tx.board.findFirst
+      .mockResolvedValueOnce({ archived: false, members: [{ role: 'ADMIN' }] })
+      .mockResolvedValue({
+        archived: false,
+        members: [{ role: 'OBSERVER' }],
+        syncRevision: 2,
+      });
+    await expect(service.move(context, 'LIST', intent)).rejects.toMatchObject({
+      code: 'REQUEST_FORBIDDEN',
+    });
+    await expect(service.move(context, 'LIST', intent)).rejects.toMatchObject({
+      code: 'REQUEST_FORBIDDEN',
+    });
+    await expect(service.revision(context)).resolves.toMatchObject({
+      syncRevision: 2,
+    });
   });
 });

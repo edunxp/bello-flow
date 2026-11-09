@@ -205,6 +205,52 @@ export class WorkspaceController {
     return this.content.read(await this.contentContext(request, params));
   }
 
+  @Get(':workspaceId/boards/:boardId/lists/revision')
+  async orderRevision(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    return this.content.revision(await this.contentContext(request, params));
+  }
+
+  @Post(':workspaceId/boards/:boardId/lists/move')
+  @HttpCode(204)
+  async move(@Req() request: Request, @Param() params: Record<string, string>) {
+    const context = await this.contentContext(request, params, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    const revision = (value: unknown) => {
+      if (
+        typeof value !== 'number' ||
+        !Number.isInteger(value) ||
+        value < 0 ||
+        value > 2147483647
+      )
+        invalid();
+      return value;
+    };
+    if (body?.kind !== 'LIST' && body?.kind !== 'CARD') invalid();
+    const itemId = identifier(body.itemId);
+    const leftId = body.leftId === null ? null : identifier(body.leftId);
+    const rightId = body.rightId === null ? null : identifier(body.rightId);
+    if (
+      itemId === leftId ||
+      itemId === rightId ||
+      (leftId !== null && leftId === rightId)
+    )
+      invalid();
+    await this.content.move(context, body.kind, {
+      itemId,
+      leftId,
+      rightId,
+      sourceId: identifier(body.sourceId),
+      destinationId: identifier(body.destinationId),
+      itemRevision: revision(body.itemRevision),
+      sourceRevision: revision(body.sourceRevision),
+      destinationRevision: revision(body.destinationRevision),
+      operationId: identifier(body.operationId),
+    });
+  }
+
   @Patch(':workspaceId/boards/:boardId/lists/:listId')
   editList(@Req() request: Request, @Param() params: Record<string, string>) {
     return this.writeList(request, params);

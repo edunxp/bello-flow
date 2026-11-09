@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { vi } from 'vitest';
 import { BoardContent } from './board-content';
 
 describe('BoardContent', () => {
@@ -10,7 +11,9 @@ describe('BoardContent', () => {
     {
       id: 'list',
       name: 'A fazer',
-      cards: [{ id: 'card', title: 'Cartão', description: 'Conteúdo' }],
+      positionRevision: 0,
+      cardOrderRevision: 1,
+      cards: [{ id: 'card', title: 'Cartão', description: 'Conteúdo', positionRevision: 0 }],
     },
   ];
 
@@ -125,5 +128,165 @@ describe('BoardContent', () => {
     expect(page.message()).toContain('criação anterior');
     fixture.detectChanges();
     http.expectOne({ method: 'GET', url: path }).flush({ editable: true, lists });
+  });
+  it('reorders lists with buttons and moves a card with drag and drop', async () => {
+    const { fixture, http, page } = setup();
+    const [first] = lists;
+    const second = {
+      id: 'second',
+      name: 'Em andamento',
+      positionRevision: 1,
+      cardOrderRevision: 0,
+      cards: [],
+    };
+    const state = { editable: true, orderRevision: 2, syncRevision: 3, lists: [first, second] };
+    page.content.set(state);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const buttons = () => [...element.querySelectorAll('button')];
+    const button = (text: string) => buttons().find((value) => value.textContent?.trim() === text)!;
+    button('Descer lista').click();
+    const move = http.expectOne({ url: path + '/move', method: 'POST' });
+    expect(move.request.body).toMatchObject({
+      kind: 'LIST',
+      itemId: 'list',
+      sourceId: 'board',
+      destinationId: 'board',
+      destinationRevision: 2,
+      itemRevision: 0,
+      leftId: 'second',
+      rightId: null,
+    });
+    move.flush(null, { status: 204, statusText: 'No Content' });
+    await Promise.resolve();
+    fixture.detectChanges();
+    http.expectOne(path).flush(state);
+
+    const card = first.cards[0];
+    const transfer = { setData: vi.fn() };
+    const event = { dataTransfer: transfer, preventDefault: vi.fn() } as unknown as DragEvent;
+    page.startDrag(event, first, card);
+    expect(transfer.setData).toHaveBeenCalledWith('text/plain', card.id);
+    fixture.detectChanges();
+    page.allowDrop(event, 'CARD');
+    page.drop(event, 'CARD', second, null);
+    const drop = http.expectOne({ url: path + '/move', method: 'POST' });
+    expect(drop.request.body).toMatchObject({
+      kind: 'CARD',
+      sourceId: 'list',
+      destinationId: 'second',
+      leftId: null,
+      rightId: null,
+    });
+    drop.flush({}, { status: 409, statusText: 'Conflict' });
+    await Promise.resolve();
+    expect(page.message()).toContain('Confira a ordem atualizada');
+    fixture.detectChanges();
+    http.expectOne(path).flush(state);
+
+    const select = element.querySelector<HTMLSelectElement>('#move-card')!;
+    select.value = 'second';
+    button('Mover cartão').click();
+    http.expectOne({ url: path + '/move', method: 'POST' }).flush(null);
+    await Promise.resolve();
+    fixture.detectChanges();
+    http.expectOne(path).flush(state);
+  });
+
+  it('refreshes on a newer revision and stops checking after losing access', async () => {
+    vi.useFakeTimers();
+    try {
+      const { fixture, http, page } = setup(false);
+      await vi.advanceTimersByTimeAsync(5000);
+      http.expectOne(path + '/revision').flush({ syncRevision: 1 });
+      fixture.detectChanges();
+      const previous = http.expectOne(path);
+      await vi.advanceTimersByTimeAsync(5000);
+      http.expectOne(path + '/revision').flush({ syncRevision: 2 });
+      fixture.detectChanges();
+      expect(previous.cancelled).toBe(true);
+      const inFlight = http.expectOne(path);
+      await vi.advanceTimersByTimeAsync(5000);
+      http.expectOne(path + '/revision').flush({}, { status: 403, statusText: 'Forbidden' });
+      inFlight.flush({ editable: false, lists, syncRevision: 2 });
+      expect(page.content()).toBeNull();
+      await vi.advanceTimersByTimeAsync(10000);
+      http.expectNone(path + '/revision');
+      fixture.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('wires the list and card drag targets and keyboard alternatives', async () => {
+    const { fixture, http, page } = setup();
+    const first = {
+      ...lists[0],
+      cards: [
+        lists[0].cards[0],
+        { id: 'second-card', title: 'Outro', description: null, positionRevision: 0 },
+      ],
+    };
+    const second = {
+      id: 'second',
+      name: 'Próxima',
+      positionRevision: 0,
+      cardOrderRevision: 0,
+      cards: [],
+    };
+    const state = { editable: true, orderRevision: 2, syncRevision: 3, lists: [first, second] };
+    page.content.set(state);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const target = (selector: string, label: string) =>
+      [...element.querySelectorAll<HTMLElement>(selector)].find(
+        (node) => node.textContent?.trim() === label,
+      )!;
+    const event = (node: HTMLElement, name: string) =>
+      node.dispatchEvent(new Event(name, { cancelable: true, bubbles: true }));
+    const confirm = async () => {
+      http.expectOne({ url: path + '/move', method: 'POST' }).flush(null);
+      await Promise.resolve();
+      fixture.detectChanges();
+      http.expectOne(path).flush(state);
+      fixture.detectChanges();
+    };
+
+    const list = target('button', 'Arrastar lista A fazer');
+    const listTarget = target('button', 'Arrastar lista Próxima');
+    event(list, 'dragstart');
+    fixture.detectChanges();
+    event(listTarget, 'dragover');
+    event(listTarget, 'drop');
+    event(list, 'dragend');
+    http.expectNone(path + '/move');
+    event(list, 'dragstart');
+    fixture.detectChanges();
+    const listEnd = target('.drop-zone', 'Soltar no fim do quadro');
+    event(listEnd, 'dragover');
+    event(listEnd, 'drop');
+    await confirm();
+
+    const card = target('button', 'Arrastar cartão Outro');
+    const cardTarget = target('button', 'Arrastar cartão Cartão');
+    event(card, 'dragstart');
+    fixture.detectChanges();
+    event(cardTarget, 'dragover');
+    event(cardTarget, 'drop');
+    event(card, 'dragend');
+    await confirm();
+    event(card, 'dragstart');
+    fixture.detectChanges();
+    const cardEnd = target('.drop-zone', 'Soltar no fim de Próxima');
+    event(cardEnd, 'dragover');
+    event(cardEnd, 'drop');
+    await confirm();
+    const enabled = (label: string) =>
+      [...element.querySelectorAll<HTMLButtonElement>('button')].find(
+        (node) => node.textContent?.trim() === label && !node.disabled,
+      )!;
+    for (const label of ['Subir lista', 'Subir cartão', 'Descer cartão']) {
+      enabled(label).click();
+      await confirm();
+    }
   });
 });

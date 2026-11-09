@@ -24,7 +24,12 @@ function setup() {
     board: vi.fn(),
     createBoard: vi.fn(),
   };
-  const content = { read: vi.fn(), write: vi.fn() };
+  const content = {
+    read: vi.fn(),
+    write: vi.fn(),
+    revision: vi.fn(),
+    move: vi.fn(),
+  };
   const controller = new WorkspaceController(
     workspaces as unknown as WorkspaceService,
     {
@@ -218,5 +223,47 @@ describe('WorkspaceController board content', () => {
       controller.editList(request({ name: '  ' }), item),
     ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     expect(content.write).not.toHaveBeenCalled();
+  });
+});
+
+describe('order HTTP contract', () => {
+  it('validates revisions, neighbors and item identifiers before mutating', async () => {
+    const { controller, request, content } = setup();
+    const scope = { workspaceId: id, boardId: id };
+    await controller.orderRevision(request(), scope);
+    expect(content.revision).toHaveBeenCalledWith({ ...scope, accountId: id });
+    const neighbor = '11111111-1111-4111-8111-111111111111';
+    const move = {
+      kind: 'CARD',
+      itemId: id,
+      sourceId: id,
+      destinationId: id,
+      operationId: id,
+      leftId: null,
+      rightId: neighbor,
+      itemRevision: 0,
+      sourceRevision: 1,
+      destinationRevision: 1,
+    };
+    await controller.move(request(move), scope);
+    await controller.move(
+      request({ ...move, kind: 'LIST', leftId: neighbor, rightId: null }),
+      scope,
+    );
+    expect(content.move).toHaveBeenCalledTimes(2);
+    for (const change of [
+      { kind: 'UNKNOWN' },
+      { leftId: id },
+      { rightId: id },
+      { leftId: neighbor },
+      { itemRevision: '0' },
+      { itemRevision: 0.5 },
+      { itemRevision: -1 },
+      { itemRevision: 2147483648 },
+    ]) {
+      await expect(
+        controller.move(request({ ...move, ...change }), scope),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    }
   });
 });

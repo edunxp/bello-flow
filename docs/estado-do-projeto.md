@@ -505,6 +505,31 @@ e os endpoints de recuperação permanecem no
   da API, 81 da web e cobertura acima de 90% nas quatro métricas por aplicação
   e no consolidado. Registro anterior ao commit, publicação e CI remoto.
 
+## Ordenação e movimentação no quadro
+
+- **Ciclo:** `work/ordenacao-movimentacao`,
+  `BASE_MAIN_SHA=78d32584390e68e7b7f245cc2f5c8be36c0098b5`.
+  Escopo BEL-006 a BEL-008 e BEL-010. Riscos centrais são perda de itens,
+  divergência sob concorrência e ampliação de acesso entre quadros.
+- **Decisão do recorte:** posições BIGINT e espaçamento 2³², aprovados após
+  a prova PT-002. Sob mil movimentos no mesmo intervalo, sete rodadas por
+  parâmetro, o candidato reduziu os rebalanceamentos de 100 para 31.
+- **Implementação:** reordenação de listas e cartões e movimentos entre
+  listas do mesmo quadro, com controles de arraste e alternativas por botão.
+  Revisões detectam alterações e a consulta periódica atualiza o quadro.
+  O [contrato de persistência](arquitetura/persistencia-e-auditoria.md#ordenação-de-listas-e-cartões)
+  descreve bloqueios, recompactação e rastreabilidade.
+- **Privilégios aprovados:** UPDATE somente nas colunas de posição, vínculo
+  de cartão e revisões usadas pelo incremento. Migration validada em
+  PostgreSQL descartável.
+
+- **Validação local — VERIFICADO:** gate completo com 813 testes da API,
+  84 da web e cobertura acima de 90% em todas as métricas. Os 15 cenários
+  em Docker passaram. A validação observou espera real de transações
+  concorrentes, movimentos cruzados e sobre o mesmo cartão, rebalanceamento
+  sob intervalo esgotado, atualização entre abas, repetição idempotente e
+  rollback por falha de auditoria ou feed. Registro anterior ao CI remoto.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,

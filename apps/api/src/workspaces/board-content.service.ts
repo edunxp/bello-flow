@@ -3,6 +3,17 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client.js';
 import { HTTP_ERROR_CODE, HttpContractError } from '../http/http-errors.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  advanceOrder,
+  conflict,
+  lockContainers,
+  neighbors,
+  placement,
+  positionAt,
+  siblings,
+  type Container,
+  type MoveIntent,
+} from './board-order.js';
 import { creationId } from './workspace.service.js';
 
 export type BoardContext = {
@@ -22,7 +33,8 @@ type Mutation =
 
 const listFields = { id: true, name: true } as const;
 const cardFields = { id: true, title: true, description: true } as const;
-const orderBy = [{ createdAt: 'asc' }, { id: 'asc' }] as const;
+const orderBy = { position: 'asc' } as const;
+class SourceChanged extends Error {}
 
 @Injectable()
 export class BoardContentService {
@@ -34,22 +46,34 @@ export class BoardContentService {
         where: this.boardScope(context),
         select: {
           archived: true,
+          orderRevision: true,
+          syncRevision: true,
           members: {
             where: { accountId: context.accountId },
             select: { role: true },
           },
           lists: {
-            orderBy: [...orderBy],
+            orderBy,
             select: {
               ...listFields,
-              cards: { select: cardFields, orderBy: [...orderBy] },
+              positionRevision: true,
+              cardOrderRevision: true,
+              cards: {
+                select: { ...cardFields, positionRevision: true },
+                orderBy,
+              },
             },
           },
         },
       }),
     );
     if (!board) return this.deny(context, 'READ_BOARD_CONTENT', false);
-    return { editable: this.editable(board), lists: board.lists };
+    return {
+      editable: this.editable(board),
+      orderRevision: board.orderRevision,
+      syncRevision: board.syncRevision,
+      lists: board.lists,
+    };
   }
 
   async write(context: BoardContext, mutation: Mutation, operationId: string) {
@@ -75,116 +99,361 @@ export class BoardContentService {
       .update(JSON.stringify(fields))
       .digest('hex');
     const eventId = existingId ? randomUUID() : id;
-    const result = await this.transaction(async (tx) => {
-      const board = await tx.board.findFirst({
-        where: this.boardScope(context),
-        select: {
-          archived: true,
-          members: {
-            where: { accountId: context.accountId },
-            select: { role: true },
-          },
-        },
-      });
-      if (!board) return { denied: 'HIDDEN' } as const;
-      if (!this.editable(board)) return { denied: 'READ_ONLY' } as const;
+    const container: Container = card
+      ? { kind: 'CARD', id: mutation.listId }
+      : { kind: 'LIST', id: context.boardId };
+    const result = await this.transaction(
+      async (tx) => {
+        const access = () =>
+          tx.board.findFirst({
+            where: this.boardScope(context),
+            select: {
+              archived: true,
+              members: {
+                where: { accountId: context.accountId },
+                select: { role: true },
+              },
+            },
+          });
+        const board = await access();
+        if (!board) return { denied: 'HIDDEN' } as const;
+        if (!this.editable(board)) return { denied: 'READ_ONLY' } as const;
 
+        if (
+          mutation.listId &&
+          !(await tx.boardList.findFirst({
+            where: { id: mutation.listId, boardId: context.boardId },
+            select: { id: true },
+          }))
+        )
+          return { denied: 'HIDDEN' } as const;
+
+        if (!existingId) {
+          await lockContainers(tx, [container]);
+          const current = await access();
+          if (!current) return { denied: 'HIDDEN' } as const;
+          if (!this.editable(current)) return { denied: 'READ_ONLY' } as const;
+        }
+
+        const before = card
+          ? await tx.boardCard.findFirst({
+              where: {
+                id,
+                ...(existingId
+                  ? { listId: mutation.listId }
+                  : { list: { boardId: context.boardId } }),
+              },
+            })
+          : await tx.boardList.findFirst({
+              where: { id, boardId: context.boardId },
+            });
+        if (existingId && !before) return { denied: 'HIDDEN' } as const;
+
+        const previous =
+          before &&
+          ('title' in before
+            ? { id, title: before.title, description: before.description }
+            : { id, name: before.name });
+        if (!existingId && before) {
+          if (before.creationHash !== creationHash) {
+            throw new HttpContractError(HTTP_ERROR_CODE.OPERATION_CONFLICT);
+          }
+          return { resource: previous };
+        }
+        const resource = card
+          ? {
+              id,
+              title:
+                mutation.title ??
+                (before && 'title' in before ? before.title : ''),
+              description:
+                mutation.description === undefined
+                  ? before && 'title' in before
+                    ? before.description
+                    : null
+                  : mutation.description,
+            }
+          : { id, name: mutation.name };
+        const afterData: Prisma.InputJsonObject = { ...resource };
+        const beforeData: Prisma.InputJsonObject | undefined = previous
+          ? Object.fromEntries(
+              Object.entries(previous).filter(
+                ([key, value]) => key === 'id' || afterData[key] !== value,
+              ),
+            )
+          : undefined;
+        if (beforeData && Object.keys(beforeData).length === 1)
+          return { resource };
+        const changed = beforeData
+          ? Object.fromEntries(
+              Object.entries(afterData).filter(([key]) => key in beforeData),
+            )
+          : afterData;
+
+        let position = 0n;
+        if (!existingId) {
+          const items = await siblings(tx, container);
+          position = await positionAt(tx, container, items, items.length);
+        }
+        if (card) {
+          const data = {
+            title: mutation.title,
+            description: mutation.description,
+          };
+          if (existingId)
+            await tx.boardCard.update({
+              where: { id },
+              data,
+              select: { id: true },
+            });
+          else
+            await tx.boardCard.createMany({
+              data: {
+                title: mutation.title!,
+                description: mutation.description,
+                id,
+                listId: mutation.listId,
+                creationHash,
+                position,
+              },
+            });
+        } else {
+          const data = { name: mutation.name };
+          if (existingId)
+            await tx.boardList.update({
+              where: { id },
+              data,
+              select: { id: true },
+            });
+          else
+            await tx.boardList.createMany({
+              data: {
+                ...data,
+                id,
+                boardId: context.boardId,
+                creationHash,
+                position,
+              },
+            });
+        }
+
+        if (!existingId)
+          await advanceOrder(tx, context.boardId, container.kind, [
+            container.id,
+          ]);
+        else
+          await tx.board.update({
+            where: { id: context.boardId },
+            select: { id: true },
+            data: { syncRevision: { increment: 1 } },
+          });
+        const occurredAt = new Date();
+        const listId = card ? mutation.listId : id;
+        await tx.auditEvent.createMany({
+          data: {
+            id: randomUUID(),
+            occurredAt,
+            actorAccountId: context.accountId,
+            origin: 'HTTP',
+            scope: 'BOARD',
+            operation,
+            result: 'SUCCESS',
+            entityType,
+            entityId: id,
+            context: {
+              workspaceId: context.workspaceId,
+              boardId: context.boardId,
+              listId,
+            },
+            operationId: eventId,
+            correlationId: eventId,
+            sequence: 1,
+            beforeData,
+            afterData: changed,
+          },
+        });
+        await tx.boardFeedEvent.createMany({
+          data: {
+            id: randomUUID(),
+            boardId: context.boardId,
+            actorId: context.accountId,
+            occurredAt,
+            operation,
+            listId,
+            cardId: card ? id : null,
+          },
+        });
+        return { resource };
+      },
+      existingId ? 'Serializable' : 'ReadCommitted',
+    );
+    if (result.denied)
+      return this.deny(context, operation, result.denied === 'READ_ONLY');
+    return result.resource;
+  }
+
+  async revision(context: BoardContext) {
+    const board = await this.db.board.findFirst({
+      where: this.boardScope(context),
+      select: { syncRevision: true },
+    });
+    if (!board) return this.deny(context, 'READ_BOARD_CONTENT', false);
+    return board;
+  }
+
+  async move(
+    context: BoardContext,
+    kind: Container['kind'],
+    intent: MoveIntent,
+  ) {
+    const card = kind === 'CARD';
+    const operation = card ? 'CARD_MOVED' : 'LIST_REORDERED';
+    const eventId = creationId(
+      context.accountId,
+      intent.operationId,
+      context.workspaceId,
+      context.boardId,
+      'MOVE',
+    );
+    const requestHash = createHash('sha256')
+      .update(JSON.stringify([kind, intent]))
+      .digest('hex');
+    const result = await this.transaction(async (tx) => {
+      const scope = this.boardScope(context);
+      // Authorize before looking up any item, then revalidate after waiting for locks.
+      const authorization = {
+        archived: true,
+        orderRevision: true,
+        members: {
+          where: { accountId: context.accountId },
+          select: { role: true },
+        },
+      } as const;
+      const access = await tx.board.findFirst({
+        where: scope,
+        select: authorization,
+      });
+      if (!access) return { denied: 'HIDDEN' } as const;
+      if (!this.editable(access)) return { denied: 'READ_ONLY' } as const;
       if (
-        mutation.listId &&
+        !card &&
+        (intent.sourceId !== context.boardId ||
+          intent.destinationId !== context.boardId)
+      )
+        return { denied: 'HIDDEN' } as const;
+      const findCard = () =>
+        tx.boardCard.findFirst({
+          where: { id: intent.itemId, list: { boardId: context.boardId } },
+          select: { id: true, listId: true, positionRevision: true },
+        });
+      const current = card ? await findCard() : null;
+      if (card && !current) return { denied: 'HIDDEN' } as const;
+      const source: Container = {
+        kind,
+        id: current?.listId ?? context.boardId,
+      };
+      const destination: Container = { kind, id: intent.destinationId };
+      if (
+        card &&
         !(await tx.boardList.findFirst({
-          where: { id: mutation.listId, boardId: context.boardId },
+          where: { id: destination.id, boardId: context.boardId },
           select: { id: true },
         }))
       )
         return { denied: 'HIDDEN' } as const;
+      await lockContainers(tx, [source, destination]);
+      const board = await tx.board.findFirst({
+        where: scope,
+        select: authorization,
+      });
+      if (!board) return { denied: 'HIDDEN' } as const;
+      if (!this.editable(board)) return { denied: 'READ_ONLY' } as const;
 
-      const before = card
-        ? await tx.boardCard.findFirst({
-            where: { id, listId: mutation.listId },
-          })
+      const receipt = await tx.boardFeedEvent.findUnique({
+        where: { id: eventId },
+        select: { requestHash: true },
+      });
+      if (receipt) {
+        if (receipt.requestHash !== requestHash) conflict();
+        return { confirmed: true };
+      }
+      const item = card
+        ? await findCard()
         : await tx.boardList.findFirst({
-            where: { id, boardId: context.boardId },
+            where: { id: intent.itemId, boardId: context.boardId },
+            select: { positionRevision: true },
           });
-      if (existingId && !before) return { denied: 'HIDDEN' } as const;
+      if (!item) return { denied: 'HIDDEN' } as const;
+      if ('listId' in item && item.listId !== source.id)
+        throw new SourceChanged();
+      if (
+        intent.itemRevision > item.positionRevision ||
+        (intent.itemRevision === item.positionRevision &&
+          intent.sourceId !== source.id)
+      )
+        conflict();
 
-      const previous =
-        before &&
-        ('title' in before
-          ? { id, title: before.title, description: before.description }
-          : { id, name: before.name });
-      if (!existingId && before) {
-        if (before.creationHash !== creationHash) {
-          throw new HttpContractError(HTTP_ERROR_CODE.OPERATION_CONFLICT);
-        }
-        return { resource: previous };
-      }
-      const resource = card
-        ? {
-            id,
-            title:
-              mutation.title ??
-              (before && 'title' in before ? before.title : ''),
-            description:
-              mutation.description === undefined
-                ? before && 'title' in before
-                  ? before.description
-                  : null
-                : mutation.description,
-          }
-        : { id, name: mutation.name };
-      const afterData: Prisma.InputJsonObject = { ...resource };
-      const beforeData: Prisma.InputJsonObject | undefined = previous
-        ? Object.fromEntries(
-            Object.entries(previous).filter(
-              ([key, value]) => key === 'id' || afterData[key] !== value,
-            ),
-          )
-        : undefined;
-      if (beforeData && Object.keys(beforeData).length === 1)
-        return { resource };
-      const changed = beforeData
-        ? Object.fromEntries(
-            Object.entries(afterData).filter(([key]) => key in beforeData),
-          )
-        : afterData;
-
+      let sourceRevision = board.orderRevision;
+      let destinationRevision = board.orderRevision;
       if (card) {
-        const data = {
-          title: mutation.title,
-          description: mutation.description,
-        };
-        if (existingId)
-          await tx.boardCard.update({
-            where: { id },
-            data,
-            select: { id: true },
-          });
-        else
-          await tx.boardCard.createMany({
-            data: {
-              title: mutation.title!,
-              description: mutation.description,
-              id,
-              listId: mutation.listId,
-              creationHash,
-            },
-          });
-      } else {
-        const data = { name: mutation.name };
-        if (existingId)
-          await tx.boardList.update({
-            where: { id },
-            data,
-            select: { id: true },
-          });
-        else
-          await tx.boardList.createMany({
-            data: { ...data, id, boardId: context.boardId, creationHash },
-          });
+        const containers = await tx.boardList.findMany({
+          where: {
+            boardId: context.boardId,
+            id: { in: [source.id, intent.sourceId, destination.id] },
+          },
+          select: { id: true, cardOrderRevision: true },
+        });
+        const from = containers.find(({ id }) => id === intent.sourceId);
+        const to = containers.find(({ id }) => id === destination.id);
+        if (!from || !to) return { denied: 'HIDDEN' } as const;
+        sourceRevision = from.cardOrderRevision;
+        destinationRevision = to.cardOrderRevision;
       }
-
+      if (
+        intent.sourceRevision > sourceRevision ||
+        intent.destinationRevision > destinationRevision
+      )
+        conflict();
+      const original = await siblings(tx, source);
+      const oldIndex = original.findIndex(({ id }) => id === intent.itemId);
+      const before = {
+        containerId: source.id,
+        leftId: original[oldIndex - 1]?.id ?? null,
+        rightId: original[oldIndex + 1]?.id ?? null,
+      };
+      const same = source.id === destination.id;
+      const target = (same ? original : await siblings(tx, destination)).filter(
+        ({ id }) => id !== intent.itemId,
+      );
+      const index = placement(
+        target,
+        intent,
+        intent.destinationRevision === destinationRevision,
+      );
+      if (same && index === oldIndex) conflict();
+      const position = await positionAt(tx, destination, target, index);
+      const data = { position, positionRevision: { increment: 1 } };
+      if (card) {
+        await tx.boardCard.update({
+          where: { id: intent.itemId },
+          data: { ...data, listId: destination.id },
+          select: { id: true },
+        });
+      } else {
+        await tx.boardList.update({
+          where: { id: intent.itemId },
+          data,
+          select: { id: true },
+        });
+      }
+      await advanceOrder(
+        tx,
+        context.boardId,
+        kind,
+        same ? [source.id] : [source.id, destination.id],
+      );
       const occurredAt = new Date();
-      const listId = card ? mutation.listId : id;
+      const listId = card ? destination.id : intent.itemId;
       await tx.auditEvent.createMany({
         data: {
           id: randomUUID(),
@@ -194,8 +463,8 @@ export class BoardContentService {
           scope: 'BOARD',
           operation,
           result: 'SUCCESS',
-          entityType,
-          entityId: id,
+          entityType: kind,
+          entityId: intent.itemId,
           context: {
             workspaceId: context.workspaceId,
             boardId: context.boardId,
@@ -204,26 +473,30 @@ export class BoardContentService {
           operationId: eventId,
           correlationId: eventId,
           sequence: 1,
-          beforeData,
-          afterData: changed,
+          beforeData: before,
+          afterData: {
+            containerId: destination.id,
+            ...neighbors(target, index),
+          },
         },
       });
       await tx.boardFeedEvent.createMany({
         data: {
-          id: randomUUID(),
+          id: eventId,
           boardId: context.boardId,
           actorId: context.accountId,
           occurredAt,
           operation,
           listId,
-          cardId: card ? id : null,
+          cardId: card ? intent.itemId : null,
+          requestHash,
         },
       });
-      return { resource };
-    });
+      return { confirmed: true };
+    }, 'ReadCommitted');
     if (result.denied)
       return this.deny(context, operation, result.denied === 'READ_ONLY');
-    return result.resource;
+    return result;
   }
 
   private boardScope({ boardId, workspaceId, accountId }: BoardContext) {
@@ -252,19 +525,28 @@ export class BoardContentService {
 
   private async transaction<T>(
     run: (tx: Prisma.TransactionClient) => Promise<T>,
+    isolationLevel: Prisma.TransactionIsolationLevel = 'Serializable',
   ): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.db.$transaction(run, {
-          isolationLevel: 'Serializable',
+          isolationLevel,
         });
       } catch (error) {
         if (
-          !(error instanceof Prisma.PrismaClientKnownRequestError) ||
-          !['P2002', 'P2034'].includes(error.code) ||
-          attempt === 3
+          !(error instanceof SourceChanged) &&
+          (!(error instanceof Prisma.PrismaClientKnownRequestError) ||
+            !(
+              ['P2002', 'P2034'].includes(error.code) ||
+              (error.code === 'P2010' &&
+                ['40001', '40P01'].includes(String(error.meta?.code)))
+            ))
         )
           throw error;
+        if (attempt === 3) {
+          if (isolationLevel === 'ReadCommitted') conflict();
+          throw error;
+        }
       }
     }
   }

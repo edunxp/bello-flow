@@ -214,6 +214,8 @@ model Board {
   name          String               @db.VarChar(100)
   description   String               @db.VarChar(2000)
   visibility    String               @default("PRIVATE") @db.VarChar(20)
+  orderRevision Int @default(0) @map("order_revision")
+  syncRevision Int @default(0) @map("sync_revision")
   archived      Boolean              @default(false)
   workspace     Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   members       BoardMembership[]
@@ -242,6 +244,7 @@ model BoardFeedEvent {
   id         String   @id @db.Uuid
   boardId    String   @map("board_id") @db.Uuid
   actorId    String   @map("actor_id") @db.Uuid
+  requestHash String? @map("request_hash") @db.Char(64)
   occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
   operation  String   @db.VarChar(60)
   listId     String?  @map("list_id") @db.Uuid
@@ -286,11 +289,15 @@ model BoardList {
   boardId      String      @map("board_id") @db.Uuid
   name         String      @db.VarChar(100)
   creationHash String      @map("creation_hash") @db.Char(64)
+  position BigInt
+  positionRevision Int @default(0) @map("position_revision")
+  cardOrderRevision Int @default(0) @map("card_order_revision")
   createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   board        Board       @relation(fields: [boardId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   cards        BoardCard[]
 
   @@index([boardId, createdAt, id])
+  @@unique([boardId, position])
   @@map("board_list")
 }
 
@@ -300,9 +307,12 @@ model BoardCard {
   title        String    @db.VarChar(200)
   description  String?   @db.VarChar(20000)
   creationHash String    @map("creation_hash") @db.Char(64)
+  position BigInt
+  positionRevision Int @default(0) @map("position_revision")
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   list         BoardList @relation(fields: [listId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([listId, createdAt, id])
+  @@unique([listId, position])
   @@map("board_card")
 }

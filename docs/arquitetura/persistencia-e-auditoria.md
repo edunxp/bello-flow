@@ -1135,7 +1135,26 @@ O backend valida origem, destino, vizinhos, estado de arquivamento, permissões 
 
 Movimentos entre contêineres bloqueiam somente os recursos necessários e em ordem estável. Movimentos entre quadros também aplicam DEC-018: autorização em ambos, confirmação de responsáveis incompatíveis, preservação de identidade e histórico e proteção do contexto de origem.
 
-O rebalanceamento pode modificar chaves físicas, mas não a ordem funcional. A representação da chave e o limiar de rebalanceamento ainda serão validados.
+O recorte BEL-006 a BEL-008 e BEL-010 usa posições PostgreSQL `BIGINT` na
+faixa positiva até 9 × 10¹⁸, com espaçamento de 2³². A migration calcula
+as posições iniciais pela ordem anterior de criação e ID. O servidor usa
+o ponto médio inteiro entre vizinhos, acrescenta um passo ao inserir no
+fim e recompacta apenas o destino quando o intervalo ou a faixa se esgota.
+A recompactação usa a ordem vigente e não muda as revisões individuais
+dos itens que mantêm sua posição relativa.
+
+A API recebe origem, destino, vizinhos e revisões de item e contêiner.
+Revalida acesso e escopo, adquire bloqueios transacionais em ordem
+determinística e relê a origem após a espera. Uma intenção desatualizada
+pode ser conciliada usando um vizinho que ainda esteja no destino.
+Movimento efetivo confirma posições, revisões, auditoria e feed na mesma
+transação. Um identificador de operação permite reconciliar a repetição
+de uma resposta perdida. A auditoria guarda origem, destino e vizinhos
+efetivos de cada lado, sem cópia da ordenação completa.
+
+O cliente consulta periodicamente apenas a revisão de sincronização e
+recarrega o conteúdo autorizado quando ela muda. O gateway WebSocket
+permanece na etapa de sincronização em tempo real do roteiro.
 
 ## Auditoria obrigatória
 
