@@ -20,6 +20,14 @@ import {
   workspaceToday,
   type CardScheduleChange,
 } from './card-schedule.js';
+import {
+  activeAccount,
+  assignmentRoles,
+  lockBoardMembers,
+  participantIdentity,
+  participantView,
+  recordAssignments,
+} from './card-assignments.js';
 import { creationId } from './workspace.service.js';
 
 export type BoardContext = {
@@ -76,6 +84,14 @@ export class BoardContentService {
                 select: {
                   ...cardFields,
                   ...scheduleFields,
+                  assignments: {
+                    where: {
+                      workspaceId: context.workspaceId,
+                      boardId: context.boardId,
+                    },
+                    select: { member: { select: participantIdentity } },
+                    orderBy: { accountId: 'asc' },
+                  },
                   positionRevision: true,
                 },
                 orderBy,
@@ -101,25 +117,43 @@ export class BoardContentService {
               AND ${now}::timestamptz >= ((card.due_date + 1)::timestamp AT TIME ZONE ${timeZone})
           `
         : [];
+      const editable = this.editable(board);
+      const eligibleAssignees = editable
+        ? await tx.boardMembership.findMany({
+            where: {
+              workspaceId: context.workspaceId,
+              boardId: context.boardId,
+              role: { in: assignmentRoles },
+              workspaceMember: { account: activeAccount },
+            },
+            select: participantIdentity,
+            orderBy: { accountId: 'asc' },
+          })
+        : [];
       return {
         board,
+        editable,
+        eligibleAssignees,
         timeZone,
         today,
         overdue: new Set(overdue.map(({ id }) => id)),
       };
     });
     if (!result) return this.deny(context, 'READ_BOARD_CONTENT', false);
-    const { board, timeZone, today, overdue } = result;
+    const { board, timeZone, today, overdue, editable, eligibleAssignees } =
+      result;
     return {
       timeZone,
       today,
-      editable: this.editable(board),
+      editable,
+      eligibleAssignees: eligibleAssignees.map(participantView),
       orderRevision: board.orderRevision,
       syncRevision: board.syncRevision,
       lists: board.lists.map(({ cards, ...list }) => ({
         ...list,
-        cards: cards.map((card) => ({
+        cards: cards.map(({ assignments, ...card }) => ({
           ...card,
+          assignees: assignments.map(({ member }) => participantView(member)),
           ...scheduleView(card, overdue.has(card.id)),
         })),
       })),
@@ -353,6 +387,116 @@ export class BoardContentService {
       today: workspaceToday(board.workspace.timeZone),
       timeZone: board.workspace.timeZone,
     };
+  }
+
+  async changeAssignee(
+    context: BoardContext,
+    listId: string,
+    cardId: string,
+    accountId: string,
+    assigned: boolean,
+    operationId: string,
+  ) {
+    const operation = assigned
+      ? 'CARD_ASSIGNEE_ADDED'
+      : 'CARD_ASSIGNEE_REMOVED';
+    const eventId = creationId(
+      context.accountId,
+      operationId,
+      context.workspaceId,
+      context.boardId,
+      'CARD_ASSIGNEE',
+    );
+    const requestHash = createHash('sha256')
+      .update(JSON.stringify([listId, cardId, accountId, assigned]))
+      .digest('hex');
+    const result = await this.transaction(async (tx) => {
+      const access = () =>
+        tx.board.findFirst({
+          where: this.boardScope(context),
+          select: {
+            archived: true,
+            members: {
+              where: { accountId: context.accountId },
+              select: { role: true },
+            },
+          },
+        });
+      const board = await access();
+      if (!board) return { denied: 'HIDDEN' } as const;
+      if (!this.editable(board)) return { denied: 'READ_ONLY' } as const;
+      await lockBoardMembers(tx, context.boardId);
+      const current = await access();
+      if (!current) return { denied: 'HIDDEN' } as const;
+      if (!this.editable(current)) return { denied: 'READ_ONLY' } as const;
+
+      const receipt = await tx.boardFeedEvent.findUnique({
+        where: { id: eventId },
+        select: { requestHash: true },
+      });
+      const card = await tx.boardCard.findFirst({
+        where: {
+          id: cardId,
+          ...(receipt ? {} : { listId }),
+          list: { boardId: context.boardId },
+        },
+        select: { id: true },
+      });
+      if (!card) return { denied: 'HIDDEN' } as const;
+      if (receipt) {
+        if (receipt.requestHash !== requestHash) conflict();
+        return { confirmed: true };
+      }
+      const member = {
+        workspaceId: context.workspaceId,
+        boardId: context.boardId,
+        accountId,
+      };
+      if (
+        assigned &&
+        !(await tx.boardMembership.findFirst({
+          where: {
+            ...member,
+            role: { in: assignmentRoles },
+            workspaceMember: { account: activeAccount },
+          },
+          select: { accountId: true },
+        }))
+      )
+        return { denied: 'READ_ONLY' } as const;
+
+      const where = { cardId, ...member };
+      if (assigned) {
+        const created = await tx.cardAssignment.createMany({
+          data: { id: randomUUID(), ...where },
+          skipDuplicates: true,
+        });
+        if (!created.count) conflict();
+      } else {
+        const deleted = await tx.cardAssignment.deleteMany({ where });
+        if (!deleted.count) conflict();
+      }
+      await tx.board.update({
+        where: { id: context.boardId },
+        select: { id: true },
+        data: { syncRevision: { increment: 1 } },
+      });
+      await recordAssignments(
+        tx,
+        { ...member, actorId: context.accountId },
+        [cardId],
+        assigned,
+        {
+          id: eventId,
+          now: new Date(),
+          requestHash,
+        },
+      );
+      return { confirmed: true };
+    }, 'ReadCommitted');
+    if (result.denied)
+      return this.deny(context, operation, result.denied === 'READ_ONLY');
+    return result;
   }
 
   async schedule(

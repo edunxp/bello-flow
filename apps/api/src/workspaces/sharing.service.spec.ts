@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import { SharingService } from './sharing.service.js';
@@ -12,6 +13,10 @@ const email = 'target@example.test';
 function setup() {
   const tx = {
     $queryRaw: vi.fn(),
+    cardAssignment: {
+      findMany: vi.fn().mockResolvedValue([]),
+      deleteMany: vi.fn(),
+    },
     account: { findFirst: vi.fn().mockResolvedValue({ id: 'recipient' }) },
     workspaceMembership: {
       findFirst: vi.fn().mockResolvedValue({ role: 'ADMIN' }),
@@ -241,5 +246,75 @@ describe('SharingService', () => {
     ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
     expect(tx.boardMembership.update).not.toHaveBeenCalled();
     expect(tx.boardFeedEvent.createMany).not.toHaveBeenCalled();
+  });
+  it('requires the current impact and additional confirmation before removing assignments', async () => {
+    const { sharing, tx } = setup();
+    tx.cardAssignment.findMany.mockResolvedValue([
+      { id: 'first', cardId: 'card' },
+    ]);
+    const first = await sharing.boardMemberImpact(
+      actor,
+      board,
+      change.accountId,
+    );
+    expect(first.count).toBe(1);
+    await expect(
+      sharing.changeBoardMember(actor, board, {
+        ...change,
+        impactToken: first.token,
+      }),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    tx.cardAssignment.findMany.mockResolvedValue([
+      { id: 'second', cardId: 'other' },
+    ]);
+    await expect(
+      sharing.changeBoardMember(actor, board, {
+        ...change,
+        impactToken: first.token,
+        confirmAssignments: true,
+      }),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    const next = await sharing.boardMemberImpact(
+      actor,
+      board,
+      change.accountId,
+    );
+    expect(next.token).not.toBe(first.token);
+    await sharing.changeBoardMember(actor, board, {
+      ...change,
+      impactToken: next.token,
+      confirmAssignments: true,
+    });
+    expect(tx.cardAssignment.deleteMany).toHaveBeenCalledOnce();
+    expect(tx.auditEvent.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          entityId: 'other',
+          sequence: 2,
+          operation: 'CARD_ASSIGNEE_REMOVED',
+        }),
+      ],
+    });
+    expect(tx.boardMembership.update).toHaveBeenCalledOnce();
+  });
+
+  it('hides impact when the account is outside the governed board', async () => {
+    const { sharing, tx } = setup();
+    tx.boardMembership.findUnique.mockResolvedValue(null);
+    await expect(
+      sharing.boardMemberImpact(actor, board, 'foreign'),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    expect(tx.cardAssignment.findMany).not.toHaveBeenCalled();
+  });
+  it('still accepts a membership receipt written before assignments were introduced', async () => {
+    const { sharing, tx } = setup();
+    const requestHash = createHash('sha256')
+      .update(
+        JSON.stringify([change.accountId, change.expectedRole, change.role]),
+      )
+      .digest('hex');
+    tx.boardFeedEvent.findUnique.mockResolvedValue({ requestHash });
+    await sharing.changeBoardMember(actor, board, change);
+    expect(tx.boardMembership.update).not.toHaveBeenCalled();
   });
 });

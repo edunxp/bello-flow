@@ -236,6 +236,8 @@ model BoardMembership {
   board           Board               @relation(fields: [workspaceId, boardId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
   workspaceMember WorkspaceMembership @relation(fields: [workspaceId, accountId], references: [workspaceId, accountId], onDelete: Restrict, onUpdate: Restrict)
 
+  assignments CardAssignment[]
+
   @@id([workspaceId, boardId, accountId])
   @@index([workspaceId, accountId])
   @@map("board_membership")
@@ -319,7 +321,23 @@ model BoardCard {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   list         BoardList @relation(fields: [listId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
+  assignments CardAssignment[]
+
   @@index([listId, createdAt, id])
   @@unique([listId, position])
   @@map("board_card")
+}
+
+model CardAssignment {
+  id          String @id @db.Uuid
+  cardId      String @map("card_id") @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  boardId     String @map("board_id") @db.Uuid
+  accountId   String @map("account_id") @db.Uuid
+  card        BoardCard @relation(fields: [cardId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  member      BoardMembership @relation(fields: [workspaceId, boardId, accountId], references: [workspaceId, boardId, accountId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([cardId, accountId])
+  @@index([workspaceId, boardId, accountId])
+  @@map("card_assignment")
 }

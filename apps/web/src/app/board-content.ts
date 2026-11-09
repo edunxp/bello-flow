@@ -2,6 +2,11 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, effect, inject, input, output, signal } from '@angular/core';
 import { catchError, EMPTY, exhaustMap, firstValueFrom, throwError, timer } from 'rxjs';
 
+interface Assignee {
+  accountId: string;
+  email: string;
+}
+
 interface Card {
   id: string;
   title: string;
@@ -12,6 +17,7 @@ interface Card {
   completedAt: string | null;
   completedById: string | null;
   overdue: boolean;
+  assignees?: Assignee[];
 }
 interface List {
   id: string;
@@ -22,6 +28,7 @@ interface List {
 }
 interface Content {
   editable: boolean;
+  eligibleAssignees?: Assignee[];
   orderRevision: number;
   syncRevision: number;
   today: string;
@@ -135,6 +142,40 @@ interface DragItem {
                     board.timeZone
                   }})
                 </p>
+              }
+              <h5>Responsáveis</h5>
+              <ul>
+                @for (person of card.assignees ?? []; track person.accountId) {
+                  <li>
+                    {{ person.email }}
+                    @if (board.editable) {
+                      <button
+                        type="button"
+                        [disabled]="saving()"
+                        [attr.aria-label]="'Remover responsável ' + person.email"
+                        (click)="changeAssignee(list, card, person.accountId, false)"
+                      >
+                        Remover
+                      </button>
+                    }
+                  </li>
+                } @empty {
+                  <li>Sem responsáveis.</li>
+                }
+              </ul>
+              @if (board.editable && board.eligibleAssignees?.length) {
+                <form (submit)="addAssignee($event, list, card, candidate.value)">
+                  <label [attr.for]="'assignee-' + card.id">Adicionar responsável</label>
+                  <select [id]="'assignee-' + card.id" #candidate required>
+                    <option value="">Escolher participante</option>
+                    @for (person of board.eligibleAssignees; track person.accountId) {
+                      @if (!hasAssignee(card, person.accountId)) {
+                        <option [value]="person.accountId">{{ person.email }}</option>
+                      }
+                    }
+                  </select>
+                  <button [disabled]="saving()">Atribuir</button>
+                </form>
               }
               @if (board.editable) {
                 <button
@@ -432,6 +473,38 @@ export class BoardContent {
       );
     } catch {
       this.message.set('Não foi possível confirmar o movimento. Confira a ordem atualizada.');
+    } finally {
+      this.reload.update((value) => value + 1);
+      this.saving.set(false);
+    }
+  }
+
+  hasAssignee(card: Card, accountId: string) {
+    return card.assignees?.some((person) => person.accountId === accountId) ?? false;
+  }
+
+  addAssignee(event: Event, list: List, card: Card, accountId: string) {
+    event.preventDefault();
+    if (accountId) return this.changeAssignee(list, card, accountId, true);
+    return;
+  }
+
+  async changeAssignee(list: List, card: Card, accountId: string, assigned: boolean) {
+    if (!this.content()?.editable || this.saving()) return;
+    this.saving.set(true);
+    this.message.set('');
+    try {
+      await firstValueFrom(
+        this.http.post(
+          this.path() + '/' + list.id + '/cards/' + card.id + '/assignees',
+          { accountId, assigned, operationId: crypto.randomUUID() },
+          this.options,
+        ),
+      );
+    } catch {
+      this.message.set(
+        'Não foi possível confirmar a atribuição. Confira os responsáveis atualizados.',
+      );
     } finally {
       this.reload.update((value) => value + 1);
       this.saving.set(false);

@@ -385,4 +385,48 @@ describe('BoardContent', () => {
     fixture.detectChanges();
     http.expectOne(path).flush({ ...calendar, editable: true, lists });
   });
+  it('lists assigned participants, filters eligible choices and sends explicit changes', async () => {
+    const { fixture, http, page } = setup();
+    const assigned = { accountId: 'first', email: 'first@example.test' };
+    const candidate = { accountId: 'next', email: 'next@example.test' };
+    const [list] = lists;
+    const card = { ...list.cards[0], assignees: [assigned] };
+    const state = {
+      ...calendar,
+      editable: true,
+      orderRevision: 0,
+      syncRevision: 0,
+      eligibleAssignees: [assigned, candidate],
+      lists: [{ ...list, cards: [card] }],
+    };
+    page.content.set(state);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const select = element.querySelector<HTMLSelectElement>('#assignee-card')!;
+    expect([...select.options].map((option) => option.value)).toEqual(['', 'next']);
+    select.value = 'next';
+    select.form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    const url = path + '/list/cards/card/assignees';
+    const add = http.expectOne(url);
+    expect(add.request.body).toMatchObject({ accountId: 'next', assigned: true });
+    add.flush(null);
+    await Promise.resolve();
+    fixture.detectChanges();
+    http.expectOne(path).flush(state);
+    fixture.detectChanges();
+
+    element
+      .querySelector<HTMLButtonElement>('[aria-label="Remover responsável first@example.test"]')!
+      .click();
+    const remove = http.expectOne(url);
+    expect(remove.request.body).toMatchObject({ accountId: 'first', assigned: false });
+    remove.error(new ProgressEvent('network'));
+    await Promise.resolve();
+    expect(page.message()).toContain('Confira os responsáveis');
+    fixture.detectChanges();
+    http.expectOne(path).flush({ ...state, editable: false });
+    fixture.detectChanges();
+    expect(element.textContent).toContain('first@example.test');
+    expect(element.querySelector('#assignee-card')).toBeNull();
+  });
 });

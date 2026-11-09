@@ -564,6 +564,23 @@ e os endpoints de recuperação permanecem no
   histórico, autorização, mudança de fuso, preservação em movimento,
   repetição e rollback da auditoria ou do feed. Registro anterior ao CI remoto.
 
+## Responsáveis pelos cartões
+
+- **Ciclo:** `work/responsaveis-cartoes`,
+  `BASE_MAIN_SHA=22ecb46f0f854f3c5a4139e3efaa901878b2ccbc`.
+  Recorte BEL-021, incluindo impacto confirmado e remoção transacional das
+  atribuições no rebaixamento para Observador e na remoção do quadro.
+- **Privilégios autorizados:** SELECT, INSERT e DELETE apenas na nova tabela
+  `card_assignment` para `bello_runtime`.
+  O [contrato](arquitetura/persistencia-e-auditoria.md#responsáveis-pelos-cartões)
+  descreve elegibilidade, concorrência e rastreabilidade.
+
+- **Validação local — VERIFICADO:** gate completo e 16 cenários Docker
+  aprovados. A validação conferiu autoatribuição, permissões, mudança do
+  conjunto com a mesma contagem, confirmação adicional, repetição,
+  remoção transacional e preservação dos vínculos em falhas de auditoria
+  ou feed. Registro anterior ao CI remoto.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,

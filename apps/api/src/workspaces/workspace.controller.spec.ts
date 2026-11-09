@@ -29,9 +29,10 @@ function setup() {
     write: vi.fn(),
     revision: vi.fn(),
     schedule: vi.fn(),
+    changeAssignee: vi.fn(),
     move: vi.fn(),
   };
-  const sharing = { changeBoardMember: vi.fn() };
+  const sharing = { changeBoardMember: vi.fn(), boardMemberImpact: vi.fn() };
   const controller = new WorkspaceController(
     workspaces as unknown as WorkspaceService,
     {
@@ -350,5 +351,59 @@ describe('schedule HTTP contract', () => {
         controller.scheduleCard(request({ ...body, operationId: id }), params),
       ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     }
+  });
+});
+
+describe('assignee HTTP contract', () => {
+  it('validates assignment flags and impact tokens', async () => {
+    const { controller, request, content, sharing } = setup();
+    const params = {
+      workspaceId: id,
+      boardId: id,
+      listId: id,
+      cardId: id,
+      accountId: id,
+    };
+    const body = { accountId: id, assigned: true, operationId: id };
+    await controller.changeAssignee(request(body), params);
+    expect(content.changeAssignee).toHaveBeenCalledWith(
+      { workspaceId: id, boardId: id, accountId: id },
+      id,
+      id,
+      id,
+      true,
+      id,
+    );
+    await controller.assignmentImpact(request(), params);
+    expect(sharing.boardMemberImpact).toHaveBeenCalledOnce();
+    await expect(
+      controller.changeAssignee(request({ ...body, assigned: 'yes' }), params),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    const change = {
+      accountId: id,
+      role: null,
+      expectedRole: 'MEMBER',
+      operationId: id,
+    };
+    for (const invalid of [
+      { impactToken: 4 },
+      { impactToken: 'bad' },
+      { confirmAssignments: 'true' },
+    ]) {
+      await expect(
+        controller.changeBoardMember(
+          request({ ...change, ...invalid }),
+          params,
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    }
+    await controller.changeBoardMember(
+      request({
+        ...change,
+        impactToken: 'a'.repeat(64),
+        confirmAssignments: true,
+      }),
+      params,
+    );
   });
 });

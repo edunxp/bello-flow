@@ -1692,7 +1692,10 @@ try {
         const board = workspace + "/boards/" + boardId;
         const members = board + "/members";
         const lists = board + "/lists";
-        await create(lists, { name: "Entrega" });
+        const list = await create(lists, { name: "Entrega" });
+        const cards = lists + "/" + list + "/cards";
+        const cardA = await create(cards, { title: "Cartão um" });
+        const cardB = await create(cards, { title: "Cartão dois" });
         for (const [account, role] of [
           [member, "MEMBER"],
           [deputy, "ADMIN"],
@@ -1729,6 +1732,67 @@ try {
             await write(participant, change(member, "MEMBER", "ADMIN"))
           ).status() === 403,
         );
+        const assign = (
+          tab,
+          card,
+          account,
+          assigned = true,
+          operationId = randomUUID(),
+        ) =>
+          request(tab, cards + "/" + card + "/assignees", {
+            accountId: account.id,
+            assigned,
+            operationId,
+          });
+        const impact = async () =>
+          await (
+            await get(admin, members + "/" + member.id + "/assignment-impact")
+          ).json();
+        await open(admin, board);
+        const article = admin.page.getByRole("article").filter({
+          has: admin.page.getByRole("heading", { name: "Cartão um" }),
+        });
+        await article
+          .getByLabel("Adicionar responsável")
+          .selectOption(owner.id);
+        await article
+          .getByRole("button", { name: "Atribuir", exact: true })
+          .click();
+        await expect(
+          article.getByRole("button", {
+            name: "Remover responsável " + owner.email,
+          }),
+        ).toBeVisible();
+        check((await assign(participant, cardA, member)).status() === 204);
+        const oldImpact = await impact();
+        check(
+          oldImpact.count === 1 &&
+            Object.keys(oldImpact).sort().join(",") === "count,token",
+        );
+        check((await assign(admin, cardA, member, false)).status() === 204);
+        check((await assign(admin, cardB, member)).status() === 204);
+        const newImpact = await impact();
+        check(
+          newImpact.count === oldImpact.count &&
+            newImpact.token !== oldImpact.token,
+        );
+        check(
+          (
+            await write(admin, {
+              ...change(member, "MEMBER", "OBSERVER"),
+              impactToken: oldImpact.token,
+              confirmAssignments: true,
+            })
+          ).status() === 409,
+        );
+        check(
+          (
+            await write(admin, {
+              ...change(member, "MEMBER", "OBSERVER"),
+              impactToken: newImpact.token,
+            })
+          ).status() === 409,
+        );
         await open(participant, board);
         await expect(
           participant.page.getByRole("button", { name: "Criar lista" }),
@@ -1743,6 +1807,14 @@ try {
             .filter({ hasText: member.email })
             .getByRole("button", { name: "Revisar alteração" })
             .click();
+          const confirmImpact = admin.page.getByRole("checkbox", {
+            name: "Confirmo a remoção das atribuições",
+          });
+          await expect(confirmImpact).toBeVisible();
+          await expect(
+            admin.page.getByRole("button", { name: "Confirmar alteração" }),
+          ).toBeDisabled();
+          await confirmImpact.check();
           await admin.page
             .getByRole("button", { name: "Confirmar alteração" })
             .click();
@@ -1768,7 +1840,39 @@ try {
             409,
         );
 
-        const remove = change(member, "OBSERVER", null);
+        check((await impact()).count === 0);
+        check((await assign(admin, cardA, member)).status() === 403);
+        check((await assign(participant, cardB, owner)).status() === 403);
+        const readAssignees = async () =>
+          (await (await get(admin, lists)).json()).lists
+            .flatMap(({ cards }) => cards)
+            .flatMap(({ assignees }) => assignees);
+        check(
+          (await readAssignees())
+            .map(({ accountId }) => accountId)
+            .join(",") === owner.id,
+        );
+        check(
+          (
+            await write(admin, change(member, "OBSERVER", "MEMBER"))
+          ).status() === 204,
+        );
+        check((await impact()).count === 0);
+        const assignmentId = randomUUID();
+        check(
+          (await assign(admin, cardA, member, true, assignmentId)).status() ===
+            204,
+        );
+        check(
+          (await assign(admin, cardA, member, true, assignmentId)).status() ===
+            204,
+        );
+        check((await readAssignees()).length === 2);
+        const remove = {
+          ...change(member, "MEMBER", null),
+          impactToken: (await impact()).token,
+          confirmAssignments: true,
+        };
         for (const table of ["audit_event", "board_feed_event"]) {
           const revision = await (
             await get(participant, lists + "/revision")
@@ -1785,11 +1889,13 @@ try {
               ) === JSON.stringify(revision),
             );
             check((await get(participant, lists)).status() === 200);
+            check((await impact()).count === 1);
           } finally {
             await migrator.query(`DROP TRIGGER e2e_reject_member_change ON public.${table};
             DROP FUNCTION public.e2e_reject_member_change();`);
           }
         }
+        await open(admin, members);
         // Drop the successful response and repeat the exact operation.
         let original;
         await admin.page.route(
@@ -1832,9 +1938,25 @@ try {
           [boardId],
         );
         check(
-          history.rows.length === 2 &&
-            history.rows.every(({ total }) => total === 1),
+          history.rows.find(
+            ({ operation }) => operation === "BOARD_MEMBER_ROLE_CHANGED",
+          ).total === 2,
         );
+        check(
+          history.rows.find(
+            ({ operation }) => operation === "BOARD_MEMBER_REMOVED",
+          ).total === 1,
+        );
+        check(
+          (await readAssignees())
+            .map(({ accountId }) => accountId)
+            .join(",") === owner.id,
+        );
+        const assignmentHistory = await migrator.query(
+          "SELECT count(*)::int AS n FROM public.audit_event WHERE operation='CARD_ASSIGNEE_REMOVED' AND before_data->>'accountId'=$1",
+          [member.id],
+        );
+        check(assignmentHistory.rows[0].n === 3);
 
         await migrator.query("BEGIN");
         let competing;

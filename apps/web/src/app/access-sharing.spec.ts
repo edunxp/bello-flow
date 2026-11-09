@@ -127,8 +127,17 @@ describe('AccessSharing', () => {
     const select = element.querySelector<HTMLSelectElement>('#change-target')!;
     select.value = 'OBSERVER';
     select.form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    http
+      .expectOne(boardPath + '/target/assignment-impact')
+      .flush({ count: 2, token: 'a'.repeat(64) });
+    await Promise.resolve();
     fixture.detectChanges();
     expect(element.textContent).toContain('para Observador');
+    expect(element.textContent).toContain('Atribuições que serão removidas: 2');
+    const checkbox = element.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
     const confirm = () =>
       [...element.querySelectorAll('button')]
         .find((button) => button.textContent?.trim() === 'Confirmar alteração')!
@@ -161,7 +170,11 @@ describe('AccessSharing', () => {
     http.expectOne(boardPath).flush({ members: [member], boards: [] });
     page.prepareChange(new Event('submit'), member, '');
     expect(page.change()).toBeNull();
-    page.prepareChange(new Event('submit'), member, 'REMOVE');
+    let review = page.prepareChange(new Event('submit'), member, 'REMOVE');
+    http
+      .expectOne(boardPath + '/target/assignment-impact')
+      .flush({ count: 0, token: 'b'.repeat(64) });
+    await review;
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('será revogado');
     const cancelled = [...(fixture.nativeElement as HTMLElement).querySelectorAll('button')].find(
@@ -169,7 +182,11 @@ describe('AccessSharing', () => {
     )!;
     cancelled.click();
     expect(page.change()).toBeNull();
-    page.prepareChange(new Event('submit'), member, 'REMOVE');
+    review = page.prepareChange(new Event('submit'), member, 'REMOVE');
+    http
+      .expectOne(boardPath + '/target/assignment-impact')
+      .flush({ count: 0, token: 'b'.repeat(64) });
+    await review;
     const result = page.confirmChange();
     const request = http.expectOne(boardPath + '/change');
     expect(request.request.body.role).toBeNull();

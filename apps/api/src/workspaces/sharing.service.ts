@@ -4,6 +4,12 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { HTTP_ERROR_CODE, HttpContractError } from '../http/http-errors.js';
 import { normalizeAccountEmail } from '../identity/account-email.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  activeAccount,
+  assignmentImpact,
+  lockBoardMembers,
+  recordAssignments,
+} from './card-assignments.js';
 import { creationId } from './workspace.service.js';
 
 export type SharingScope = { workspaceId: string; boardId?: string };
@@ -14,12 +20,10 @@ export interface BoardMemberChange {
   expectedRole: BoardRole;
   role: BoardRole | null;
   operationId: string;
+  impactToken?: string;
+  confirmAssignments?: boolean;
 }
-const eligible = {
-  status: 'ACTIVE',
-  emailVerifiedAt: { not: null },
-  deactivatedAt: null,
-};
+const eligible = activeAccount;
 
 @Injectable()
 export class SharingService {
@@ -110,7 +114,7 @@ export class SharingService {
       await this.db.$transaction(async (tx) => {
         await this.authorize(tx, actorId, scope);
         if (boardId) {
-          await this.lockBoardMembers(tx, boardId);
+          await lockBoardMembers(tx, boardId);
           await this.authorize(tx, actorId, scope);
         }
         const recipient = await tx.account.findFirst({
@@ -180,6 +184,11 @@ export class SharingService {
           },
         });
         if (boardId) {
+          await tx.board.update({
+            where: { id: boardId },
+            select: { id: true },
+            data: { syncRevision: { increment: 1 } },
+          });
           await tx.boardFeedEvent.createMany({
             data: {
               id: randomUUID(),
@@ -198,6 +207,37 @@ export class SharingService {
         actorId,
         boardId ? 'INCLUDE_BOARD_MEMBER' : 'INCLUDE_WORKSPACE_MEMBER',
       );
+    }
+  }
+
+  async boardMemberImpact(
+    actorId: string,
+    scope: BoardScope,
+    accountId: string,
+  ) {
+    try {
+      return await this.db.$transaction(
+        async (tx) => {
+          await this.authorize(tx, actorId, scope);
+          const where = {
+            workspaceId: scope.workspaceId,
+            boardId: scope.boardId,
+            accountId,
+          };
+          if (
+            !(await tx.boardMembership.findUnique({
+              where: { workspaceId_boardId_accountId: where },
+              select: { accountId: true },
+            }))
+          )
+            throw new HttpContractError(HTTP_ERROR_CODE.REQUEST_FORBIDDEN);
+          const { assignments, token } = await assignmentImpact(tx, where);
+          return { count: assignments.length, token };
+        },
+        { isolationLevel: 'RepeatableRead' },
+      );
+    } catch (error) {
+      return this.auditDenial(error, actorId, 'READ_BOARD_MEMBER_IMPACT');
     }
   }
 
@@ -220,14 +260,22 @@ export class SharingService {
     );
     const requestHash = createHash('sha256')
       .update(
-        JSON.stringify([change.accountId, change.expectedRole, change.role]),
+        JSON.stringify([
+          change.accountId,
+          change.expectedRole,
+          change.role,
+          ...(change.impactToken === undefined &&
+          change.confirmAssignments === undefined
+            ? []
+            : [change.impactToken, change.confirmAssignments]),
+        ]),
       )
       .digest('hex');
     try {
       await this.db.$transaction(
         async (tx) => {
           await this.authorize(tx, actorId, scope);
-          await this.lockBoardMembers(tx, boardId);
+          await lockBoardMembers(tx, boardId);
           await this.authorize(tx, actorId, scope);
           const receipt = await tx.boardFeedEvent.findUnique({
             where: { id },
@@ -264,6 +312,28 @@ export class SharingService {
           )
             this.conflict();
 
+          const now = new Date();
+          if (change.role === null || change.role === 'OBSERVER') {
+            const { assignments, token } = await assignmentImpact(tx, member);
+            if (
+              (change.impactToken !== undefined &&
+                change.impactToken !== token) ||
+              (assignments.length &&
+                (change.impactToken !== token || !change.confirmAssignments))
+            )
+              this.conflict();
+            if (assignments.length) {
+              await tx.cardAssignment.deleteMany({ where: member });
+              await recordAssignments(
+                tx,
+                { ...member, actorId },
+                assignments.map(({ cardId }) => cardId),
+                false,
+                { id, now, automatic: true },
+              );
+            }
+          }
+
           if (change.role === null) {
             await tx.boardMembership.delete({
               where,
@@ -283,7 +353,6 @@ export class SharingService {
             });
           }
 
-          const now = new Date();
           if (change.role !== null)
             await this.notify(
               tx,
@@ -339,17 +408,6 @@ export class SharingService {
 
   private conflict(): never {
     throw new HttpContractError(HTTP_ERROR_CODE.OPERATION_CONFLICT);
-  }
-
-  private async lockBoardMembers(
-    tx: Prisma.TransactionClient,
-    boardId: string,
-  ) {
-    await tx.$queryRaw`
-      SELECT count(*) FROM (
-        SELECT pg_advisory_xact_lock(hashtextextended('bello-members:' || ${boardId}, 0))
-      ) locked
-    `;
   }
 
   private async notify(

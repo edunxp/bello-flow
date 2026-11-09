@@ -20,6 +20,14 @@ describe('BoardContentService', () => {
     };
     const tx = {
       $queryRaw: vi.fn(),
+      boardMembership: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue({ accountId: 'actor' }),
+      },
+      cardAssignment: {
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       board: { findFirst: vi.fn().mockResolvedValue(board), update: vi.fn() },
       boardList: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -60,6 +68,7 @@ describe('BoardContentService', () => {
       const { service } = setup(role, archived);
       await expect(service.read(context)).resolves.toEqual({
         editable,
+        eligibleAssignees: [],
         orderRevision: 0,
         syncRevision: 0,
         timeZone: 'Etc/UTC',
@@ -428,6 +437,7 @@ describe('BoardContentService', () => {
             {
               ...unscheduled,
               id: 'card',
+              assignments: [],
               dueDate: new Date('2026-11-09T00:00:00.000Z'),
             },
           ],
@@ -441,5 +451,46 @@ describe('BoardContentService', () => {
       lists: [{ cards: [{ dueDate: '2026-11-09', overdue: true }] }],
     });
     expect(tx.$queryRaw).toHaveBeenCalledOnce();
+  });
+  it('adds and removes assignments with receipts and validates the current target role', async () => {
+    const { service, tx } = setup();
+    tx.boardCard.findFirst.mockResolvedValue({ id: 'card' });
+    const assign = (assigned: boolean, id: string) =>
+      service.changeAssignee(context, 'list', 'card', 'actor', assigned, id);
+    await assign(true, 'add');
+    const { requestHash } =
+      tx.boardFeedEvent.createMany.mock.calls[0]![0].data[0];
+    tx.boardFeedEvent.findUnique.mockResolvedValue({ requestHash });
+    await assign(true, 'add');
+    await expect(assign(false, 'add')).rejects.toMatchObject({
+      code: 'OPERATION_CONFLICT',
+    });
+    tx.boardFeedEvent.findUnique.mockResolvedValue(null);
+    await assign(false, 'remove');
+    tx.boardMembership.findFirst.mockResolvedValue(null);
+    await expect(assign(true, 'denied')).rejects.toMatchObject({
+      code: 'REQUEST_FORBIDDEN',
+    });
+    expect(tx.cardAssignment.createMany).toHaveBeenCalledOnce();
+    expect(tx.cardAssignment.deleteMany).toHaveBeenCalledOnce();
+  });
+
+  it('denies assignment to a hidden card or by an observer', async () => {
+    const { service, tx } = setup('OBSERVER');
+    const assign = () =>
+      service.changeAssignee(context, 'list', 'card', 'actor', true, 'add');
+    await expect(assign()).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    tx.board.findFirst.mockResolvedValue({
+      archived: false,
+      members: [{ role: 'ADMIN' }],
+    });
+    await expect(assign()).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    tx.board.findFirst.mockResolvedValue(null);
+    await expect(assign()).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    expect(tx.cardAssignment.createMany).not.toHaveBeenCalled();
   });
 });

@@ -11,6 +11,11 @@ interface Member {
   role: string;
 }
 
+interface Impact {
+  count: number;
+  token: string;
+}
+
 interface Participants {
   members: Member[];
   boards: { id: string; name: string }[];
@@ -81,7 +86,7 @@ const options = { headers: { 'X-Bello-Flow-Request': '1' }, timeout: 15000 };
                         }
                         <option value="REMOVE">Remover do quadro</option>
                       </select>
-                      <button type="submit">Revisar alteração</button>
+                      <button type="submit" [disabled]="saving()">Revisar alteração</button>
                     </form>
                   }
                 </li>
@@ -112,13 +117,28 @@ const options = { headers: { 'X-Bello-Flow-Request': '1' }, timeout: 15000 };
                   {{ roleName(selection.member.role) }} para {{ roleName(selection.role) }}?
                 </p>
               }
-              @if (selection.role === 'OBSERVER') {
+              @if (selection.impact; as impact) {
                 <p>
-                  O papel Observador permite apenas consulta. Nenhuma atribuição de cartão será
-                  removida.
+                  Atribuições que serão removidas: {{ impact.count }}. Os cartões e o histórico
+                  serão preservados.
                 </p>
+                @if (impact.count > 0) {
+                  <label>
+                    <input
+                      type="checkbox"
+                      [checked]="confirmAssignments()"
+                      #confirmImpact
+                      (change)="confirmAssignments.set(confirmImpact.checked)"
+                    />
+                    Confirmo a remoção das atribuições
+                  </label>
+                }
               }
-              <button type="button" [disabled]="saving()" (click)="confirmChange()">
+              <button
+                type="button"
+                [disabled]="saving() || (!!selection.impact?.count && !confirmAssignments())"
+                (click)="confirmChange()"
+              >
                 Confirmar alteração
               </button>
               <button type="button" [disabled]="saving()" (click)="change.set(null)">
@@ -164,9 +184,13 @@ export class AccessSharing {
   readonly loaded = signal(false);
   readonly pending = signal<{ email: string; role: string } | null>(null);
   readonly roles = ['MEMBER', 'ADMIN', 'OBSERVER'];
-  readonly change = signal<{ member: Member; role: string | null; operationId: string } | null>(
-    null,
-  );
+  readonly change = signal<{
+    member: Member;
+    role: string | null;
+    operationId: string;
+    impact?: Impact;
+  } | null>(null);
+  readonly confirmAssignments = signal(false);
   readonly message = signal('');
   readonly saving = signal(false);
 
@@ -223,20 +247,46 @@ export class AccessSharing {
     this.pending.set({ email: email.trim(), role });
   }
 
-  prepareChange(event: Event, member: Member, choice: string) {
+  async prepareChange(event: Event, member: Member, choice: string) {
     event.preventDefault();
-    if (!member.accountId || (choice !== 'REMOVE' && !this.roles.includes(choice))) return;
-    this.change.set({
-      member,
-      role: choice === 'REMOVE' ? null : choice,
-      operationId: crypto.randomUUID(),
-    });
+    if (this.saving() || !member.accountId || (choice !== 'REMOVE' && !this.roles.includes(choice)))
+      return;
+    this.confirmAssignments.set(false);
+    const role = choice === 'REMOVE' ? null : choice;
+    const operationId = crypto.randomUUID();
+    if (role !== null && role !== 'OBSERVER') {
+      this.change.set({ member, role, operationId });
+      return;
+    }
+
+    const path = this.path();
+    const identity = this.session.identity();
+    const current = () => path === this.path() && identity === this.session.identity();
+    this.saving.set(true);
+    this.message.set('');
+    try {
+      const impact = await firstValueFrom(
+        this.http.get<Impact>(path + '/' + member.accountId + '/assignment-impact', options),
+      );
+      if (current()) this.change.set({ member, role, operationId, impact });
+    } catch {
+      if (current())
+        this.message.set('Não foi possível consultar o impacto. Revise a alteração novamente.');
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   async confirmChange() {
     const change = this.change();
     const identity = this.session.identity();
-    if (!change || this.saving() || !identity) return;
+    if (
+      !change ||
+      this.saving() ||
+      !identity ||
+      (change.impact?.count && !this.confirmAssignments())
+    )
+      return;
     const path = this.path();
     const current = () => path === this.path() && identity === this.session.identity();
     this.saving.set(true);
@@ -250,6 +300,8 @@ export class AccessSharing {
             expectedRole: change.member.role,
             role: change.role,
             operationId: change.operationId,
+            impactToken: change.impact?.token,
+            confirmAssignments: this.confirmAssignments(),
           },
           options,
         ),
@@ -264,7 +316,7 @@ export class AccessSharing {
         this.change.set(null);
         this.message.set(
           error.status === 409
-            ? 'A alteração não é mais válida ou deixaria o quadro sem Administrador ativo.'
+            ? 'O impacto ou o acesso mudou, ou a alteração deixaria o quadro sem Administrador ativo. Revise novamente.'
             : 'A alteração está indisponível para esta conta.',
         );
         await this.refreshParticipants(path, current);

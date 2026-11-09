@@ -156,6 +156,19 @@ export class WorkspaceController {
     );
   }
 
+  @Get(':workspaceId/boards/:boardId/members/:accountId/assignment-impact')
+  async assignmentImpact(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const context = await this.contentContext(request, params);
+    return this.sharing.boardMemberImpact(
+      context.accountId,
+      context,
+      identifier(params.accountId),
+    );
+  }
+
   @Post(':workspaceId/boards/:boardId/members/change')
   @HttpCode(204)
   async changeBoardMember(
@@ -169,10 +182,24 @@ export class WorkspaceController {
         invalid();
       return value;
     };
+    const impactToken = body?.impactToken;
+    const confirmAssignments = body?.confirmAssignments;
+    if (
+      impactToken !== undefined &&
+      (typeof impactToken !== 'string' || !/^[0-9a-f]{64}$/u.test(impactToken))
+    )
+      invalid();
+    if (
+      confirmAssignments !== undefined &&
+      typeof confirmAssignments !== 'boolean'
+    )
+      invalid();
     await this.sharing.changeBoardMember(context.accountId, context, {
       accountId: identifier(body?.accountId),
       expectedRole: role(body?.expectedRole),
       role: body?.role === null ? null : role(body?.role),
+      impactToken,
+      confirmAssignments,
       operationId: identifier(body?.operationId),
     });
   }
@@ -293,6 +320,25 @@ export class WorkspaceController {
           params.listId === undefined ? undefined : identifier(params.listId),
       },
       params.listId === undefined ? identifier(body?.operationId) : '',
+    );
+  }
+
+  @Post(':workspaceId/boards/:boardId/lists/:listId/cards/:cardId/assignees')
+  @HttpCode(204)
+  async changeAssignee(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const context = await this.contentContext(request, params, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    if (typeof body?.assigned !== 'boolean') invalid();
+    await this.content.changeAssignee(
+      context,
+      identifier(params.listId),
+      identifier(params.cardId),
+      identifier(body.accountId),
+      body.assigned,
+      identifier(body.operationId),
     );
   }
 

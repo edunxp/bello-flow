@@ -1283,3 +1283,27 @@ anterior na auditoria e mantém as datas. Mover o cartão preserva esses campos.
 A alteração confirmada grava dados, revisão do quadro, auditoria e feed na
 mesma transação. O registro no feed permite reconciliar o mesmo pedido,
 inclusive após movimento dentro do quadro enquanto o ator conserva acesso.
+
+## Responsáveis pelos cartões
+
+O cartão pode ter zero ou vários responsáveis. Administrador e Membro do
+quadro podem atribuir ou remover participantes ativos e verificados com um
+desses mesmos papéis, inclusive a si próprios. Observadores consultam os
+responsáveis atuais. Apenas editores recebem a lista de candidatos elegíveis.
+A associação é única por cartão e conta e referencia o vínculo no quadro.
+
+Atribuições e mudanças de participação no mesmo quadro usam um bloqueio
+transacional comum. Antes de remover ou rebaixar um participante para
+Observador, a governança consulta a quantidade e um token do conjunto atual
+de atribuições, sem revelar cartões. Se houver impacto, a interface exige uma
+confirmação adicional. A API revalida o conjunto exato sob o bloqueio, inclusive
+quando a quantidade permanece igual. A mudança de papel ou remoção e as
+revogações das atribuições confirmam na mesma transação com auditoria, feed
+e revisão do quadro. Promoção posterior não restaura atribuições.
+
+O endpoint `POST /api/workspaces/{workspaceId}/boards/{boardId}/lists/{listId}/cards/{cardId}/assignees`
+recebe `accountId`, `assigned` e `operationId`. A governança usa
+`GET .../members/{accountId}/assignment-impact` e envia `impactToken` e
+`confirmAssignments` na alteração confirmada. A saída ou remoção de um
+Workspace, quando implementada, precisa revogar os vínculos e atribuições
+afetados com o mesmo protocolo, na mesma transação.
