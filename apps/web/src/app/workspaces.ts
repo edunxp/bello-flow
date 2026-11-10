@@ -12,6 +12,17 @@ interface Resource {
   description: string | null;
 }
 
+interface BoardSummary {
+  id: string;
+  name: string;
+  archived: boolean;
+}
+
+interface BoardLifecycle {
+  archivedBoards: BoardSummary[];
+  managedBoards: BoardSummary[];
+}
+
 @Component({
   selector: 'app-workspaces',
   imports: [RouterLink, BoardContent],
@@ -66,6 +77,38 @@ interface Resource {
                 }
               }
             </ul>
+            @if (lifecycle(); as lifecycle) {
+              @if (lifecycle.archivedBoards.length) {
+                <h2>Quadros arquivados</h2>
+                <ul>
+                  @for (archived of lifecycle.archivedBoards; track archived.id) {
+                    <li>
+                      <a [routerLink]="resourceLink(archived.id)">{{ archived.name }}</a>
+                    </li>
+                  }
+                </ul>
+              }
+              @if (lifecycle.managedBoards.length) {
+                <h2>Governança dos quadros</h2>
+                <ul>
+                  @for (managed of lifecycle.managedBoards; track managed.id) {
+                    <li>
+                      {{ managed.name }}
+                      @if (managed.archived) {
+                        <span>Arquivado</span>
+                      }
+                      <button
+                        type="button"
+                        [disabled]="saving()"
+                        (click)="archiveManagedBoard(managed)"
+                      >
+                        {{ managed.archived ? 'Restaurar quadro' : 'Arquivar quadro' }}
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+            }
             @if (!loading() && accessible()) {
               <form (submit)="create($event, name, description, zone)">
                 <label for="resource-name">Nome</label>
@@ -102,6 +145,7 @@ export class Workspaces {
   private readonly params = toSignal(inject(ActivatedRoute).paramMap, { requireSync: true });
   readonly resources = signal<Resource[]>([]);
   readonly board = signal<Resource | null>(null);
+  readonly lifecycle = signal<BoardLifecycle | null>(null);
   readonly accessible = signal(false);
   readonly loading = signal(false);
   readonly saving = signal(false);
@@ -116,11 +160,13 @@ export class Workspaces {
       const authenticated = this.session.state() === 'authenticated' && this.session.identity();
       this.resources.set([]);
       this.board.set(null);
+      this.lifecycle.set(null);
       this.accessible.set(false);
       this.message.set('');
       if (!authenticated) return;
       this.loading.set(true);
       const detail = !!this.boardId();
+      const showLifecycle = !!this.workspaceId() && !detail;
       const load = this.http.get<Resource | Resource[]>(path, this.options).subscribe({
         next: (response) => {
           if (Array.isArray(response)) this.resources.set(response);
@@ -133,7 +179,16 @@ export class Workspaces {
           this.loading.set(false);
         },
       });
-      onCleanup(() => load.unsubscribe());
+      const lifecycle = showLifecycle
+        ? this.http.get<BoardLifecycle>(path + '/lifecycle', this.options).subscribe({
+            next: (result) => this.lifecycle.set(result),
+            error: () => this.lifecycle.set(null),
+          })
+        : null;
+      onCleanup(() => {
+        load.unsubscribe();
+        lifecycle?.unsubscribe();
+      });
     });
   }
 
@@ -180,6 +235,46 @@ export class Workspaces {
       (workspaceId ? '/' + workspaceId + '/boards' : '') +
       (boardId ? '/' + boardId : '')
     );
+  }
+
+  async archiveManagedBoard(board: BoardSummary) {
+    const identity = this.session.identity();
+    if (!identity || this.saving()) return;
+    const path = this.path();
+    const current = () => path === this.path() && identity === this.session.identity();
+    const archived = !board.archived;
+    this.saving.set(true);
+    this.message.set('');
+    try {
+      await firstValueFrom(
+        this.http.post(
+          path + '/' + board.id + '/archive',
+          {
+            archived,
+            operationId: crypto.randomUUID(),
+          },
+          this.options,
+        ),
+      );
+      if (current()) this.message.set(archived ? 'Quadro arquivado.' : 'Quadro restaurado.');
+    } catch {
+      if (current())
+        this.message.set(
+          'Não foi possível confirmar a alteração. Confira o estado atualizado do quadro.',
+        );
+    } finally {
+      if (current()) {
+        try {
+          const result = await firstValueFrom(
+            this.http.get<BoardLifecycle>(path + '/lifecycle', this.options),
+          );
+          if (current()) this.lifecycle.set(result);
+        } catch {
+          if (current()) this.lifecycle.set(null);
+        }
+      }
+      this.saving.set(false);
+    }
   }
 
   async create(

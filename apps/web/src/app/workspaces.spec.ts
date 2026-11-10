@@ -63,6 +63,7 @@ describe('Workspaces', () => {
     const { http, page, fixture } = setup({ workspaceId: workspace.id });
     const path = base + '/workspace/boards';
     http.expectOne(path).flush([board]);
+    http.expectOne(path + '/lifecycle').flush({ archivedBoards: [], managedBoards: [] });
     expect(page.resourceLink(board.id)).toEqual(['/workspaces', workspace.id, 'boards', board.id]);
     fixture.detectChanges();
     const element = fixture.nativeElement;
@@ -82,6 +83,70 @@ describe('Workspaces', () => {
     await pending;
     expect(page.message()).toContain('Não foi possível criar');
     expect(page.saving()).toBe(false);
+  });
+
+  it('shows archived participants separately and manages private boards without content links', async () => {
+    const { http, page, fixture } = setup({ workspaceId: workspace.id });
+    const path = base + '/workspace/boards';
+    const archived = { id: 'archive', name: 'Meu arquivo', archived: true };
+    const managed = { id: 'managed', name: 'Quadro administrado', archived: false };
+    http.expectOne(path).flush([]);
+    http
+      .expectOne(path + '/lifecycle')
+      .flush({ archivedBoards: [archived], managedBoards: [managed] });
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector('a[href$="/archive"]')?.textContent).toBe(archived.name);
+    expect(element.querySelector('a[href$="/managed"]')).toBeNull();
+    const pending = page.archiveManagedBoard(managed);
+    const request = http.expectOne({ method: 'POST', url: path + '/managed/archive' });
+    expect(request.request.body.archived).toBe(true);
+    request.flush(null);
+    await Promise.resolve();
+    http
+      .expectOne(path + '/lifecycle')
+      .flush({ archivedBoards: [archived], managedBoards: [{ ...managed, archived: true }] });
+    await pending;
+    fixture.detectChanges();
+    expect(element.textContent).toContain('Restaurar quadro');
+    expect(page.message()).toBe('Quadro arquivado.');
+  });
+
+  it('refreshes governance after an uncertain response and clears it if access is lost', async () => {
+    const { http, page } = setup({ workspaceId: workspace.id });
+    const path = base + '/workspace/boards';
+    const managed = { id: 'managed', name: 'Quadro administrado', archived: true };
+    http.expectOne(path).flush([]);
+    http.expectOne(path + '/lifecycle').flush({ archivedBoards: [], managedBoards: [managed] });
+    const pending = page.archiveManagedBoard(managed);
+    await page.archiveManagedBoard(managed);
+    const request = http.expectOne({ method: 'POST', url: path + '/managed/archive' });
+    expect(request.request.body.archived).toBe(false);
+    request.error(new ProgressEvent('network'));
+    await Promise.resolve();
+    http.expectOne(path + '/lifecycle').flush(null, { status: 403, statusText: 'Forbidden' });
+    await pending;
+    expect(page.lifecycle()).toBeNull();
+    expect(page.message()).toContain('Não foi possível confirmar');
+  });
+
+  it('keeps a delayed governance response out of the next Workspace', async () => {
+    const { fixture, http, page, params } = setup({ workspaceId: workspace.id });
+    const path = base + '/workspace/boards';
+    const managed = { id: 'managed', name: 'Quadro administrado', archived: true };
+    http.expectOne(path).flush([]);
+    http.expectOne(path + '/lifecycle').flush({ archivedBoards: [], managedBoards: [managed] });
+    const pending = page.archiveManagedBoard(managed);
+    const request = http.expectOne({ method: 'POST', url: path + '/managed/archive' });
+    params.next(convertToParamMap({ workspaceId: 'other' }));
+    fixture.detectChanges();
+    const other = base + '/other/boards';
+    http.expectOne(other).flush([]);
+    http.expectOne(other + '/lifecycle').flush({ archivedBoards: [], managedBoards: [] });
+    request.flush(null);
+    await pending;
+    http.expectNone(path + '/lifecycle');
+    expect(page.message()).toBe('');
   });
 
   it('reuses the operation after an uncertain response and keeps one list item', async () => {

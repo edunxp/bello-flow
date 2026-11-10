@@ -299,6 +299,35 @@ export class WorkspaceController {
     );
   }
 
+  @Get(':workspaceId/boards/lifecycle')
+  async boardLifecycle(
+    @Req() request: Request,
+    @Param('workspaceId') workspaceId: string,
+  ) {
+    return this.workspaces.boardLifecycle(
+      await this.account(request),
+      identifier(workspaceId),
+    );
+  }
+
+  @Post(':workspaceId/boards/:boardId/archive')
+  @HttpCode(204)
+  async archiveBoard(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const accountId = await this.account(request, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    if (typeof body?.archived !== 'boolean') invalid();
+    await this.workspaces.archiveBoard(
+      accountId,
+      identifier(params.workspaceId),
+      identifier(params.boardId),
+      body.archived,
+      identifier(body.operationId),
+    );
+  }
+
   @Get(':workspaceId/boards/:boardId')
   async board(
     @Req() request: Request,

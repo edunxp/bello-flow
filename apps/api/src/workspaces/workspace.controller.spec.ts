@@ -23,6 +23,8 @@ function setup() {
     changeLabel: vi.fn(),
     create: vi.fn(),
     listBoards: vi.fn(),
+    boardLifecycle: vi.fn(),
+    archiveBoard: vi.fn(),
     board: vi.fn(),
     createBoard: vi.fn(),
   };
@@ -563,6 +565,24 @@ it('validates list archive and the optional destination for restoring a card', a
     controller.archiveCard(
       request({ archived: true, operationId: id, destinationListId: id }),
       params,
+    ),
+  ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+});
+
+it('validates the board lifecycle routes and forwards the authenticated account', async () => {
+  const { controller, request, workspaces } = setup();
+  const scope = { workspaceId: id, boardId: id };
+  await controller.boardLifecycle(request(), id);
+  expect(workspaces.boardLifecycle).toHaveBeenCalledWith(id, id);
+  await controller.archiveBoard(
+    request({ archived: true, operationId: id }),
+    scope,
+  );
+  expect(workspaces.archiveBoard).toHaveBeenCalledWith(id, id, id, true, id);
+  await expect(
+    controller.archiveBoard(
+      request({ archived: 'true', operationId: id }),
+      scope,
     ),
   ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
 });

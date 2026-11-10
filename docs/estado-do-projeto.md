@@ -680,6 +680,29 @@ e os endpoints de recuperação permanecem no
   auditoria ou feed. O gate de cobertura foi aprovado. Registro anterior
   ao CI remoto.
 
+- **Integração — VERIFICADO:** fast-forward da `main` para
+  `9be6a6a0046eebbaf1027e2cf20e9d492cbdd2e3`. Revisão independente aprovada.
+  [CI final 42815715534](https://github.com/edunxp/bello-flow/actions/runs/42815715534)
+  aprovado nos quatro jobs no push da `main`.
+
+## Arquivamento e restauração de quadros
+
+- **Ciclo:** `work/arquivamento-quadros`,
+  `BASE_MAIN_SHA=9be6a6a0046eebbaf1027e2cf20e9d492cbdd2e3`.
+  BEL-014 com acesso administrativo separado da leitura de conteúdo,
+  preservação de estados individuais e proteção contra gravações
+  concorrentes no quadro arquivado.
+  [Persistência e auditoria](arquitetura/persistencia-e-auditoria.md#arquivamento-e-restauração-de-quadros).
+- **Privilégio autorizado:** somente `UPDATE(archived)` em
+  `public.board` para `bello_runtime`.
+
+- **Validação local — VERIFICADO:** 862 testes da API, 107 da interface e
+  20 cenários Chromium em Docker com PostgreSQL descartável. A prova
+  verificou governança sem leitura de conteúdo, congelamento operacional,
+  rollback de uma gravação concorrente e de falhas de auditoria/feed,
+  preservação de estados e restauração. O gate de cobertura passou.
+  Registro anterior ao CI remoto.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,

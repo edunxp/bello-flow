@@ -17,7 +17,7 @@ describe('BoardContentService', () => {
       lists: [],
       orderRevision: 0,
       syncRevision: 0,
-      workspace: { timeZone: 'Etc/UTC' },
+      workspace: { timeZone: 'Etc/UTC', members: [] },
     };
     const tx = {
       $queryRaw: vi.fn(),
@@ -146,7 +146,7 @@ describe('BoardContentService', () => {
       select: { id: true },
     });
     expect(tx.board.update).toHaveBeenCalledWith({
-      where: { id: 'board' },
+      where: { id: 'board', archived: false },
       select: { id: true },
       data: { syncRevision: { increment: 1 }, orderRevision: { increment: 1 } },
     });
@@ -237,6 +237,41 @@ describe('BoardContentService', () => {
     expect(tx.boardCard.createMany).not.toHaveBeenCalled();
   });
 
+  it('allows Workspace governance to archive without granting edit permission', async () => {
+    const { service, tx } = setup('OBSERVER');
+    tx.board.findFirst.mockResolvedValue({
+      archived: true,
+      members: [{ role: 'OBSERVER' }],
+      lists: [],
+      workspace: { timeZone: 'Etc/UTC', members: [{ role: 'ADMIN' }] },
+    });
+    await expect(service.read(context)).resolves.toMatchObject({
+      archived: true,
+      editable: false,
+      canArchive: true,
+    });
+  });
+
+  it('rechecks board permissions when an archive wins a race with a content write', async () => {
+    const { service, tx, db } = setup();
+    const access = { archived: false, members: [{ role: 'MEMBER' }] };
+    tx.board.findFirst
+      .mockResolvedValueOnce(access)
+      .mockResolvedValueOnce(access)
+      .mockResolvedValue({ ...access, archived: true });
+    tx.board.update.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('missing', {
+        code: 'P2025',
+        clientVersion: 'test',
+      }),
+    );
+    await expect(
+      service.write(context, { name: 'Lista' }, 'creation'),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    expect(db.$transaction).toHaveBeenCalledTimes(2);
+    expect(tx.boardFeedEvent.createMany).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['ADMIN', false, true],
     ['MEMBER', false, true],
@@ -256,6 +291,8 @@ describe('BoardContentService', () => {
         today: expect.any(String),
         lists: [],
         archivedLists: [],
+        archived,
+        canArchive: role === 'ADMIN',
       });
     },
   );
@@ -491,7 +528,7 @@ describe('BoardContentService', () => {
         archived: false,
         members: [{ role: 'OBSERVER' }],
         syncRevision: 2,
-        workspace: { timeZone: 'Etc/UTC' },
+        workspace: { timeZone: 'Etc/UTC', members: [] },
       });
     await expect(service.move(context, 'LIST', intent)).rejects.toMatchObject({
       code: 'REQUEST_FORBIDDEN',
@@ -612,7 +649,7 @@ describe('BoardContentService', () => {
       members: [{ role: 'OBSERVER' }],
       orderRevision: 1,
       syncRevision: 2,
-      workspace: { timeZone: 'America/Sao_Paulo' },
+      workspace: { timeZone: 'America/Sao_Paulo', members: [] },
       lists: [
         {
           id: 'list',

@@ -154,6 +154,25 @@ describe('BoardContent', () => {
     expect(page.message()).toBe('Lista restaurada.');
   });
 
+  it('offers restoration of an archived board without enabling its content mutations', async () => {
+    const { fixture, http, page } = setup(false);
+    const board = { ...page.content()!, archived: true, canArchive: true, syncRevision: 4 };
+    page.content.set(board);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('Quadro arquivado');
+    expect(element.textContent).toContain('Restaurar quadro');
+    expect(element.querySelector('article form')).toBeNull();
+    const restore = page.changeBoardArchive(board);
+    const request = http.expectOne(path.replace(/\/lists$/u, '/archive'));
+    expect(request.request.body.archived).toBe(false);
+    request.flush(null);
+    await restore;
+    fixture.detectChanges();
+    http.expectOne(path).flush({ ...board, archived: false, editable: true });
+    expect(page.message()).toBe('Quadro restaurado.');
+  });
+
   it('renders content and omits the write controls for observers', () => {
     const { fixture } = setup(false);
     const element = fixture.nativeElement as HTMLElement;

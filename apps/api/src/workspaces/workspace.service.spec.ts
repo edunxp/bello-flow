@@ -36,13 +36,19 @@ function setup(count: number) {
     },
     board: {
       updateMany: vi.fn(),
+      update: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       createMany: vi.fn().mockResolvedValue({ count }),
       findFirstOrThrow: vi
         .fn()
         .mockResolvedValue({ id: operation, ...boardFields }),
     },
     boardMembership: { create: vi.fn() },
-    boardFeedEvent: { createMany: vi.fn() },
+    boardFeedEvent: {
+      createMany: vi.fn(),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
     auditEvent: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
   const db = {
@@ -230,5 +236,67 @@ describe('Workspace label catalog', () => {
         operation,
       ),
     ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+  });
+});
+
+describe('WorkspaceService board lifecycle', () => {
+  it('separates governance summaries from archived boards that the participant can open', async () => {
+    const { service, tx } = setup(1);
+    const archived = { id: 'archived', name: 'Arquivo', archived: true };
+    const managed = { id: 'managed', name: 'Governança', archived: false };
+    tx.board.findMany
+      .mockResolvedValueOnce([archived])
+      .mockResolvedValueOnce([managed]);
+    await expect(service.boardLifecycle(actor, workspaceId)).resolves.toEqual({
+      archivedBoards: [archived],
+      managedBoards: [managed],
+    });
+    expect(tx.board.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          workspaceId,
+          NOT: { members: { some: { accountId: actor } } },
+        },
+        select: { id: true, name: true, archived: true },
+      }),
+    );
+    tx.workspaceMembership.findFirst.mockResolvedValue({ role: 'MEMBER' });
+    await expect(service.boardLifecycle(actor, workspaceId)).resolves.toEqual({
+      archivedBoards: [],
+      managedBoards: [],
+    });
+    tx.workspaceMembership.findFirst.mockResolvedValue(null);
+    await expect(
+      service.boardLifecycle(actor, workspaceId),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+  });
+
+  it('changes archive state atomically and resolves replay by receipt', async () => {
+    const { service, tx } = setup(1);
+    tx.board.findFirst.mockResolvedValue({ archived: false });
+    await service.archiveBoard(actor, workspaceId, operation, true, 'archive');
+    expect(tx.board.update).toHaveBeenCalledExactlyOnceWith({
+      where: { id: operation },
+      data: { archived: true, syncRevision: { increment: 1 } },
+      select: { id: true },
+    });
+    const { requestHash } = tx.boardFeedEvent.createMany.mock.calls[0]![0].data;
+    tx.boardFeedEvent.findUnique.mockResolvedValueOnce({ requestHash });
+    await service.archiveBoard(actor, workspaceId, operation, true, 'archive');
+    expect(tx.board.update).toHaveBeenCalledOnce();
+    tx.boardFeedEvent.findUnique.mockResolvedValueOnce({ requestHash });
+    await expect(
+      service.archiveBoard(actor, workspaceId, operation, false, 'archive'),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    tx.board.findFirst.mockResolvedValue({ archived: true });
+    await service.archiveBoard(actor, workspaceId, operation, false, 'restore');
+    expect(tx.auditEvent.createMany).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        operation: 'BOARD_RESTORED',
+        beforeData: { archived: true },
+        afterData: { archived: false },
+      }),
+    });
   });
 });

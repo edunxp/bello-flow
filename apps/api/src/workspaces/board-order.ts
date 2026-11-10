@@ -1,4 +1,4 @@
-import type { Prisma } from '../generated/prisma/client.js';
+import { Prisma } from '../generated/prisma/client.js';
 import { HTTP_ERROR_CODE, HttpContractError } from '../http/http-errors.js';
 
 export const POSITION_STEP = 4_294_967_296n;
@@ -144,6 +144,32 @@ async function rebalance(
   return result!.position;
 }
 
+export class BoardArchiveRace extends Error {}
+
+export async function advanceBoard(
+  tx: Prisma.TransactionClient,
+  boardId: string,
+  listsChanged = false,
+) {
+  try {
+    await tx.board.update({
+      where: { id: boardId, archived: false },
+      select: { id: true },
+      data: {
+        syncRevision: { increment: 1 },
+        ...(listsChanged ? { orderRevision: { increment: 1 } } : {}),
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2025'
+    )
+      throw new BoardArchiveRace();
+    throw error;
+  }
+}
+
 export async function advanceOrder(
   tx: Prisma.TransactionClient,
   boardId: string,
@@ -160,12 +186,5 @@ export async function advanceOrder(
       data: { cardOrderRevision: { increment: 1 } },
     });
   }
-  await tx.board.update({
-    where: { id: boardId },
-    select: { id: true },
-    data: {
-      syncRevision: { increment: 1 },
-      ...(kind === 'LIST' ? { orderRevision: { increment: 1 } } : {}),
-    },
-  });
+  await advanceBoard(tx, boardId, kind === 'LIST');
 }

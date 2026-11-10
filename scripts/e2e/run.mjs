@@ -3148,6 +3148,282 @@ try {
     },
   );
 
+  await scenario(
+    "board archive separates governance and freezes content",
+    async () => {
+      const accounts = await Promise.all([fixture(), fixture(), fixture()]);
+      const [governor, owner, observer] = await Promise.all([
+        pageFor(),
+        pageFor(),
+        pageFor(),
+      ]);
+      const tabs = [governor, owner, observer];
+      const headers = { "X-Bello-Flow-Request": "1", Origin: origin };
+      const post = (tab, path, data) =>
+        tab.context.request.post(origin + path, { headers, data });
+      const get = (tab, path) =>
+        tab.context.request.get(origin + path, { headers });
+      const create = async (tab, path, data) => {
+        const response = await post(tab, path, {
+          ...data,
+          operationId: randomUUID(),
+        });
+        check(response.status() === 201);
+        return (await response.json()).id;
+      };
+      try {
+        for (const [index, tab] of tabs.entries())
+          await login(tab.page, accounts[index]);
+        const workspace =
+          "/api/workspaces/" +
+          (await create(governor, "/api/workspaces", {
+            name: "Governança",
+            timeZone: "Etc/UTC",
+          }));
+        for (const account of accounts.slice(1)) {
+          check(
+            (
+              await post(governor, workspace + "/members", {
+                email: account.email,
+                role: "MEMBER",
+              })
+            ).status() === 204,
+          );
+        }
+        const boards = workspace + "/boards";
+        const boardId = await create(owner, boards, {
+          name: "Quadro reservado",
+          description: "Validação de arquivo",
+        });
+        const board = boards + "/" + boardId;
+        const lists = board + "/lists";
+        const list = await create(owner, lists, { name: "Lista operacional" });
+        const hidden = await create(owner, lists, {
+          name: "Lista arquivada antes",
+        });
+        const cards = lists + "/" + list + "/cards";
+        const cardId = await create(owner, cards, {
+          title: "Cartão preservado",
+        });
+        const card = cards + "/" + cardId;
+        const labelId = await create(governor, workspace + "/labels", {
+          name: "Etiqueta congelada",
+        });
+        check(
+          (
+            await post(owner, card + "/labels", {
+              labelId,
+              applied: true,
+              operationId: randomUUID(),
+            })
+          ).status() === 204,
+        );
+        check(
+          (
+            await post(owner, lists + "/" + hidden + "/archive", {
+              archived: true,
+              operationId: randomUUID(),
+            })
+          ).status() === 204,
+        );
+        check(
+          (
+            await post(owner, board + "/members", {
+              email: accounts[2].email,
+              role: "OBSERVER",
+            })
+          ).status() === 204,
+        );
+        const archiveIntent = { archived: true, operationId: randomUUID() };
+        const archive = (tab, data = archiveIntent) =>
+          post(tab, board + "/archive", data);
+        check((await get(governor, board)).status() === 403);
+        check((await get(governor, lists)).status() === 404);
+        const managed = await (
+          await get(governor, boards + "/lifecycle")
+        ).json();
+        check(
+          managed.archivedBoards.length === 0 &&
+            managed.managedBoards.length === 1,
+        );
+        check(
+          Object.keys(managed.managedBoards[0]).sort().join() ===
+            "archived,id,name",
+        );
+        check(managed.managedBoards[0].id === boardId);
+        check((await archive(observer)).status() === 403);
+        const state = async () => (await get(owner, lists)).json();
+        const original = await state();
+        for (const table of ["audit_event", "board_feed_event"]) {
+          await migrator.query(`CREATE FUNCTION public.e2e_reject_board_archive() RETURNS trigger
+          LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic board archive failure'; END; $$;
+          CREATE TRIGGER e2e_reject_board_archive BEFORE INSERT ON public.${table}
+          FOR EACH ROW WHEN (NEW.operation = 'BOARD_ARCHIVED') EXECUTE FUNCTION public.e2e_reject_board_archive();`);
+          try {
+            check((await archive(governor)).status() === 500);
+            check(JSON.stringify(await state()) === JSON.stringify(original));
+          } finally {
+            await migrator.query(`DROP TRIGGER e2e_reject_board_archive ON public.${table};
+            DROP FUNCTION public.e2e_reject_board_archive();`);
+          }
+        }
+
+        const boardUrl = origin + board.replace(/^\/api/, "");
+        await owner.page.goto(boardUrl);
+        await expect(
+          owner.page.getByRole("heading", { name: "Cartão preservado" }),
+        ).toBeVisible();
+        let write;
+        await migrator.query(`SELECT pg_advisory_lock(47140);
+        CREATE FUNCTION public.e2e_pause_list_creation() RETURNS trigger
+          LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(47140); RETURN NEW; END; $$;
+        CREATE TRIGGER e2e_pause_list_creation BEFORE INSERT ON public.board_list
+          FOR EACH ROW WHEN (NEW.name = 'Escrita em corrida') EXECUTE FUNCTION public.e2e_pause_list_creation();`);
+        try {
+          write = post(owner, lists, {
+            name: "Escrita em corrida",
+            operationId: randomUUID(),
+          });
+          await expect
+            .poll(
+              async () =>
+                (
+                  await migrator.query(`SELECT EXISTS (
+          SELECT 1 FROM pg_locks WHERE locktype='advisory' AND classid=0 AND objid=47140
+          AND objsubid=1 AND NOT granted) AS waiting`)
+                ).rows[0].waiting,
+              {
+                timeout: 3000,
+                intervals: [25, 50, 100],
+              },
+            )
+            .toBe(true);
+          check((await archive(governor)).status() === 204);
+        } finally {
+          await migrator.query("SELECT pg_advisory_unlock(47140)");
+          const response = await write;
+          await migrator.query(`DROP TRIGGER e2e_pause_list_creation ON public.board_list;
+          DROP FUNCTION public.e2e_pause_list_creation();`);
+          check(response.status() === 403);
+        }
+        check((await archive(governor)).status() === 204);
+        await expect(
+          owner.page.getByText("Quadro arquivado", { exact: true }),
+        ).toBeVisible();
+        await expect(
+          owner.page.getByRole("button", { name: "Criar cartão", exact: true }),
+        ).toHaveCount(0);
+        const frozen = await state();
+        check(frozen.archived && !frozen.editable);
+        check(frozen.lists.length === 1 && frozen.lists[0].id === list);
+        check(frozen.archivedLists[0].id === hidden);
+        check(frozen.lists[0].cards[0].labels[0].id === labelId);
+        check((await get(governor, board)).status() === 403);
+        check((await get(governor, lists)).status() === 404);
+        check((await get(observer, lists)).status() === 200);
+        check((await get(owner, boards)).status() === 200);
+        check((await (await get(owner, boards)).json()).length === 0);
+        const archivedOwned = await (
+          await get(owner, boards + "/lifecycle")
+        ).json();
+        check(archivedOwned.archivedBoards[0].id === boardId);
+        check(
+          (
+            await post(owner, card + "/comments", {
+              kind: "CREATE",
+              content: "Indevido",
+              operationId: randomUUID(),
+            })
+          ).status() === 403,
+        );
+        check(
+          (
+            await post(owner, card + "/labels", {
+              labelId,
+              applied: false,
+              operationId: randomUUID(),
+            })
+          ).status() === 403,
+        );
+        check(
+          (
+            await governor.context.request.patch(
+              origin + workspace + "/labels/" + labelId,
+              {
+                headers,
+                data: {
+                  name: "Etiqueta atualizada",
+                  operationId: randomUUID(),
+                },
+              },
+            )
+          ).status() === 200,
+        );
+        check(
+          (await state()).lists[0].cards[0].labels[0].name ===
+            "Etiqueta atualizada",
+        );
+
+        await owner.page
+          .getByRole("button", { name: "Restaurar quadro", exact: true })
+          .click();
+        await expect(
+          owner.page.getByText("Quadro restaurado.", { exact: true }),
+        ).toBeVisible();
+        const restored = await state();
+        check(
+          !restored.archived &&
+            restored.editable &&
+            restored.archivedLists[0].id === hidden,
+        );
+        check(
+          (await (await get(owner, board + "/members")).json()).members
+            .length === 2,
+        );
+        await governor.page.goto(origin + workspace.replace(/^\/api/, ""));
+        await expect(
+          governor.page.getByRole("heading", {
+            name: "Governança dos quadros",
+          }),
+        ).toBeVisible();
+        await expect(
+          governor.page.getByRole("link", { name: "Quadro reservado" }),
+        ).toHaveCount(0);
+        await governor.page
+          .getByRole("button", { name: "Arquivar quadro", exact: true })
+          .click();
+        await expect(
+          governor.page.getByRole("button", {
+            name: "Restaurar quadro",
+            exact: true,
+          }),
+        ).toBeVisible();
+        check(
+          (
+            await post(owner, board + "/members/change", {
+              accountId: accounts[2].id,
+              expectedRole: "OBSERVER",
+              role: null,
+              operationId: randomUUID(),
+            })
+          ).status() === 204,
+        );
+        check((await get(observer, lists)).status() === 404);
+        const grants = await migrator.query(`SELECT
+        has_column_privilege('bello_runtime','public.board','archived','UPDATE') AS archive,
+        has_table_privilege('bello_runtime','public.board','UPDATE') AS full_update,
+        has_table_privilege('bello_runtime','public.board','DELETE') AS remove`);
+        check(
+          grants.rows[0].archive &&
+            !grants.rows[0].full_update &&
+            !grants.rows[0].remove,
+        );
+      } finally {
+        await Promise.all(tabs.map((tab) => tab.context.close()));
+      }
+    },
+  );
+
   await scenario("generic rejected login (real stack)", async () => {
     const account = await fixture();
     const { page, context } = await pageFor();

@@ -35,6 +35,8 @@ interface List {
   archivedCards?: Card[];
 }
 interface Content {
+  archived?: boolean;
+  canArchive?: boolean;
   editable: boolean;
   eligibleAssignees?: Assignee[];
   availableLabels?: Label[];
@@ -93,6 +95,14 @@ interface DragItem {
       <p role="status">{{ message() }}</p>
     }
     @if (content(); as board) {
+      @if (board.archived) {
+        <p>Quadro arquivado</p>
+      }
+      @if (board.canArchive) {
+        <button type="button" [disabled]="saving()" (click)="changeBoardArchive(board)">
+          {{ board.archived ? 'Restaurar quadro' : 'Arquivar quadro' }}
+        </button>
+      }
       @if (board.archivedLists?.length) {
         <button
           type="button"
@@ -736,6 +746,16 @@ export class BoardContent {
       this.reload.update((value) => value + 1);
       this.saving.set(false);
     }
+  }
+
+  changeBoardArchive(board: Content) {
+    const archived = !board.archived;
+    return this.saveArchive(
+      this.path().replace(/\/lists$/u, '') + '/archive',
+      board.syncRevision,
+      { archived },
+      archived ? 'Quadro arquivado.' : 'Quadro restaurado.',
+    );
   }
 
   changeListArchive(list: List) {

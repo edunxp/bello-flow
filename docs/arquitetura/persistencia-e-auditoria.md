@@ -1332,9 +1332,11 @@ ao runtime. A interface recarrega o catálogo e reutiliza o identificador se
 o mesmo intento for repetido após resposta incerta na tela. Associações
 reconciliam repetições pelo recibo no feed.
 
-Antes de implementar arquivamento de quadros, é preciso resolver como a
-imutabilidade de RN-055 se aplica a alterações globais de RN-088 sobre
-etiquetas associadas a cartões arquivados.
+O arquivamento de quadro bloqueia aplicação e remoção diretamente no
+cartão (RN-055). A edição e a exclusão do catálogo do Workspace seguem a
+RN-088, inclusive quando a etiqueta está associada a um cartão arquivado.
+A resposta administrativa segue a mesma regra para todas as etiquetas e
+preserva a confidencialidade das associações (RN-085 e RN-087).
 
 ## Comentários e moderação de cartões
 
@@ -1406,3 +1408,25 @@ cartão. O destino deve ser uma lista ativa do mesmo quadro. Nesse caso, o
 cartão ocupa o fim do destino, preserva sua identidade e suas relações e a
 lista de origem continua arquivada. A auditoria registra as listas de origem
 e destino e os vizinhos relevantes.
+
+## Arquivamento e restauração de quadros
+
+`POST /api/workspaces/:workspaceId/boards/:boardId/archive` recebe
+`archived` e `operationId`. Administradores do quadro e do Workspace
+podem executar a transição. A listagem padrão contém os quadros ativos
+dos quais a conta participa. `GET /api/workspaces/:workspaceId/boards/lifecycle`
+separa quadros arquivados consultáveis por participantes dos resumos de
+governança, que contêm apenas identificador, nome e estado. A consulta de
+listas, cartões e comentários continua restrita aos participantes.
+
+Arquivar altera o estado do quadro e sua revisão, preservando os estados
+individuais de listas e cartões e os vínculos existentes. Alterações
+operacionais exigem quadro ativo também na gravação da revisão. Quando o
+arquivamento vence a corrida, a transação concorrente é revertida e
+reavalia a autorização. As ações administrativas independentes de
+participação continuam disponíveis, inclusive para revogar acesso.
+
+O estado, a revisão de sincronização, a auditoria e o feed
+(`BOARD_ARCHIVED` ou `BOARD_RESTORED`) são gravados na mesma transação.
+O recibo do feed permite repetir a mesma operação. A migration acrescenta
+somente `UPDATE(archived)` em `public.board` para `bello_runtime`.

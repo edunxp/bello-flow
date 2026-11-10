@@ -5,6 +5,8 @@ import { HTTP_ERROR_CODE, HttpContractError } from '../http/http-errors.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   advanceOrder,
+  advanceBoard,
+  BoardArchiveRace,
   conflict,
   lockContainers,
   neighbors,
@@ -76,7 +78,15 @@ export class BoardContentService {
           archived: true,
           orderRevision: true,
           syncRevision: true,
-          workspace: workspaceZone,
+          workspace: {
+            select: {
+              ...workspaceZone.select,
+              members: {
+                where: { accountId: context.accountId },
+                select: { role: true },
+              },
+            },
+          },
           members: {
             where: { accountId: context.accountId },
             select: { role: true },
@@ -191,6 +201,10 @@ export class BoardContentService {
       timeZone,
       today,
       editable,
+      archived: board.archived,
+      canArchive:
+        board.members[0]?.role === 'ADMIN' ||
+        board.workspace.members[0]?.role === 'ADMIN',
       eligibleAssignees: eligibleAssignees.map(participantView),
       availableLabels,
       orderRevision: board.orderRevision,
@@ -369,12 +383,7 @@ export class BoardContentService {
           await advanceOrder(tx, context.boardId, container.kind, [
             container.id,
           ]);
-        else
-          await tx.board.update({
-            where: { id: context.boardId },
-            select: { id: true },
-            data: { syncRevision: { increment: 1 } },
-          });
+        else await advanceBoard(tx, context.boardId);
         const occurredAt = new Date();
         const listId = card ? mutation.listId : id;
         await tx.auditEvent.createMany({
@@ -605,11 +614,7 @@ export class BoardContentService {
           select: { id: true },
         });
       }
-      await tx.board.update({
-        where: { id: context.boardId },
-        select: { id: true },
-        data: { syncRevision: { increment: 1 } },
-      });
+      await advanceBoard(tx, context.boardId);
       await tx.boardFeedEvent.createMany({
         data: {
           id: eventId,
@@ -713,11 +718,7 @@ export class BoardContentService {
         ? await tx.cardLabel.createMany({ data: where, skipDuplicates: true })
         : await tx.cardLabel.deleteMany({ where });
       if (!change.count) conflict();
-      await tx.board.update({
-        where: { id: context.boardId },
-        select: { id: true },
-        data: { syncRevision: { increment: 1 } },
-      });
+      await advanceBoard(tx, context.boardId);
       await recordCardLabels(
         tx,
         {
@@ -825,11 +826,7 @@ export class BoardContentService {
         const deleted = await tx.cardAssignment.deleteMany({ where });
         if (!deleted.count) conflict();
       }
-      await tx.board.update({
-        where: { id: context.boardId },
-        select: { id: true },
-        data: { syncRevision: { increment: 1 } },
-      });
+      await advanceBoard(tx, context.boardId);
       await recordAssignments(
         tx,
         { ...member, actorId: context.accountId },
@@ -947,11 +944,7 @@ export class BoardContentService {
         data,
         select: { id: true },
       });
-      await tx.board.update({
-        where: { id: context.boardId },
-        select: { id: true },
-        data: { syncRevision: { increment: 1 } },
-      });
+      await advanceBoard(tx, context.boardId);
       await tx.auditEvent.createMany({
         data: {
           id: randomUUID(),
@@ -1430,7 +1423,9 @@ export class BoardContentService {
         });
       } catch (error) {
         if (
-          !(error instanceof SourceChanged) &&
+          !(
+            error instanceof SourceChanged || error instanceof BoardArchiveRace
+          ) &&
           (!(error instanceof Prisma.PrismaClientKnownRequestError) ||
             !(
               ['P2002', 'P2034'].includes(error.code) ||
@@ -1440,6 +1435,7 @@ export class BoardContentService {
         )
           throw error;
         if (attempt === 3) {
+          if (error instanceof BoardArchiveRace) conflict();
           if (isolationLevel === 'ReadCommitted') conflict();
           throw error;
         }

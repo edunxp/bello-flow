@@ -4,7 +4,8 @@ import { Prisma } from '../generated/prisma/client.js';
 import { HTTP_ERROR_CODE, HttpContractError } from '../http/http-errors.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
-import { activeAccount } from './card-assignments.js';
+import { activeAccount, lockBoardMembers } from './card-assignments.js';
+import { conflict } from './board-order.js';
 import {
   labelFields,
   labelOrder,
@@ -19,6 +20,7 @@ type LabelChange =
 
 type Fields = { name: string; description?: string };
 type BoardFields = Fields & { description: string };
+const boardSummary = { id: true, name: true, archived: true } as const;
 
 export function creationId(
   accountId: string,
@@ -269,7 +271,7 @@ export class WorkspaceService {
       where: { id: workspaceId, members: { some: { accountId } } },
       select: {
         boards: {
-          where: { members: { some: { accountId } } },
+          where: { archived: false, members: { some: { accountId } } },
           orderBy: [{ name: 'asc' }, { id: 'asc' }],
         },
       },
@@ -278,12 +280,138 @@ export class WorkspaceService {
     return workspace.boards;
   }
 
+  async boardLifecycle(accountId: string, workspaceId: string) {
+    const result = await this.db.$transaction(
+      async (tx) => {
+        const membership = await this.labelMembership(
+          tx,
+          accountId,
+          workspaceId,
+        );
+        if (!membership) return null;
+        const participant = { members: { some: { accountId } } };
+        const orderBy = [{ name: 'asc' }, { id: 'asc' }] as const;
+        const archivedBoards = await tx.board.findMany({
+          where: { workspaceId, archived: true, ...participant },
+          select: boardSummary,
+          orderBy: [...orderBy],
+        });
+        const managedBoards =
+          membership.role === 'ADMIN'
+            ? await tx.board.findMany({
+                where: { workspaceId, NOT: participant },
+                select: boardSummary,
+                orderBy: [...orderBy],
+              })
+            : [];
+        return { archivedBoards, managedBoards };
+      },
+      { isolationLevel: 'RepeatableRead' },
+    );
+    if (!result) return this.deny(accountId, 'LIST_BOARD_LIFECYCLE');
+    return result;
+  }
+
   async board(accountId: string, workspaceId: string, id: string) {
     const board = await this.db.board.findFirst({
       where: { id, workspaceId, members: { some: { accountId } } },
     });
     if (!board) return this.deny(accountId, 'READ_BOARD');
     return board;
+  }
+
+  async archiveBoard(
+    accountId: string,
+    workspaceId: string,
+    boardId: string,
+    archived: boolean,
+    operationId: string,
+  ) {
+    const operation = archived ? 'BOARD_ARCHIVED' : 'BOARD_RESTORED';
+    const eventId = creationId(
+      accountId,
+      operationId,
+      workspaceId,
+      boardId,
+      'BOARD_ARCHIVE',
+    );
+    const requestHash = createHash('sha256')
+      .update(JSON.stringify(archived))
+      .digest('hex');
+    const result = await this.db.$transaction(
+      async (tx) => {
+        const authorizedBoard = async () => {
+          const membership = await this.labelMembership(
+            tx,
+            accountId,
+            workspaceId,
+          );
+          if (!membership) return null;
+          return tx.board.findFirst({
+            where: {
+              id: boardId,
+              workspaceId,
+              ...(membership.role === 'ADMIN'
+                ? {}
+                : { members: { some: { accountId, role: 'ADMIN' } } }),
+            },
+            select: { archived: true },
+          });
+        };
+        if (!(await authorizedBoard())) return false;
+        await lockWorkspaceLabels(tx, workspaceId);
+        await lockBoardMembers(tx, boardId);
+        const board = await authorizedBoard();
+        if (!board) return false;
+        const receipt = await tx.boardFeedEvent.findUnique({
+          where: { id: eventId },
+          select: { requestHash: true },
+        });
+        if (receipt) {
+          if (receipt.requestHash !== requestHash) conflict();
+          return true;
+        }
+        if (board.archived === archived) conflict();
+        await tx.board.update({
+          where: { id: boardId },
+          data: { archived, syncRevision: { increment: 1 } },
+          select: { id: true },
+        });
+        const occurredAt = new Date();
+        await tx.auditEvent.createMany({
+          data: {
+            id: randomUUID(),
+            occurredAt,
+            actorAccountId: accountId,
+            origin: 'HTTP',
+            scope: 'BOARD',
+            operation,
+            result: 'SUCCESS',
+            entityType: 'BOARD',
+            entityId: boardId,
+            context: { workspaceId, boardId },
+            operationId: eventId,
+            correlationId: eventId,
+            sequence: 1,
+            beforeData: { archived: board.archived },
+            afterData: { archived },
+          },
+        });
+        await tx.boardFeedEvent.createMany({
+          data: {
+            id: eventId,
+            boardId,
+            actorId: accountId,
+            occurredAt,
+            operation,
+            requestHash,
+          },
+        });
+        return true;
+      },
+      { isolationLevel: 'ReadCommitted' },
+    );
+    if (!result) return this.deny(accountId, operation);
   }
 
   async createBoard(
