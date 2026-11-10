@@ -26,6 +26,7 @@ interface Card {
   labels?: Label[];
 }
 interface List {
+  archived?: boolean;
   id: string;
   name: string;
   positionRevision: number;
@@ -42,6 +43,7 @@ interface Content {
   today: string;
   timeZone: string;
   lists: List[];
+  archivedLists?: List[];
 }
 
 interface DragItem {
@@ -91,10 +93,31 @@ interface DragItem {
       <p role="status">{{ message() }}</p>
     }
     @if (content(); as board) {
-      @for (list of board.lists; track list.id) {
+      @if (board.archivedLists?.length) {
+        <button
+          type="button"
+          [attr.aria-expanded]="showArchivedLists()"
+          (click)="showArchivedLists.set(!showArchivedLists())"
+        >
+          Listas arquivadas ({{ board.archivedLists?.length }})
+        </button>
+      }
+      @for (
+        list of showArchivedLists() ? board.lists.concat(board.archivedLists ?? []) : board.lists;
+        track list.id
+      ) {
+        @let editableList = board.editable && !list.archived;
         <section [attr.aria-label]="list.name">
           <h3>{{ list.name }}</h3>
+          @if (list.archived) {
+            <p>Lista arquivada</p>
+          }
           @if (board.editable) {
+            <button type="button" [disabled]="saving()" (click)="changeListArchive(list)">
+              {{ list.archived ? 'Restaurar lista' : 'Arquivar lista' }}
+            </button>
+          }
+          @if (editableList) {
             <button
               type="button"
               draggable="true"
@@ -114,13 +137,13 @@ interface DragItem {
             </button>
             <button
               type="button"
-              [disabled]="$last || saving()"
+              [disabled]="$index >= board.lists.length - 1 || saving()"
               (click)="moveStep(list, undefined, 1)"
             >
               Descer lista
             </button>
           }
-          @if (board.editable) {
+          @if (editableList) {
             <details>
               <summary>Renomear lista</summary>
               <form (submit)="save($event, '/' + list.id, { name: rename.value }, false)">
@@ -145,7 +168,7 @@ interface DragItem {
               : list.cards;
             track card.id
           ) {
-            @let editableCard = board.editable && !card.archived;
+            @let editableCard = editableList && !card.archived;
             <article>
               <h4>{{ card.title }}</h4>
               @if (card.archived) {
@@ -360,14 +383,25 @@ interface DragItem {
                   </form>
                 </details>
               }
-              @if (board.editable) {
+              @if (editableList) {
                 <button type="button" [disabled]="saving()" (click)="changeArchive(list, card)">
                   {{ card.archived ? 'Restaurar cartão' : 'Arquivar cartão' }}
                 </button>
+              } @else if (board.editable && list.archived && board.lists.length) {
+                <form (submit)="restoreInList($event, list, card, restoreTarget.value)">
+                  <label [attr.for]="'restore-' + card.id">Restaurar em lista ativa</label>
+                  <select [id]="'restore-' + card.id" #restoreTarget required>
+                    <option value="">Escolher lista ativa</option>
+                    @for (target of board.lists; track target.id) {
+                      <option [value]="target.id">{{ target.name }}</option>
+                    }
+                  </select>
+                  <button [disabled]="saving()">Restaurar cartão</button>
+                </form>
               }
             </article>
           }
-          @if (board.editable) {
+          @if (editableList) {
             @if (drag()?.kind === 'CARD') {
               <div
                 class="drop-zone"
@@ -426,6 +460,7 @@ export class BoardContent {
   readonly saving = signal(false);
   readonly commentsCard = signal<string | null>(null);
   readonly showArchived = signal<string | null>(null);
+  readonly showArchivedLists = signal(false);
   readonly drag = signal<DragItem | null>(null);
   private readonly http = inject(HttpClient);
   private readonly connectRealtime = inject(BOARD_REALTIME);
@@ -703,25 +738,60 @@ export class BoardContent {
     }
   }
 
-  async changeArchive(list: List, card: Card) {
+  changeListArchive(list: List) {
+    const archived = !list.archived;
+    return this.saveArchive(
+      this.path() + '/' + list.id + '/archive',
+      list.positionRevision,
+      { archived },
+      archived ? 'Lista arquivada.' : 'Lista restaurada.',
+    );
+  }
+
+  restoreInList(event: Event, list: List, card: Card, destinationListId: string) {
+    event.preventDefault();
+    if (destinationListId) return this.changeArchive(list, card, destinationListId);
+    return;
+  }
+
+  changeArchive(list: List, card: Card, destinationListId?: string) {
+    const archived = !card.archived && !destinationListId;
+    return this.saveArchive(
+      this.path() + '/' + list.id + '/cards/' + card.id + '/archive',
+      card.positionRevision,
+      { archived, destinationListId },
+      archived ? 'Cartão arquivado.' : 'Cartão restaurado.',
+    );
+  }
+
+  private async saveArchive(
+    path: string,
+    revision: number,
+    change: { archived: boolean; destinationListId?: string },
+    success: string,
+  ) {
     if (this.saving()) return;
     this.saving.set(true);
     this.message.set('');
-    const archived = !card.archived;
-    const path = this.path() + '/' + list.id + '/cards/' + card.id + '/archive';
     const key =
-      'bello.pending-archive:' + this.accountId() + ':' + path + ':' + card.positionRevision;
+      'bello.pending-archive:' +
+      this.accountId() +
+      ':' +
+      path +
+      ':' +
+      revision +
+      (change.destinationListId ? ':' + change.destinationListId : '');
     try {
       const operationId = sessionStorage.getItem(key) ?? crypto.randomUUID();
       sessionStorage.setItem(key, operationId);
-      await firstValueFrom(this.http.post(path, { archived, operationId }, this.options));
+      await firstValueFrom(this.http.post(path, { ...change, operationId }, this.options));
       sessionStorage.removeItem(key);
-      this.message.set(archived ? 'Cartão arquivado.' : 'Cartão restaurado.');
+      this.message.set(success);
     } catch (error) {
       if (error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500)
         sessionStorage.removeItem(key);
       this.message.set(
-        'Não foi possível confirmar a alteração. Confira o estado atualizado do cartão.',
+        'Não foi possível confirmar a alteração. Confira o estado atualizado do quadro.',
       );
     } finally {
       this.reload.update((value) => value + 1);

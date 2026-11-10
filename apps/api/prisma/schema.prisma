@@ -299,6 +299,7 @@ model BoardList {
   boardId      String      @map("board_id") @db.Uuid
   name         String      @db.VarChar(100)
   creationHash String      @map("creation_hash") @db.Char(64)
+  archived     Boolean     @default(false)
   position BigInt
   positionRevision Int @default(0) @map("position_revision")
   cardOrderRevision Int @default(0) @map("card_order_revision")

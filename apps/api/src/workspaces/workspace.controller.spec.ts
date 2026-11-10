@@ -32,6 +32,7 @@ function setup() {
     revision: vi.fn(),
     schedule: vi.fn(),
     archiveCard: vi.fn(),
+    archiveList: vi.fn(),
     changeAssignee: vi.fn(),
     changeCardLabel: vi.fn(),
     comments: vi.fn(),
@@ -519,6 +520,7 @@ describe('card archive HTTP contract', () => {
         id,
         archived,
         id,
+        undefined,
       );
     }
     await expect(
@@ -528,4 +530,39 @@ describe('card archive HTTP contract', () => {
       ),
     ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
   });
+});
+
+it('validates list archive and the optional destination for restoring a card', async () => {
+  const { controller, request, content } = setup();
+  const params = { workspaceId: id, boardId: id, listId: id, cardId: id };
+  const context = { workspaceId: id, boardId: id, accountId: id };
+  await controller.archiveList(
+    request({ archived: true, operationId: id }),
+    params,
+  );
+  expect(content.archiveList).toHaveBeenCalledWith(context, id, true, id);
+  await expect(
+    controller.archiveList(
+      request({ archived: 'true', operationId: id }),
+      params,
+    ),
+  ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+  await controller.archiveCard(
+    request({ archived: false, operationId: id, destinationListId: id }),
+    params,
+  );
+  expect(content.archiveCard).toHaveBeenLastCalledWith(
+    context,
+    id,
+    id,
+    false,
+    id,
+    id,
+  );
+  await expect(
+    controller.archiveCard(
+      request({ archived: true, operationId: id, destinationListId: id }),
+      params,
+    ),
+  ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
 });

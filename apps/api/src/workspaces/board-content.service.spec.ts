@@ -136,6 +136,107 @@ describe('BoardContentService', () => {
     expect(editor.tx.boardCard.update).not.toHaveBeenCalled();
   });
 
+  it('archives and restores a list without altering individual card states', async () => {
+    const { service, tx } = setup();
+    tx.boardList.findFirst.mockResolvedValue({ archived: false });
+    await service.archiveList(context, 'list', true, 'archive-list');
+    expect(tx.boardList.update).toHaveBeenCalledExactlyOnceWith({
+      where: { id: 'list' },
+      data: { archived: true, positionRevision: { increment: 1 } },
+      select: { id: true },
+    });
+    expect(tx.board.update).toHaveBeenCalledWith({
+      where: { id: 'board' },
+      select: { id: true },
+      data: { syncRevision: { increment: 1 }, orderRevision: { increment: 1 } },
+    });
+    expect(tx.boardCard.update).not.toHaveBeenCalled();
+    tx.boardList.findFirst.mockResolvedValue({ archived: true });
+    await service.archiveList(context, 'list', false, 'restore-list');
+    expect(tx.boardFeedEvent.createMany).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        operation: 'LIST_RESTORED',
+        listId: 'list',
+      }),
+    });
+  });
+
+  it('restores a card from an archived list only into an explicitly selected active list', async () => {
+    const { service, tx } = setup();
+    tx.boardList.findFirst.mockImplementation(({ where }) =>
+      Promise.resolve({ archived: where.id === 'source' }),
+    );
+    tx.boardCard.findFirst.mockResolvedValue({ archived: false });
+    await expect(
+      service.archiveCard(context, 'source', 'card', false, 'restore-card'),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    await expect(
+      service.archiveCard(
+        context,
+        'source',
+        'card',
+        false,
+        'restore-card',
+        'source',
+      ),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    await service.archiveCard(
+      context,
+      'source',
+      'card',
+      false,
+      'restore-card',
+      'target',
+    );
+    expect(tx.boardCard.update).toHaveBeenCalledExactlyOnceWith({
+      where: { id: 'card' },
+      data: {
+        archived: false,
+        listId: 'target',
+        position: 4294967296n,
+        positionRevision: { increment: 1 },
+      },
+      select: { id: true },
+    });
+    expect(tx.boardList.update).not.toHaveBeenCalled();
+    expect(tx.boardList.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['source', 'target'] } },
+      data: { cardOrderRevision: { increment: 1 } },
+    });
+  });
+
+  it('keeps cards in an archived list readable and blocks operational edits', async () => {
+    const { service, tx } = setup();
+    tx.boardCard.findFirst.mockResolvedValue({
+      archived: false,
+      list: { archived: true },
+      comments: [],
+    });
+    await expect(service.comments(context, 'list', 'card')).resolves.toEqual({
+      editable: false,
+      comments: [],
+    });
+    await expect(
+      service.schedule(
+        context,
+        'list',
+        'card',
+        { completed: true },
+        'schedule',
+      ),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    tx.boardList.findFirst.mockResolvedValue({ archived: true });
+    tx.boardCard.findFirst.mockResolvedValue(null);
+    await expect(
+      service.write(
+        context,
+        { title: 'Novo cartão', description: null, listId: 'list' },
+        'create',
+      ),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    expect(tx.boardCard.createMany).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['ADMIN', false, true],
     ['MEMBER', false, true],
@@ -154,6 +255,7 @@ describe('BoardContentService', () => {
         timeZone: 'Etc/UTC',
         today: expect.any(String),
         lists: [],
+        archivedLists: [],
       });
     },
   );
@@ -310,8 +412,9 @@ describe('BoardContentService', () => {
       .mockResolvedValue(current);
     tx.boardList.findFirst.mockResolvedValue({ id: 'new' });
     tx.boardList.findMany.mockResolvedValue([
-      { id: 'old', cardOrderRevision: 1 },
-      { id: 'new', cardOrderRevision: 0 },
+      { id: 'old', cardOrderRevision: 1, archived: false },
+      { id: 'actual', cardOrderRevision: 1, archived: false },
+      { id: 'new', cardOrderRevision: 0, archived: false },
     ]);
     tx.boardCard.findMany
       .mockResolvedValueOnce([{ id: 'item', position: 20n }])

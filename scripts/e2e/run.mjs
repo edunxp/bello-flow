@@ -2889,6 +2889,265 @@ try {
     }
   });
 
+  await scenario(
+    "list archive preserves card states and reserved order",
+    async () => {
+      const [owner, reader] = await Promise.all([fixture(), fixture()]);
+      const [admin, observer] = await Promise.all([pageFor(), pageFor()]);
+      const headers = { "X-Bello-Flow-Request": "1", Origin: origin };
+      const post = (path, data, tab = admin) =>
+        tab.context.request.post(origin + path, { headers, data });
+      const create = async (path, data) => {
+        const response = await post(path, {
+          ...data,
+          operationId: randomUUID(),
+        });
+        check(response.status() === 201);
+        return (await response.json()).id;
+      };
+      const change = (path, data, tab = admin) =>
+        post(path, { ...data, operationId: randomUUID() }, tab);
+      try {
+        await login(admin.page, owner);
+        await login(observer.page, reader);
+        const workspace =
+          "/api/workspaces/" +
+          (await create("/api/workspaces", {
+            name: "Ciclo de listas",
+            timeZone: "Etc/UTC",
+          }));
+        const boardId = await create(workspace + "/boards", {
+          name: "Restaurar listas",
+          description: "Validação do estado herdado",
+        });
+        const board = workspace + "/boards/" + boardId;
+        const lists = board + "/lists";
+        const first = await create(lists, { name: "Destino ativo" });
+        const archived = await create(lists, { name: "Lista de origem" });
+        const last = await create(lists, { name: "Última lista" });
+        const move = await create(lists, { name: "Lista movida" });
+        const source = lists + "/" + archived;
+        const cards = source + "/cards";
+        const activeCard = await create(cards, { title: "Volta com a lista" });
+        const hiddenCard = await create(cards, { title: "Continua arquivado" });
+        const extraction = await create(cards, {
+          title: "Retirar sem restaurar lista",
+        });
+        check(
+          (
+            await change(cards + "/" + hiddenCard + "/archive", {
+              archived: true,
+            })
+          ).status() === 204,
+        );
+        check(
+          (
+            await change(cards + "/" + extraction + "/comments", {
+              kind: "CREATE",
+              content: "Histórico preservado",
+            })
+          ).status() === 204,
+        );
+
+        const read = async (tab = admin) => {
+          const response = await tab.context.request.get(origin + lists, {
+            headers,
+          });
+          check(response.status() === 200);
+          return response.json();
+        };
+        const listIntent = { archived: true, operationId: randomUUID() };
+        check(
+          (await post(source + "/archive", listIntent, observer)).status() ===
+            404,
+        );
+        check(
+          (
+            await post(workspace + "/members", {
+              email: reader.email,
+              role: "MEMBER",
+            })
+          ).status() === 204,
+        );
+        check(
+          (
+            await post(board + "/members", {
+              email: reader.email,
+              role: "OBSERVER",
+            })
+          ).status() === 204,
+        );
+        check(
+          (await post(source + "/archive", listIntent, observer)).status() ===
+            403,
+        );
+        const previous = await read();
+        for (const table of ["audit_event", "board_feed_event"]) {
+          await migrator.query(`CREATE FUNCTION public.e2e_reject_list_archive() RETURNS trigger
+          LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic list archive failure'; END; $$;
+          CREATE TRIGGER e2e_reject_list_archive BEFORE INSERT ON public.${table}
+          FOR EACH ROW WHEN (NEW.operation = 'LIST_ARCHIVED') EXECUTE FUNCTION public.e2e_reject_list_archive();`);
+          try {
+            check(
+              (await post(source + "/archive", listIntent)).status() === 500,
+            );
+            check(JSON.stringify(await read()) === JSON.stringify(previous));
+          } finally {
+            await migrator.query(`DROP TRIGGER e2e_reject_list_archive ON public.${table};
+            DROP FUNCTION public.e2e_reject_list_archive();`);
+          }
+        }
+        const responses = await Promise.all([
+          post(source + "/archive", listIntent),
+          post(source + "/archive", listIntent),
+        ]);
+        check(responses.every((response) => response.status() === 204));
+        const archivedBoard = await read(observer);
+        check(
+          archivedBoard.lists.map(({ id }) => id).join() ===
+            [first, last, move].join(),
+        );
+        const hidden = archivedBoard.archivedLists[0];
+        check(hidden.id === archived && hidden.archived);
+        check(
+          hidden.cards.map(({ id }) => id).join() ===
+            [activeCard, extraction].join(),
+        );
+        check(hidden.archivedCards[0].id === hiddenCard);
+        check((await change(cards, { title: "Indevido" })).status() === 403);
+        check(
+          (
+            await admin.context.request.patch(origin + source, {
+              headers,
+              data: { name: "Indevido" },
+            })
+          ).status() === 403,
+        );
+        check(
+          (
+            await admin.context.request.patch(
+              origin + cards + "/" + activeCard,
+              { headers, data: { title: "Indevido" } },
+            )
+          ).status() === 403,
+        );
+        check(
+          (
+            await change(cards + "/" + extraction + "/archive", {
+              archived: false,
+            })
+          ).status() === 403,
+        );
+        check(
+          (
+            await change(cards + "/" + extraction + "/archive", {
+              archived: false,
+              destinationListId: archived,
+            })
+          ).status() === 403,
+        );
+
+        const listUrl = origin + board.replace(/^\/api/, "");
+        await observer.page.goto(listUrl);
+        await expect(
+          observer.page.getByRole("heading", { name: "Destino ativo" }),
+        ).toBeVisible();
+        await expect(
+          observer.page.getByRole("heading", { name: "Lista de origem" }),
+        ).toHaveCount(0);
+        await observer.page
+          .getByRole("button", { name: "Listas arquivadas (1)" })
+          .click();
+        await expect(
+          observer.page.getByRole("heading", { name: "Volta com a lista" }),
+        ).toBeVisible();
+        await expect(
+          observer.page.getByRole("button", { name: "Restaurar lista" }),
+        ).toHaveCount(0);
+
+        check(
+          (
+            await change(lists + "/move", {
+              kind: "LIST",
+              itemId: move,
+              leftId: first,
+              rightId: last,
+              sourceId: boardId,
+              destinationId: boardId,
+              itemRevision: archivedBoard.lists[2].positionRevision,
+              sourceRevision: archivedBoard.orderRevision,
+              destinationRevision: archivedBoard.orderRevision,
+            })
+          ).status() === 204,
+        );
+        await admin.page.goto(listUrl);
+        await admin.page
+          .getByRole("button", { name: "Listas arquivadas (1)" })
+          .click();
+        const extracted = admin.page
+          .getByRole("article")
+          .filter({ hasText: "Retirar sem restaurar lista" });
+        await extracted
+          .getByLabel("Restaurar em lista ativa")
+          .selectOption(first);
+        await extracted
+          .getByRole("button", { name: "Restaurar cartão" })
+          .click();
+        await expect(
+          admin.page.getByText("Cartão restaurado.", { exact: true }),
+        ).toBeVisible();
+        const afterMove = await read();
+        check(afterMove.archivedLists[0].id === archived);
+        check(afterMove.lists[0].cards[0].id === extraction);
+        const comments = await admin.context.request.get(
+          origin + lists + "/" + first + "/cards/" + extraction + "/comments",
+          { headers },
+        );
+        check(comments.status() === 200);
+        check(
+          (await comments.json()).comments[0].content ===
+            "Histórico preservado",
+        );
+
+        const restoreList = admin.page
+          .getByRole("region", { name: "Lista de origem", exact: true })
+          .getByRole("button", { name: "Restaurar lista", exact: true });
+        await expect(restoreList).toBeEnabled();
+        await restoreList.click();
+        await expect(
+          admin.page.getByText("Lista restaurada.", { exact: true }),
+        ).toBeVisible();
+        await admin.page.reload();
+        await expect(
+          admin.page.getByRole("heading", { name: "Volta com a lista" }),
+        ).toBeVisible();
+        await expect(
+          admin.page.getByRole("heading", { name: "Continua arquivado" }),
+        ).toHaveCount(0);
+        check((await post(source + "/archive", listIntent)).status() === 204);
+        const restored = await read();
+        check(restored.archivedLists.length === 0);
+        check(
+          restored.lists.map(({ id }) => id).join() ===
+            [first, move, archived, last].join(),
+        );
+        check(restored.lists[2].cards[0].id === activeCard);
+        check(restored.lists[2].archivedCards[0].id === hiddenCard);
+        const grants = await migrator.query(`SELECT
+        has_column_privilege('bello_runtime','public.board_list','archived','UPDATE') AS archive,
+        has_table_privilege('bello_runtime','public.board_list','UPDATE') AS full_update,
+        has_table_privilege('bello_runtime','public.board_list','DELETE') AS remove`);
+        check(
+          grants.rows[0].archive &&
+            !grants.rows[0].full_update &&
+            !grants.rows[0].remove,
+        );
+      } finally {
+        await Promise.all([admin.context.close(), observer.context.close()]);
+      }
+    },
+  );
+
   await scenario("generic rejected login (real stack)", async () => {
     const account = await fixture();
     const { page, context } = await pageFor();

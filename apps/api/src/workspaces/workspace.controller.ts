@@ -558,6 +558,23 @@ export class WorkspaceController {
     );
   }
 
+  @Post(':workspaceId/boards/:boardId/lists/:listId/archive')
+  @HttpCode(204)
+  async archiveList(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const context = await this.contentContext(request, params, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    if (typeof body?.archived !== 'boolean') invalid();
+    await this.content.archiveList(
+      context,
+      identifier(params.listId),
+      body.archived,
+      identifier(body.operationId),
+    );
+  }
+
   @Post(':workspaceId/boards/:boardId/lists/:listId/cards/:cardId/archive')
   @HttpCode(204)
   async archiveCard(
@@ -566,13 +583,22 @@ export class WorkspaceController {
   ) {
     const context = await this.contentContext(request, params, true);
     const body = request.body as Record<string, unknown> | undefined;
-    if (typeof body?.archived !== 'boolean') invalid();
+    if (
+      typeof body?.archived !== 'boolean' ||
+      (body.archived && body.destinationListId !== undefined)
+    )
+      invalid();
+    const destination =
+      body.destinationListId === undefined
+        ? undefined
+        : identifier(body.destinationListId);
     await this.content.archiveCard(
       context,
       identifier(params.listId),
       identifier(params.cardId),
       body.archived,
       identifier(body.operationId),
+      destination,
     );
   }
 

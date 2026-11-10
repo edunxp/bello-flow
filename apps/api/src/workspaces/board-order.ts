@@ -42,7 +42,7 @@ export function siblings(
   tx: Prisma.TransactionClient,
   container: Container,
 ): Promise<Positioned[]> {
-  const select = { id: true, position: true } as const;
+  const select = { id: true, position: true, archived: true } as const;
   const orderBy = { position: 'asc' } as const;
   return container.kind === 'LIST'
     ? tx.boardList.findMany({
@@ -52,7 +52,7 @@ export function siblings(
       })
     : tx.boardCard.findMany({
         where: { listId: container.id },
-        select: { ...select, archived: true },
+        select,
         orderBy,
       });
 }

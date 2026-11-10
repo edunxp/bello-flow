@@ -85,6 +85,7 @@ export class BoardContentService {
             orderBy,
             select: {
               ...listFields,
+              archived: true,
               positionRevision: true,
               cardOrderRevision: true,
               cards: {
@@ -170,6 +171,22 @@ export class BoardContentService {
       eligibleAssignees,
       availableLabels,
     } = result;
+    const lists = board.lists.map(({ cards, ...list }) => {
+      const content = cards.map(
+        ({ assignments, labels, archived, ...card }) => ({
+          archived,
+          labels: labels.map(({ label }) => label),
+          ...card,
+          assignees: assignments.map(({ member }) => participantView(member)),
+          ...scheduleView(card, overdue.has(card.id)),
+        }),
+      );
+      return {
+        ...list,
+        cards: content.filter(({ archived }) => !archived),
+        archivedCards: content.filter(({ archived }) => archived),
+      };
+    });
     return {
       timeZone,
       today,
@@ -178,22 +195,8 @@ export class BoardContentService {
       availableLabels,
       orderRevision: board.orderRevision,
       syncRevision: board.syncRevision,
-      lists: board.lists.map(({ cards, ...list }) => {
-        const visible = cards.map(
-          ({ assignments, labels, archived, ...card }) => ({
-            archived,
-            labels: labels.map(({ label }) => label),
-            ...card,
-            assignees: assignments.map(({ member }) => participantView(member)),
-            ...scheduleView(card, overdue.has(card.id)),
-          }),
-        );
-        return {
-          ...list,
-          cards: visible.filter(({ archived }) => !archived),
-          archivedCards: visible.filter(({ archived }) => archived),
-        };
-      }),
+      lists: lists.filter(({ archived }) => !archived),
+      archivedLists: lists.filter(({ archived }) => archived),
     };
   }
 
@@ -240,13 +243,12 @@ export class BoardContentService {
         if (!board) return { denied: 'HIDDEN' } as const;
         if (!this.editable(board)) return { denied: 'READ_ONLY' } as const;
 
-        if (
-          mutation.listId &&
-          !(await tx.boardList.findFirst({
+        const listAccess = () =>
+          tx.boardList.findFirst({
             where: { id: mutation.listId, boardId: context.boardId },
-            select: { id: true },
-          }))
-        )
+            select: { archived: true },
+          });
+        if (card && !existingId && !(await listAccess()))
           return { denied: 'HIDDEN' } as const;
 
         if (!existingId) {
@@ -255,6 +257,8 @@ export class BoardContentService {
           if (!current) return { denied: 'HIDDEN' } as const;
           if (!this.editable(current)) return { denied: 'READ_ONLY' } as const;
         }
+        const list = card ? await listAccess() : null;
+        if (card && !list) return { denied: 'HIDDEN' } as const;
 
         const before = card
           ? await tx.boardCard.findFirst({
@@ -269,7 +273,7 @@ export class BoardContentService {
               where: { id, boardId: context.boardId },
             });
         if (existingId && !before) return { denied: 'HIDDEN' } as const;
-        if (existingId && before && 'archived' in before && before.archived)
+        if (existingId && (before?.archived || list?.archived))
           return { denied: 'READ_ONLY' } as const;
 
         const previous =
@@ -283,6 +287,7 @@ export class BoardContentService {
           }
           return { resource: previous };
         }
+        if (list?.archived) return { denied: 'READ_ONLY' } as const;
         const resource = card
           ? {
               id,
@@ -436,6 +441,7 @@ export class BoardContentService {
         where: { id: cardId, listId, list: { boardId: context.boardId } },
         select: {
           archived: true,
+          list: { select: { archived: true } },
           comments: {
             orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
             select: {
@@ -452,7 +458,8 @@ export class BoardContentService {
         },
       });
       if (!card) return null;
-      const editable = !card.archived && this.editable(access);
+      const editable =
+        !card.archived && !card.list?.archived && this.editable(access);
       return {
         editable,
         comments: card.comments.map(({ author, removedBy, ...comment }) => {
@@ -509,10 +516,11 @@ export class BoardContentService {
       if (!this.editable(current)) return { denied: 'READ_ONLY' } as const;
       const card = await tx.boardCard.findFirst({
         where: { id: cardId, listId, list: { boardId: context.boardId } },
-        select: { archived: true },
+        select: { archived: true, list: { select: { archived: true } } },
       });
       if (!card) return { denied: 'HIDDEN' } as const;
-      if (card.archived) return { denied: 'READ_ONLY' } as const;
+      if (card.archived || card.list?.archived)
+        return { denied: 'READ_ONLY' } as const;
 
       const before =
         change.kind === 'CREATE'
@@ -683,14 +691,15 @@ export class BoardContentService {
           ...(receipt ? {} : { listId }),
           list: { boardId: context.boardId },
         },
-        select: { archived: true },
+        select: { archived: true, list: { select: { archived: true } } },
       });
       if (!card) return { denied: 'HIDDEN' } as const;
       if (receipt) {
         if (receipt.requestHash !== requestHash) conflict();
         return { confirmed: true };
       }
-      if (card.archived) return { denied: 'READ_ONLY' } as const;
+      if (card.archived || card.list?.archived)
+        return { denied: 'READ_ONLY' } as const;
       if (
         !(await tx.workspaceLabel.findFirst({
           where: { id: labelId, workspaceId: context.workspaceId },
@@ -778,14 +787,15 @@ export class BoardContentService {
           ...(receipt ? {} : { listId }),
           list: { boardId: context.boardId },
         },
-        select: { archived: true },
+        select: { archived: true, list: { select: { archived: true } } },
       });
       if (!card) return { denied: 'HIDDEN' } as const;
       if (receipt) {
         if (receipt.requestHash !== requestHash) conflict();
         return { confirmed: true };
       }
-      if (card.archived) return { denied: 'READ_ONLY' } as const;
+      if (card.archived || card.list?.archived)
+        return { denied: 'READ_ONLY' } as const;
       const member = {
         workspaceId: context.workspaceId,
         boardId: context.boardId,
@@ -884,14 +894,19 @@ export class BoardContentService {
           ...(receipt ? {} : { listId }),
           list: { boardId: context.boardId },
         },
-        select: { ...scheduleFields, archived: true },
+        select: {
+          ...scheduleFields,
+          archived: true,
+          list: { select: { archived: true } },
+        },
       });
       if (!current) return { denied: 'HIDDEN' } as const;
       if (receipt) {
         if (receipt.requestHash !== requestHash) conflict();
         return { confirmed: true };
       }
-      if (current.archived) return { denied: 'READ_ONLY' } as const;
+      if (current.archived || current.list?.archived)
+        return { denied: 'READ_ONLY' } as const;
 
       const occurredAt = new Date();
       let data: Prisma.BoardCardUncheckedUpdateInput;
@@ -979,37 +994,79 @@ export class BoardContentService {
     return result;
   }
 
-  async archiveCard(
+  archiveList(
+    context: BoardContext,
+    listId: string,
+    archived: boolean,
+    operationId: string,
+  ) {
+    return this.changeArchive(context, { listId, archived }, operationId);
+  }
+
+  archiveCard(
     context: BoardContext,
     listId: string,
     cardId: string,
     archived: boolean,
     operationId: string,
+    destinationListId?: string,
   ) {
-    const operation = archived ? 'CARD_ARCHIVED' : 'CARD_RESTORED';
+    return this.changeArchive(
+      context,
+      { listId, cardId, archived, destinationListId },
+      operationId,
+    );
+  }
+
+  private async changeArchive(
+    context: BoardContext,
+    change: {
+      listId: string;
+      cardId?: string;
+      archived: boolean;
+      destinationListId?: string;
+    },
+    operationId: string,
+  ) {
+    const { listId, cardId, archived, destinationListId } = change;
+    const kind = cardId ? 'CARD' : 'LIST';
+    const operation = kind + (archived ? '_ARCHIVED' : '_RESTORED');
     const eventId = creationId(
       context.accountId,
       operationId,
       context.workspaceId,
       context.boardId,
-      'CARD_ARCHIVE',
+      kind + '_ARCHIVE',
     );
+    const intent = [
+      listId,
+      cardId,
+      archived,
+      ...(destinationListId ? [destinationListId] : []),
+    ];
     const requestHash = createHash('sha256')
-      .update(JSON.stringify([listId, cardId, archived]))
+      .update(JSON.stringify(intent))
       .digest('hex');
     const result = await this.transaction(async (tx) => {
       const access = await this.boardAccess(tx, context);
       if (!access) return { denied: 'HIDDEN' } as const;
       if (!this.editable(access)) return { denied: 'READ_ONLY' } as const;
       await lockBoardMembers(tx, context.boardId);
+      const findList = (id: string) =>
+        tx.boardList.findFirst({
+          where: { id, boardId: context.boardId },
+          select: { archived: true },
+        });
       if (
-        !(await tx.boardList.findFirst({
-          where: { id: listId, boardId: context.boardId },
-          select: { id: true },
-        }))
+        !(await findList(listId)) ||
+        (destinationListId && !(await findList(destinationListId)))
       )
         return { denied: 'HIDDEN' } as const;
-      await lockContainers(tx, [{ kind: 'CARD', id: listId }]);
+      const containers: Container[] = [{ kind: 'CARD', id: listId }];
+      if (!cardId) containers.push({ kind: 'LIST', id: context.boardId });
+      if (destinationListId)
+        containers.push({ kind: 'CARD', id: destinationListId });
+      await lockContainers(tx, containers);
       const current = await this.boardAccess(tx, context);
       if (!current) return { denied: 'HIDDEN' } as const;
       if (!this.editable(current)) return { denied: 'READ_ONLY' } as const;
@@ -1022,18 +1079,65 @@ export class BoardContentService {
         if (receipt.requestHash !== requestHash) conflict();
         return { confirmed: true } as const;
       }
-      const card = await tx.boardCard.findFirst({
-        where: { id: cardId, listId, list: { boardId: context.boardId } },
-        select: { archived: true },
-      });
-      if (!card) return { denied: 'HIDDEN' } as const;
-      if (card.archived === archived) conflict();
-      await tx.boardCard.update({
-        where: { id: cardId },
-        data: { archived, positionRevision: { increment: 1 } },
-        select: { id: true },
-      });
-      await advanceOrder(tx, context.boardId, 'CARD', [listId]);
+      const list = await findList(listId);
+      if (!list) return { denied: 'HIDDEN' } as const;
+      const state = cardId
+        ? await tx.boardCard.findFirst({
+            where: { id: cardId, listId },
+            select: { archived: true },
+          })
+        : list;
+      if (!state) return { denied: 'HIDDEN' } as const;
+      const data = { archived, positionRevision: { increment: 1 } };
+      const beforeData: Prisma.InputJsonObject = { archived: state.archived };
+      const afterData: Prisma.InputJsonObject = { archived };
+      if (destinationListId) {
+        const destination = await findList(destinationListId);
+        if (!destination) return { denied: 'HIDDEN' } as const;
+        if (destination.archived) return { denied: 'READ_ONLY' } as const;
+        if (!cardId || archived || !list.archived) conflict();
+        const target: Container = { kind: 'CARD', id: destinationListId };
+        const original = await siblings(tx, { kind: 'CARD', id: listId });
+        const prior = original.findIndex(({ id }) => id === cardId);
+        const items = await siblings(tx, target);
+        const position = await positionAt(tx, target, items, items.length);
+        Object.assign(beforeData, {
+          listId,
+          leftId: original[prior - 1]?.id ?? null,
+          rightId: original[prior + 1]?.id ?? null,
+        });
+        Object.assign(afterData, {
+          listId: destinationListId,
+          ...neighbors(items, items.length),
+        });
+        await tx.boardCard.update({
+          where: { id: cardId },
+          data: { ...data, listId: destinationListId, position },
+          select: { id: true },
+        });
+      } else {
+        if (cardId && list.archived) return { denied: 'READ_ONLY' } as const;
+        if (state.archived === archived) conflict();
+        if (cardId) {
+          await tx.boardCard.update({
+            where: { id: cardId },
+            data,
+            select: { id: true },
+          });
+        } else {
+          await tx.boardList.update({
+            where: { id: listId },
+            data,
+            select: { id: true },
+          });
+        }
+      }
+      await advanceOrder(
+        tx,
+        context.boardId,
+        kind,
+        destinationListId ? [listId, destinationListId] : [listId],
+      );
       const occurredAt = new Date();
       await tx.auditEvent.createMany({
         data: {
@@ -1044,8 +1148,8 @@ export class BoardContentService {
           scope: 'BOARD',
           operation,
           result: 'SUCCESS',
-          entityType: 'CARD',
-          entityId: cardId,
+          entityType: kind,
+          entityId: cardId ?? listId,
           context: {
             workspaceId: context.workspaceId,
             boardId: context.boardId,
@@ -1054,8 +1158,8 @@ export class BoardContentService {
           operationId: eventId,
           correlationId: eventId,
           sequence: 1,
-          beforeData: { archived: card.archived },
-          afterData: { archived },
+          beforeData,
+          afterData,
         },
       });
       await tx.boardFeedEvent.createMany({
@@ -1065,7 +1169,7 @@ export class BoardContentService {
           actorId: context.accountId,
           occurredAt,
           operation,
-          listId,
+          listId: destinationListId ?? listId,
           cardId,
           requestHash,
         },
@@ -1162,13 +1266,12 @@ export class BoardContentService {
         ? await findCard()
         : await tx.boardList.findFirst({
             where: { id: intent.itemId, boardId: context.boardId },
-            select: { positionRevision: true },
+            select: { positionRevision: true, archived: true },
           });
       if (!item) return { denied: 'HIDDEN' } as const;
       if ('listId' in item && item.listId !== source.id)
         throw new SourceChanged();
-      if ('archived' in item && item.archived)
-        return { denied: 'READ_ONLY' } as const;
+      if (item.archived) return { denied: 'READ_ONLY' } as const;
       if (
         intent.itemRevision > item.positionRevision ||
         (intent.itemRevision === item.positionRevision &&
@@ -1184,11 +1287,14 @@ export class BoardContentService {
             boardId: context.boardId,
             id: { in: [source.id, intent.sourceId, destination.id] },
           },
-          select: { id: true, cardOrderRevision: true },
+          select: { id: true, cardOrderRevision: true, archived: true },
         });
         const from = containers.find(({ id }) => id === intent.sourceId);
         const to = containers.find(({ id }) => id === destination.id);
-        if (!from || !to) return { denied: 'HIDDEN' } as const;
+        const actualSource = containers.find(({ id }) => id === source.id);
+        if (!from || !to || !actualSource) return { denied: 'HIDDEN' } as const;
+        if (actualSource.archived || to.archived)
+          return { denied: 'READ_ONLY' } as const;
         sourceRevision = from.cardOrderRevision;
         destinationRevision = to.cardOrderRevision;
       }
@@ -1216,7 +1322,7 @@ export class BoardContentService {
         intent.destinationRevision === destinationRevision,
       );
       if (same && index === oldIndex) conflict();
-      // Archived cards reserve their positions without participating in visible placement.
+      // Archived items reserve their positions without participating in visible placement.
       const previous = active[index - 1]?.id;
       const slot = previous
         ? target.findIndex(({ id }) => id === previous) + 1

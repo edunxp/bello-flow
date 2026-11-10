@@ -1385,3 +1385,24 @@ registra `CARD_ARCHIVED` ou `CARD_RESTORED` com os identificadores do cartão e
 da lista. A auditoria registra também os estados anterior e posterior. O
 recibo permite repetir a mesma intenção após perda da resposta. A migration
 acrescenta somente `UPDATE(archived)` a `bello_runtime`.
+
+## Arquivamento e restauração de listas
+
+`POST /api/workspaces/:workspaceId/boards/:boardId/lists/:listId/archive`
+recebe `archived` e `operationId`. A leitura separa `lists` e `archivedLists`.
+Administrador e Membro podem arquivar e restaurar listas. Observador pode
+consultar listas arquivadas e seus cartões. A lista arquivada bloqueia os
+comandos operacionais dos cartões e preserva os estados individuais. Ao
+restaurar a lista, cartões arquivados individualmente continuam arquivados.
+
+A posição da lista permanece reservada no quadro, inclusive durante
+rebalanceamento. Ordenação visível usa vizinhos ativos. O comando de lista
+bloqueia a ordenação do quadro e a ordenação de cartões da lista. Estado,
+revisões, auditoria, feed e recibo são gravados na mesma transação.
+
+Para restaurar um cartão de lista arquivada, o participante pode restaurar a
+lista primeiro ou enviar `destinationListId` ao comando de restauração do
+cartão. O destino deve ser uma lista ativa do mesmo quadro. Nesse caso, o
+cartão ocupa o fim do destino, preserva sua identidade e suas relações e a
+lista de origem continua arquivada. A auditoria registra as listas de origem
+e destino e os vizinhos relevantes.

@@ -113,6 +113,47 @@ describe('BoardContent', () => {
     expect(page.message()).toBe('Cartão restaurado.');
   });
 
+  it('discloses archived lists and restores a card into an explicit active destination', async () => {
+    const { fixture, http, page } = setup();
+    const card = lists[0].cards[0];
+    const list = { ...lists[0], id: 'archived', name: 'Arquivo', archived: true };
+    const board = {
+      ...page.content()!,
+      lists: [{ ...lists[0], cards: [] }],
+      archivedLists: [list],
+    };
+    page.content.set(board);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector('[aria-label="Arquivo"]')).toBeNull();
+    const disclosure = Array.from(element.querySelectorAll('button')).find((button) =>
+      button.textContent.includes('Listas arquivadas'),
+    );
+    disclosure?.click();
+    fixture.detectChanges();
+    const archive = element.querySelector('[aria-label="Arquivo"]')!;
+    expect(archive.textContent).toContain('Cartão');
+    expect(archive.textContent).not.toContain('Criar cartão');
+    expect(archive.textContent).not.toContain('Editar cartão');
+    const event = new Event('submit', { cancelable: true });
+    expect(page.restoreInList(event, list, card, '')).toBeUndefined();
+    const restore = page.restoreInList(event, list, card, 'list');
+    const request = http.expectOne(path + '/archived/cards/card/archive');
+    expect(request.request.body).toMatchObject({ archived: false, destinationListId: 'list' });
+    request.flush(null);
+    await restore;
+    fixture.detectChanges();
+    http.expectOne(path).flush(board);
+    const restoreList = page.changeListArchive(list);
+    const listRequest = http.expectOne(path + '/archived/archive');
+    expect(listRequest.request.body.archived).toBe(false);
+    listRequest.flush(null);
+    await restoreList;
+    fixture.detectChanges();
+    http.expectOne(path).flush(board);
+    expect(page.message()).toBe('Lista restaurada.');
+  });
+
   it('renders content and omits the write controls for observers', () => {
     const { fixture } = setup(false);
     const element = fixture.nativeElement as HTMLElement;
