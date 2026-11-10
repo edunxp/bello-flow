@@ -2,7 +2,8 @@ const nestMocks = vi.hoisted(() => ({
   create: vi.fn(),
 }));
 
-vi.mock('@nestjs/core', () => ({
+vi.mock('@nestjs/core', async (importOriginal) => ({
+  ...(await importOriginal()),
   NestFactory: {
     create: nestMocks.create,
   },
@@ -82,6 +83,7 @@ function applicationMock() {
     useBodyParser: vi.fn(),
     use: vi.fn(),
     useGlobalFilters: vi.fn(),
+    useWebSocketAdapter: vi.fn(),
     enableShutdownHooks: vi.fn(),
     listen: vi.fn().mockResolvedValue(undefined),
   };

@@ -615,6 +615,24 @@ e os endpoints de recuperação permanecem no
   e justificativa restritas, repetição e rollback por falhas obrigatórias.
   Registro anterior ao CI remoto.
 
+## Sincronização em tempo real dos quadros
+
+- **Ciclo:** `work/sincronizacao-websocket`,
+  `BASE_MAIN_SHA=9a71c6b7dbfc17c366b5c3b4736c5b299c8dc7dd`.
+  Implementação da AT-005 em uma instância. O gateway valida origem, sessão
+  e participação, distribui apenas o ID do quadro e a revisão após o commit
+  e encerra a conexão após perda de acesso. O cliente recupera o quadro
+  por HTTP autorizado. [Protocolo implementado](arquitetura/colaboracao-tempo-real.md).
+- **Dependências autorizadas:** `@nestjs/websockets` e `@nestjs/platform-ws`
+  em 12.3.2 e `@types/ws` em 8.18.2. Sem migration ou privilégios novos.
+- **Validação local — VERIFICADO:** gate completo com 850 testes da API, 101
+  da web e cobertura acima de 90% nas quatro métricas. Em Docker passaram
+  17 cenários Chromium com API e PostgreSQL descartável. A prova WebSocket
+  confirmou recusa de participante apenas do
+  Workspace, aviso mínimo para Observador, atualização após gravação,
+  recuperação após queda, revogação de participação e sessão e preservação do
+  prazo de inatividade. Registro anterior ao CI remoto.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,

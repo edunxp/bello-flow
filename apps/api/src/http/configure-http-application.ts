@@ -1,3 +1,4 @@
+import { BoardSocketAdapter } from '../realtime/board-socket-adapter.js';
 import type { IncomingMessage } from 'node:http';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -34,6 +35,7 @@ export function configureHttpApplication(
   config: HttpSecurityConfig,
 ): void {
   app.set(HTTP_SECURITY_CONFIG_SETTING, config);
+  app.useWebSocketAdapter(new BoardSocketAdapter(app, config));
   app.set(
     'trust proxy',
     config.trustedProxies.length === 0 ? false : [...config.trustedProxies],

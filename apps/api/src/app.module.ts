@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller.js';
 import { AuthSessionModule } from './auth/auth-session.module.js';
+import { BoardRealtimeGateway } from './realtime/board-realtime.gateway.js';
+import { RevisionNotificationInterceptor } from './realtime/revision-notification.interceptor.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 
 import {
@@ -16,6 +19,8 @@ import { WorkspaceService } from './workspaces/workspace.service.js';
   imports: [PrismaModule, AuthSessionModule],
   controllers: [AppController, WorkspaceController],
   providers: [
+    BoardRealtimeGateway,
+    { provide: APP_INTERCEPTOR, useClass: RevisionNotificationInterceptor },
     WorkspaceService,
     BoardContentService,
     SharingService,

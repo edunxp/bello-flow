@@ -3,6 +3,8 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
+import { backgroundHeaders } from './board-realtime';
+
 interface CardComment {
   id: string;
   author: string;
@@ -157,22 +159,24 @@ export class CardComments {
     effect((onCleanup) => {
       this.revision();
       this.reload();
-      const request = this.http.get<Thread>(this.path(), options).subscribe({
-        next: (thread) => {
-          const pending = this.pending();
-          if (pending) {
-            const current = thread.comments.find(({ id }) => id === pending.comment.id);
-            const allowed = pending.kind === 'MODERATE' ? current?.canModerate : current?.canEdit;
-            if (!allowed || current?.version !== pending.comment.version) this.pending.set(null);
-          }
-          this.thread.set(thread);
-        },
-        error: () => {
-          this.thread.set(null);
-          this.pending.set(null);
-          this.message.set('Comentários indisponíveis.');
-        },
-      });
+      const request = this.http
+        .get<Thread>(this.path(), { ...options, headers: backgroundHeaders })
+        .subscribe({
+          next: (thread) => {
+            const pending = this.pending();
+            if (pending) {
+              const current = thread.comments.find(({ id }) => id === pending.comment.id);
+              const allowed = pending.kind === 'MODERATE' ? current?.canModerate : current?.canEdit;
+              if (!allowed || current?.version !== pending.comment.version) this.pending.set(null);
+            }
+            this.thread.set(thread);
+          },
+          error: () => {
+            this.thread.set(null);
+            this.pending.set(null);
+            this.message.set('Comentários indisponíveis.');
+          },
+        });
       onCleanup(() => request.unsubscribe());
     });
   }

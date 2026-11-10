@@ -75,6 +75,47 @@ export async function openGateway({
       }
     },
   );
+  server.on("upgrade", (req, client, head) => {
+    if (req.url.split("?")[0] !== "/api/realtime") {
+      client.destroy();
+      return;
+    }
+    const headers = { ...req.headers };
+    for (const name of Object.keys(headers))
+      if (name === "forwarded" || name.startsWith("x-forwarded-"))
+        delete headers[name];
+    const request = upstreamRequest({
+      host: "127.0.0.1",
+      port: apiPort,
+      path: req.url,
+      method: "GET",
+      headers,
+    });
+    client.on("error", () => request.destroy());
+    client.on("close", () => request.destroy());
+    request.on("error", () => client.destroy());
+    request.on("response", (response) => {
+      response.resume();
+      client.end(
+        `HTTP/1.1 ${response.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+      );
+    });
+    request.on("upgrade", (response, upstream, upstreamHead) => {
+      const lines = ["HTTP/1.1 101 Switching Protocols"];
+      for (let index = 0; index < response.rawHeaders.length; index += 2)
+        lines.push(
+          response.rawHeaders[index] + ": " + response.rawHeaders[index + 1],
+        );
+      client.write(lines.join("\r\n") + "\r\n\r\n");
+      if (upstreamHead.length) client.write(upstreamHead);
+      if (head.length) upstream.write(head);
+      upstream.on("error", () => client.destroy());
+      upstream.on("close", () => client.destroy());
+      client.on("close", () => upstream.destroy());
+      client.pipe(upstream).pipe(client);
+    });
+    request.end();
+  });
   server.listen(port, host);
   await once(server, "listening");
   return server;

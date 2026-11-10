@@ -2472,6 +2472,182 @@ try {
     },
   );
 
+  await scenario("WebSocket revisions, recovery and revocation", async () => {
+    const [owner, reader] = await Promise.all([fixture(), fixture()]);
+    const [admin, observer] = await Promise.all([pageFor(), pageFor()]);
+    const headers = { "X-Bello-Flow-Request": "1", Origin: origin };
+    const post = (path, data) =>
+      admin.context.request.post(origin + path, { headers, data });
+    const create = async (path, data) => {
+      const response = await post(path, { ...data, operationId: randomUUID() });
+      check(response.status() === 201);
+      return (await response.json()).id;
+    };
+    try {
+      await login(admin.page, owner);
+      await login(observer.page, reader);
+      const workspace =
+        "/api/workspaces/" +
+        (await create("/api/workspaces", {
+          name: "Tempo real",
+          timeZone: "Etc/UTC",
+        }));
+      const boardId = await create(workspace + "/boards", {
+        name: "Ao vivo",
+        description: "Validação WebSocket",
+      });
+      const board = workspace + "/boards/" + boardId;
+      const lists = board + "/lists";
+      check(
+        (
+          await post(workspace + "/members", {
+            email: reader.email,
+            role: "MEMBER",
+          })
+        ).status() === 204,
+      );
+
+      const socketUrl =
+        origin.replace(/^https/, "wss") +
+        "/api/realtime?" +
+        new URLSearchParams({
+          workspaceId: workspace.split("/").at(-1),
+          boardId,
+        });
+      const forbiddenCode = await timeout(
+        observer.page.evaluate(
+          (url) =>
+            new Promise((resolve) => {
+              const socket = new WebSocket(url);
+              socket.onopen = () => {
+                resolve(101);
+                socket.close();
+              };
+              socket.onclose = (event) => resolve(event.code);
+            }),
+          socketUrl,
+        ),
+      );
+      check(forbiddenCode === 1006);
+      check(
+        (
+          await post(board + "/members", {
+            email: reader.email,
+            role: "OBSERVER",
+          })
+        ).status() === 204,
+      );
+
+      const received = [];
+      const closed = [];
+      let disconnect;
+      let connect = true;
+      let attempts = 0;
+      await observer.page.routeWebSocket(socketUrl, (client) => {
+        attempts++;
+        if (!connect) {
+          client.close({ code: 1012 });
+          return;
+        }
+        const server = client.connectToServer();
+        disconnect = () => server.close({ code: 3001 });
+        server.onMessage((message) => {
+          received.push(JSON.parse(message.toString()));
+          client.send(message);
+        });
+        server.onClose((code, reason) => {
+          closed.push(code);
+          client.close({ code, reason });
+        });
+      });
+      await observer.page.route(origin + lists + "/revision", (route) =>
+        route.abort(),
+      );
+      await observer.page.goto(origin + board.replace(/^\/api/, ""));
+      await expect.poll(() => received.length).toBeGreaterThan(0);
+      check(Object.keys(received[0]).sort().join() === "boardId,revision");
+      check(received[0].boardId === boardId);
+      const first = received[0].revision;
+      const sessionAged = await migrator.query(
+        `UPDATE public.auth_session SET created_at=created_at-interval '6 minutes',
+          last_activity_at=last_activity_at-interval '6 minutes',
+          absolute_expires_at=absolute_expires_at-interval '6 minutes'
+          WHERE account_id=$1 RETURNING last_activity_at`,
+        [reader.id],
+      );
+      check(sessionAged.rowCount === 1);
+      await create(lists, { name: "Lista ao vivo" });
+      await expect.poll(() => received.at(-1)?.revision).toBe(first + 1);
+      await expect(
+        observer.page.getByRole("heading", { name: "Lista ao vivo" }),
+      ).toBeVisible();
+      connect = false;
+      disconnect();
+      await expect.poll(() => attempts).toBeGreaterThan(1);
+      await create(lists, { name: "Lista durante a queda" });
+      connect = true;
+      await expect
+        .poll(() => received.at(-1)?.revision, { timeout: timeLimit })
+        .toBe(first + 2);
+      await expect(
+        observer.page.getByRole("heading", { name: "Lista durante a queda" }),
+      ).toBeVisible();
+
+      check(
+        (
+          await post(board + "/members/change", {
+            accountId: reader.id,
+            expectedRole: "OBSERVER",
+            role: null,
+            operationId: randomUUID(),
+          })
+        ).status() === 204,
+      );
+      await expect.poll(() => closed).toContain(1008);
+      await expect(
+        observer.page.getByRole("heading", { name: "Lista ao vivo" }),
+      ).toHaveCount(0);
+      check(received.at(-1).revision === first + 2);
+      const sessionAfterSync = await migrator.query(
+        "SELECT last_activity_at FROM public.auth_session WHERE account_id=$1",
+        [reader.id],
+      );
+      check(
+        sessionAfterSync.rows[0].last_activity_at.getTime() ===
+          sessionAged.rows[0].last_activity_at.getTime(),
+      );
+
+      check(
+        (
+          await post(board + "/members", {
+            email: reader.email,
+            role: "OBSERVER",
+          })
+        ).status() === 204,
+      );
+      const noticesBeforeReopen = received.length;
+      await observer.page.goto(origin + board.replace(/^\/api/, ""));
+      await expect
+        .poll(() => received.length)
+        .toBeGreaterThan(noticesBeforeReopen);
+      const closesBeforeLogout = closed.length;
+      check(
+        (
+          await observer.context.request.post(origin + "/api/auth/logout", {
+            headers,
+          })
+        ).status() === 204,
+      );
+      await expect.poll(() => closed.slice(closesBeforeLogout)).toContain(1008);
+      await expect(
+        observer.page.getByRole("heading", { name: "Lista ao vivo" }),
+      ).toHaveCount(0);
+      check(observer.errors.length === 0);
+    } finally {
+      await Promise.all([admin.context.close(), observer.context.close()]);
+    }
+  });
+
   await scenario("generic rejected login (real stack)", async () => {
     const account = await fixture();
     const { page, context } = await pageFor();

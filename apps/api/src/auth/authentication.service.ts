@@ -179,8 +179,13 @@ export class AuthenticationService {
 
   async resolveAuthenticatedSession(
     token: unknown,
+    refreshActivity = true,
   ): Promise<AuthenticatedSessionIdentity | null> {
-    const session = await this.resolveSession(token, generateOperationId());
+    const session = await this.resolveSession(
+      token,
+      generateOperationId(),
+      refreshActivity,
+    );
     return session ? { accountId: session.accountId } : null;
   }
 
@@ -383,9 +388,12 @@ export class AuthenticationService {
   private async resolveSession(
     token: unknown,
     operationId: OperationId,
+    refreshActivity = true,
   ): Promise<ResolvedAuthSession | null> {
     try {
-      return await this.sessions.resolveSession(token);
+      return await (refreshActivity
+        ? this.sessions.resolveSession(token)
+        : this.sessions.resolveSession(token, false));
     } catch {
       throw new AuthenticationError(
         AUTHENTICATION_ERROR_CODE.OPERATIONAL_FAILURE,

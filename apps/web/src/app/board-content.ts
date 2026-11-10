@@ -2,6 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, effect, inject, input, output, signal } from '@angular/core';
 import { catchError, EMPTY, exhaustMap, firstValueFrom, throwError, timer } from 'rxjs';
 
+import { backgroundHeaders, BOARD_REALTIME } from './board-realtime';
 import { CardComments } from './card-comments';
 import type { Label } from './workspace-labels';
 
@@ -401,7 +402,9 @@ export class BoardContent {
   readonly commentsCard = signal<string | null>(null);
   readonly drag = signal<DragItem | null>(null);
   private readonly http = inject(HttpClient);
+  private readonly connectRealtime = inject(BOARD_REALTIME);
   private readonly options = { headers: { 'X-Bello-Flow-Request': '1' }, timeout: 15000 };
+  private readonly readOptions = { ...this.options, headers: backgroundHeaders };
   private readonly reload = signal(0);
   private accessLost = false;
 
@@ -409,7 +412,7 @@ export class BoardContent {
     effect((onCleanup) => {
       this.reload();
       if (this.accessLost) return;
-      const request = this.http.get<Content>(this.path(), this.options).subscribe({
+      const request = this.http.get<Content>(this.path(), this.readOptions).subscribe({
         next: (content) => {
           if (!this.accessLost) this.content.set(content);
         },
@@ -429,7 +432,7 @@ export class BoardContent {
             this.http
               .get<{ syncRevision: number; today: string; timeZone: string }>(
                 path + '/revision',
-                this.options,
+                this.readOptions,
               )
               .pipe(
                 catchError((error: unknown) => {
@@ -451,16 +454,33 @@ export class BoardContent {
         });
       onCleanup(() => poll.unsubscribe());
     });
+    effect((onCleanup) => {
+      const path = this.path();
+      const stop = this.connectRealtime(
+        path,
+        (revision) => {
+          if (!this.accessLost && revision > (this.content()?.syncRevision ?? -1))
+            this.reload.update((value) => value + 1);
+        },
+        () => this.clearAccess(),
+      );
+      onCleanup(stop);
+    });
   }
 
   private rejectAccess(error: unknown) {
     if (!(error instanceof HttpErrorResponse) || ![401, 403, 404].includes(error.status))
       return false;
+    this.clearAccess();
+    return true;
+  }
+
+  private clearAccess() {
+    if (this.accessLost) return;
     this.accessLost = true;
     this.content.set(null);
     this.message.set('Conteúdo do quadro indisponível.');
     this.revoked.emit();
-    return true;
   }
 
   private moving(list: List, card?: Card): DragItem {

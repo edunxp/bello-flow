@@ -47,7 +47,13 @@ Uma falha entre commit e sinalização não desfaz a mutação. Verificação pe
 
 ## Conteúdo das mensagens
 
-Mensagens carregam somente o necessário para identificar quadro, tipo de alteração, entidade afetada e revisão. Dados privados completos devem ser obtidos por consulta HTTP autorizada quando necessário.
+O cliente abre `/api/realtime?workspaceId=<uuid>&boardId=<uuid>` na mesma origem
+da aplicação. O proxy deve encaminhar o upgrade WebSocket para a API preservando
+o cookie e a origem. A conexão corresponde a um único quadro e aceita somente
+quadros dos quais a conta participa. O gateway envia apenas
+`{"boardId":"<uuid>","revision":0}`, com a revisão persistida atual. O cliente
+consulta os dados por HTTP autorizado. Mensagens de dados do cliente encerram
+a conexão.
 
 O canal não transporta:
 
@@ -63,7 +69,15 @@ O canal não transporta:
 - Ao reconectar, compara essa revisão com a revisão autorizada atual.
 - Diferença provoca recuperação por HTTP, não reprodução cega de mensagens antigas.
 - A recuperação reavalia autorização.
-- O protocolo detalhado, intervalos e limites permanecem pendentes.
+- O servidor revalida sessão e participação antes de enviar cada aviso e a cada
+  5 segundos. Perda de acesso encerra a conexão com código 1008 e limpa o
+  conteúdo em tela.
+- A conexão admite até 128 clientes por instância, incluindo upgrades em
+  verificação. O heartbeat termina conexões que deixam de responder.
+- O navegador tenta reconectar com espera de 1 a 16 segundos. A consulta HTTP
+  de revisão permanece ativa a cada 5 segundos como contingência e atualiza
+  também informações de calendário. Consultas automáticas e verificações do
+  canal não prolongam a sessão.
 
 ## Escala futura
 

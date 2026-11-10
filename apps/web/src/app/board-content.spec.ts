@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { BoardContent } from './board-content';
+import { BOARD_REALTIME, type connectBoardRealtime } from './board-realtime';
 
 describe('BoardContent', () => {
   const path = '/api/workspaces/work/boards/board/lists';
@@ -33,10 +34,14 @@ describe('BoardContent', () => {
     },
   ];
 
-  function setup(editable = true) {
+  function setup(editable = true, connectRealtime: typeof connectBoardRealtime = () => vi.fn()) {
     TestBed.configureTestingModule({
       imports: [BoardContent],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: BOARD_REALTIME, useValue: connectRealtime },
+      ],
     });
     const fixture = TestBed.createComponent(BoardContent);
     fixture.componentRef.setInput('path', path);
@@ -51,6 +56,28 @@ describe('BoardContent', () => {
   afterEach(() => {
     TestBed.inject(HttpTestingController).verify();
     sessionStorage.clear();
+  });
+
+  it('refreshes only for newer notices and clears content on revocation', () => {
+    const connect = vi.fn<typeof connectBoardRealtime>().mockReturnValue(vi.fn());
+    const { fixture, http, page } = setup(false, connect);
+    const [, receive, revoke] = connect.mock.calls[0];
+    const revoked = vi.fn();
+    page.revoked.subscribe(revoked);
+    receive(3);
+    fixture.detectChanges();
+    const request = http.expectOne({ url: path, method: 'GET' });
+    expect(request.request.headers.get('X-Bello-Flow-Background')).toBe('1');
+    request.flush({ editable: false, lists, syncRevision: 3 });
+    fixture.detectChanges();
+    receive(2);
+    receive(3);
+    fixture.detectChanges();
+    http.expectNone(path);
+    revoke();
+    fixture.detectChanges();
+    expect(revoked).toHaveBeenCalledOnce();
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Cartão');
   });
 
   it('renders content and omits the write controls for observers', () => {

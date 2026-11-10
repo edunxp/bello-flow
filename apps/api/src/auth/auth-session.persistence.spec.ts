@@ -462,6 +462,17 @@ describe('AuthSessionPersistence resolution and reconciliation', () => {
 
     row.lastActivityAt = stale;
     harness.rootQueryRaw.mockReset();
+    harness.rootQueryRaw.mockResolvedValueOnce([row]);
+    await expect(
+      harness.service.resolveSession(token, false),
+    ).resolves.toMatchObject({
+      sessionId,
+      lastActivityAt: stale,
+    });
+    expect(harness.rootQueryRaw).toHaveBeenCalledTimes(1);
+
+    row.lastActivityAt = stale;
+    harness.rootQueryRaw.mockReset();
     harness.rootQueryRaw
       .mockResolvedValueOnce([row])
       .mockResolvedValueOnce([])

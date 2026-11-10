@@ -631,7 +631,12 @@ export class WorkspaceController {
     const cookie = readSessionCookie(request.rawHeaders, config.sessionCookie);
     const identity =
       cookie.status === 'VALID'
-        ? await this.authentication.resolveAuthenticatedSession(cookie.token)
+        ? !mutating && request.headers?.['x-bello-flow-background'] === '1'
+          ? await this.authentication.resolveAuthenticatedSession(
+              cookie.token,
+              false,
+            )
+          : await this.authentication.resolveAuthenticatedSession(cookie.token)
         : null;
     if (!identity) throw new HttpContractError(HTTP_ERROR_CODE.UNAUTHENTICATED);
     return identity.accountId;

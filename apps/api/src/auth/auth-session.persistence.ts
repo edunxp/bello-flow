@@ -293,7 +293,10 @@ export class AuthSessionPersistence {
     }
   }
 
-  async resolveSession(token: unknown): Promise<ResolvedAuthSession | null> {
+  async resolveSession(
+    token: unknown,
+    refreshActivity = true,
+  ): Promise<ResolvedAuthSession | null> {
     let tokenHash: SessionTokenHash;
     try {
       tokenHash = hashSessionToken(token);
@@ -308,7 +311,7 @@ export class AuthSessionPersistence {
         return null;
       }
 
-      if (session.shouldRefreshActivity === true) {
+      if (refreshActivity && session.shouldRefreshActivity === true) {
         const updated = await this.updateActivity(session.id, tokenHash);
         if (updated === null) {
           const current = (await this.readEligibleSession(tokenHash))[0];

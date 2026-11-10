@@ -11,6 +11,7 @@ describe('configureHttpApplication', () => {
     return {
       set: vi.fn(),
       useBodyParser: vi.fn(),
+      useWebSocketAdapter: vi.fn(),
       use: vi.fn(),
       useGlobalFilters: vi.fn(),
       enableCors: vi.fn(),
