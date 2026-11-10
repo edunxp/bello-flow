@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseFilters,
 } from '@nestjs/common';
@@ -23,6 +24,7 @@ import {
   validateMutatingRequestOrigin,
 } from '../http/request-security.js';
 import { readSessionCookie } from '../http/session-cookie.js';
+import { AuditQueryService, type AuditArea } from './audit-query.service.js';
 import { parseCivilDate } from './card-schedule.js';
 import { BoardContentService } from './board-content.service.js';
 import { SharingService } from './sharing.service.js';
@@ -30,6 +32,39 @@ import { WorkspaceService } from './workspace.service.js';
 
 function invalid(): never {
   throw new HttpContractError(HTTP_ERROR_CODE.INVALID_REQUEST);
+}
+
+function auditTimestamp(value: unknown) {
+  if (
+    typeof value !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)$/u.test(
+      value,
+    ) ||
+    !Number.isFinite(Date.parse(value)) ||
+    new Date(value).toISOString().slice(0, 19) !== value.slice(0, 19) ||
+    value.startsWith('0000-')
+  )
+    invalid();
+  return value;
+}
+function auditCode(value: unknown) {
+  if (typeof value !== 'string' || !/^[A-Z_0-9]{1,60}$/u.test(value)) invalid();
+  return value;
+}
+
+function historyPage(query: Record<string, unknown>) {
+  const offset = query.offset === undefined ? 0 : Number(query.offset);
+  if (
+    query.offset !== undefined &&
+    (typeof query.offset !== 'string' || !/^\d{1,9}$/u.test(query.offset))
+  )
+    invalid();
+  if (offset > 0 && query.before === undefined) invalid();
+  const before =
+    query.before === undefined
+      ? new Date().toISOString()
+      : auditTimestamp(query.before);
+  return { offset, before };
 }
 
 function identifier(value: unknown): string {
@@ -80,7 +115,101 @@ export class WorkspaceController {
     private readonly authentication: AuthenticationService,
     private readonly sharing: SharingService,
     private readonly content: BoardContentService,
+    private readonly audit: AuditQueryService,
   ) {}
+
+  @Get('audit/global')
+  globalAudit(
+    @Req() request: Request,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.queryAudit(request, query, 'GLOBAL', null, null);
+  }
+
+  @Get(':workspaceId/audit')
+  workspaceAudit(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.queryAudit(
+      request,
+      query,
+      'GOVERNANCE',
+      identifier(params.workspaceId),
+      null,
+    );
+  }
+
+  @Get(':workspaceId/boards/:boardId/audit')
+  boardAudit(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+    @Query() query: Record<string, unknown>,
+  ) {
+    const area = query.area ?? 'GOVERNANCE';
+    if (area !== 'GOVERNANCE' && area !== 'CONTENT') invalid();
+    return this.queryAudit(
+      request,
+      query,
+      area,
+      identifier(params.workspaceId),
+      identifier(params.boardId),
+    );
+  }
+
+  @Get(':workspaceId/boards/:boardId/cards/:cardId/audit')
+  cardAudit(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.queryAudit(
+      request,
+      query,
+      'CONTENT',
+      identifier(params.workspaceId),
+      identifier(params.boardId),
+      { cardId: identifier(params.cardId), ...historyPage(query) },
+    );
+  }
+
+  private async queryAudit(
+    request: Request,
+    query: Record<string, unknown>,
+    area: AuditArea,
+    workspaceId: string | null,
+    boardId: string | null,
+    history?: { cardId: string; offset: number; before: string },
+  ) {
+    const accountId = await this.account(request);
+    const optional = (key: string, parse: (value: unknown) => string) =>
+      query[key] === undefined ? null : parse(query[key]);
+    const cursorAt = optional('cursorAt', auditTimestamp);
+    const cursorId = optional('cursorId', identifier);
+    if ((cursorAt === null) !== (cursorId === null)) invalid();
+    const filters = {
+      from: optional('from', auditTimestamp),
+      until: optional('until', auditTimestamp),
+      entityType: optional('entityType', auditCode),
+      entityId: optional('entityId', identifier),
+      operation: optional('operation', auditCode),
+      result: optional('result', auditCode),
+      actor: optional('actor', identifier),
+      cursorAt,
+      cursorId,
+    };
+    return history
+      ? this.audit.query(
+          accountId,
+          area,
+          workspaceId,
+          boardId,
+          filters,
+          history,
+        )
+      : this.audit.query(accountId, area, workspaceId, boardId, filters);
+  }
 
   @Get()
   async list(@Req() request: Request) {
@@ -433,6 +562,78 @@ export class WorkspaceController {
           params.listId === undefined ? undefined : identifier(params.listId),
       },
       params.listId === undefined ? identifier(body?.operationId) : '',
+    );
+  }
+
+  @Get([
+    ':workspaceId/boards/:boardId/feed',
+    ':workspaceId/boards/:boardId/cards/:cardId/feed',
+  ])
+  async feed(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+    @Query() query: Record<string, unknown>,
+  ) {
+    const context = await this.contentContext(request, params);
+    const cardId =
+      params.cardId === undefined ? undefined : identifier(params.cardId);
+    const { offset, before } = historyPage(query);
+    const operation =
+      query.operation === undefined ? undefined : auditCode(query.operation);
+    return this.content.feed(context, cardId, {
+      offset,
+      before: new Date(before),
+      operation,
+    });
+  }
+
+  @Get(':workspaceId/boards/:boardId/transfer-targets')
+  async transferTargets(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    return this.content.transferTargets(
+      await this.contentContext(request, params),
+    );
+  }
+
+  @Get(':workspaceId/boards/:boardId/lists/:listId/cards/:cardId/transfer')
+  async transferImpact(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.content.transferCard(
+      await this.contentContext(request, params),
+      {
+        boardId: identifier(query.destinationBoardId),
+        listId: identifier(query.destinationListId),
+      },
+      identifier(params.listId),
+      identifier(params.cardId),
+    );
+  }
+
+  @Post(':workspaceId/boards/:boardId/lists/:listId/cards/:cardId/transfer')
+  @HttpCode(204)
+  async transferCard(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const context = await this.contentContext(request, params, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    const impact = body?.impact;
+    if (typeof impact !== 'string' || !/^[a-f0-9]{64}$/u.test(impact))
+      invalid();
+    await this.content.transferCard(
+      context,
+      {
+        boardId: identifier(body?.destinationBoardId),
+        listId: identifier(body?.destinationListId),
+      },
+      identifier(params.listId),
+      identifier(params.cardId),
+      { impact, operationId: identifier(body?.operationId) },
     );
   }
 

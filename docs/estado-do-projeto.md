@@ -9,62 +9,29 @@ corrente, devem apontar para este registro em vez de duplicar o estado operacion
 
 ## Fase atual
 
-- **Último marco publicado — VERIFICADO:** homologação HTTPS local sem e-mail
-  integrada por fast-forward na main no SHA
-  `8b945da7ba01dbabe492bd2314f7faa4a5f87dcc`.
-  [CI final 42413812922](https://github.com/edunxp/bello-flow/actions/runs/42413812922),
-  tentativa 1, push/main/SHA exato, com Quality, API integration, Browser E2E e
-  Required aprovados. Revisão independente favorável, sem ativação produtiva.
-- **Validação manual — RELATADO pelo responsável:** login, restauração após
-  recarga, logout e erro com senha incorreta exercitados com sucesso. Sessão
-  anterior mantida; não se acessou senha ou hash para essa conferência.
-- **Ciclo atual — VERIFICADO:** preparo do ensaio local Resend, autorizado sem
-  chave real e sem envio. Branch `work/pt009-resend-rehearsal`,
-  `BASE_MAIN_SHA=8b945da7ba01dbabe492bd2314f7faa4a5f87dcc`.
-  Git local/remoto inicialmente sincronizado e árvore limpa; nenhum arquivo
-  preexistente foi descartado. Risco alto por envolver credencial externa e
-  recuperação de senha; revisão independente e ensaio isolado são obrigatórios.
-- **Escopo implementado — VERIFICADO:** perfil separado em loopback 15444,
-  banco próprio tmpfs/rede interna e API real em development com entrega disabled.
-  Conta de homologação e destinatário fixos em belloflow@nextpartner.com.br;
-  remetente recuperacao@notify.nextpartner.com.br, ambos confirmados pelo responsável.
-  Não altera conta ou sessão da homologação anterior.
-- **Worker pontual — VERIFICADO:** comando interativo separado, autorização futura
-  própria, chave oculta somente em memória/IPC e ambiente filho somente runtime.
-  Configuração resend validada pelo loader existente, sem modificar endpoint,
-  payload, timeout ou classificação. Hook de agendamento suprimido exclusivamente
-  no harness; runCycle real limitado a um claim. Marcador wx/0600 anterior ao
-  processamento/efeito externo e guard de destinatário/orçamento impedem segunda
-  tentativa externa na mesma sessão, sem restauração após erro/UNKNOWN.
-  Nenhuma rota HTTP de envio ou exposição de link foi adicionada.
-- **Testes — VERIFICADO:** quality:local aprovado, cobertura vigente preservada;
-  ensaio com Chromium/API/PostgreSQL reais e servidor HTTP local simulado aprovou
-  API disabled, payload/link, uma chamada, estados SENT/token, bloqueio de nova
-  execução, redefinição, uso único e troca de senha. Apenas chave/senhas sintéticas,
-  sem egress e sem captura persistida do link. Gate inicialmente não iniciou por
-  conexão WSL indisponível e foi retomado; primeira execução do smoke corrigiu
-  apenas expectativas do teste para os contratos existentes 204/401.
-  Regressão dos 12 cenários E2E e da homologação disabled aprovadas.
-  Publicação loopback15444 conferiu health e shell Angular HTTPS, com limpeza
-  própria. Seis verificações negativas de CLI/perfil/IPC recusaram execução
-  indevida. Formatação, sintaxe dos scripts e git diff --check aprovados.
-- **Documentação e revisão — VERIFICADO:** procedimento do ensaio distingue
-  preparo de operação real, evidências pendentes e limites do resultado.
-  Revisão independente preliminar sem bloqueantes após ajuste da semântica
-  disabled/worker. Commit, publicação, CI e parecer no SHA final ainda pendentes
-  neste registro pré-publicação; os resultados serão registrados no relatório
-  operacional sem commit adicional apenas para inserir SHA ou CI.
-- **Provider — RELATADO por capturas do responsável:** conta Resend Free,
-  domínio notify.nextpartner.com.br verificado, MFA habilitado, TLS Enforced e
-  chave Sending access restrita ao domínio. Valor da chave não recebido, lido ou
-  configurado. Tracking desativado e mensagem real sem reescrita/pixel ainda não
-  comprovados; não houve envio real.
-- **Pendências — NÃO VERIFICADO:** condições operacionais atuais do provider,
-  guarda privada/secret manager, rotação/revogação, DMARC, quotas, tracking,
-  DPA/subprocessadores e aceitação aplicável do tratamento externo. Um envio
-  futuro exige evidências e autorização específica para uma tentativa ao
-  destinatário confirmado. PT-009 e demais pendências continuam abertas; não há
-  disponibilidade produtiva nem autorização para ngrok/hospedagem pública.
+- **Base — VERIFICADO:** `main` e `origin/main` coincidem em
+  `29f9bb4cd60748e2a22ea0c5634744b7c50ab075` (BEL-014).
+  O [CI final 42818943419](https://github.com/edunxp/bello-flow/actions/runs/42818943419)
+  concluiu com sucesso na tentativa 1 para push nesse SHA.
+- **Ciclo — VERIFICADO:** `work/fases-finais-mvp` reúne BEL-011, BEL-031,
+  BEL-032 e prontidão isolada. `BASE_MAIN_SHA=29f9bb4cd60748e2a22ea0c5634744b7c50ab075`.
+  Risco alto por concorrência, histórico e privilégios. A alteração autorizada
+  de acesso é EXECUTE em consulta formal para `bello_runtime` e em expurgo
+  para `bello_audit_maintenance`, com os privilégios diretos existentes preservados.
+- **Escopo implementado — VERIFICADO:** movimento entre quadros ativos do mesmo
+  Workspace com prévia e confirmação, feed de quadro e cartão, auditoria formal
+  separada por escopo com redação histórica, executor de retenção e prontidão HTTP.
+  O ensaio descartável verificou backup-base, restauração por WAL, vínculo,
+  sessão revogada, auditoria, expurgo e conexão separada de manutenção.
+- **Validação local — VERIFICADO:** gate completo com 873 testes de API e
+  111 de web, cobertura acima de 90% em todas as métricas, e homologação
+  Chromium/PostgreSQL com contas sintéticas. A prova de movimento concorrente
+  confirmou um único sucesso, repetição idempotente, preservação das relações
+  e proteção do histórico. Revisão independente concluída com ajustes
+  incorporados. Registro pré-commit, aguardando publicação e CI da branch.
+- **Operação real — NÃO VERIFICADO:** hospedagem, backups externos, retenção
+  operacional, agendamento, alertas e envio Resend dependem das autorizações
+  específicas e evidências das pendências aplicáveis.
 
 Procedimentos: [homologação local](operacao/homologacao-local.md),
 [ensaio de recuperação local](operacao/ensaio-recuperacao-local.md) e

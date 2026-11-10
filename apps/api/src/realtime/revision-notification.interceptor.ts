@@ -25,7 +25,10 @@ export class RevisionNotificationInterceptor implements NestInterceptor {
           tap(() =>
             this.gateway.invalidate(
               workspaceId,
-              typeof boardId === 'string' ? boardId : undefined,
+              typeof boardId === 'string' &&
+                !request.path?.endsWith('/transfer')
+                ? boardId
+                : undefined,
             ),
           ),
         );

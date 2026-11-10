@@ -442,6 +442,119 @@ export class BoardContentService {
     };
   }
 
+  async feed(
+    context: BoardContext,
+    cardId: string | undefined,
+    page: { offset: number; before: Date; operation?: string },
+  ) {
+    const result = await this.transaction(async (tx) => {
+      if (!(await this.boardAccess(tx, context))) return null;
+      if (
+        cardId &&
+        !(await tx.boardCard.findFirst({
+          where: { id: cardId, list: { boardId: context.boardId } },
+          select: { id: true },
+        }))
+      )
+        return null;
+
+      const size = 30;
+      const allowedBoard = this.boardScope(context);
+      const { id: currentBoard, ...allowedHistory } = allowedBoard;
+      const rows = await tx.boardFeedEvent.findMany({
+        where: {
+          occurredAt: { lt: page.before },
+          ...(cardId
+            ? { cardId, board: { workspaceId: context.workspaceId } }
+            : { boardId: currentBoard }),
+          ...(page.operation
+            ? {
+                OR: [
+                  { operation: page.operation },
+                  { board: { isNot: allowedHistory } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+        skip: page.offset,
+        take: size + 1,
+        select: {
+          id: true,
+          actorId: true,
+          operation: true,
+          occurredAt: true,
+          listId: true,
+          cardId: true,
+          boardId: true,
+          subjectAccountId: true,
+          labelId: true,
+          commentId: true,
+          counterpartBoardId: true,
+          counterpartListId: true,
+        },
+      });
+      const events = rows.slice(0, size);
+      const boards = await tx.board.findMany({
+        where: {
+          ...allowedHistory,
+          id: {
+            in: events.flatMap(({ boardId, counterpartBoardId }) =>
+              counterpartBoardId ? [boardId, counterpartBoardId] : [boardId],
+            ),
+          },
+        },
+        select: { id: true, name: true },
+      });
+      const visible = new Map(boards.map(({ id, name }) => [id, name]));
+      const accounts = await tx.account.findMany({
+        where: {
+          id: {
+            in: events
+              .filter(({ boardId }) => visible.has(boardId))
+              .map(({ actorId }) => actorId),
+          },
+        },
+        select: { id: true, emailKey: true },
+      });
+      const authors = new Map(
+        accounts.map(({ id, emailKey }) => [id, emailKey]),
+      );
+      return {
+        events: events.map(
+          ({ counterpartBoardId, counterpartListId, ...event }) => {
+            const boardName = visible.get(event.boardId);
+            const counterpartName = counterpartBoardId
+              ? visible.get(counterpartBoardId)
+              : undefined;
+            return boardName === undefined
+              ? { restricted: true as const, occurredAt: event.occurredAt }
+              : {
+                  ...event,
+                  restricted: false as const,
+                  boardName,
+                  ...(counterpartName !== undefined && counterpartListId
+                    ? {
+                        counterpart: {
+                          boardName: counterpartName,
+                          listId: counterpartListId,
+                        },
+                      }
+                    : {}),
+                  author: authors.get(event.actorId) ?? null,
+                };
+          },
+        ),
+        next:
+          rows.length > size
+            ? { offset: page.offset + size, before: page.before }
+            : null,
+      };
+    });
+    if (!result) return this.deny(context, 'READ_BOARD_FEED', false);
+    return result;
+  }
+
   async comments(context: BoardContext, listId: string, cardId: string) {
     const result = await this.transaction(async (tx) => {
       const access = await this.boardAccess(tx, context);
@@ -1174,6 +1287,294 @@ export class BoardContentService {
     return result;
   }
 
+  async transferTargets(context: BoardContext) {
+    const result = await this.transaction(async (tx) => {
+      const access = await this.boardAccess(tx, context);
+      if (!access || !this.editable(access)) return null;
+      const { id, ...scope } = this.boardScope(context);
+      return tx.board.findMany({
+        where: {
+          ...scope,
+          id: { not: id },
+          archived: false,
+          AND: {
+            members: {
+              some: {
+                accountId: context.accountId,
+                role: { in: assignmentRoles },
+              },
+            },
+          },
+        },
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          name: true,
+          lists: {
+            where: { archived: false },
+            orderBy,
+            select: listFields,
+          },
+        },
+      });
+    });
+    if (!result) return this.deny(context, 'READ_CARD_TRANSFER_TARGETS', false);
+    return result;
+  }
+
+  async transferCard(
+    context: BoardContext,
+    destination: { boardId: string; listId: string },
+    listId: string,
+    cardId: string,
+    confirmation?: { operationId: string; impact: string },
+  ) {
+    if (context.boardId === destination.boardId) conflict();
+    const target = { ...context, boardId: destination.boardId };
+    const boards = [context.boardId, target.boardId].sort();
+    const from: Container = { kind: 'CARD', id: listId };
+    const to: Container = { kind: 'CARD', id: destination.listId };
+    const operation = 'CARD_TRANSFERRED';
+    const eventId =
+      confirmation &&
+      creationId(
+        context.accountId,
+        confirmation.operationId,
+        context.workspaceId,
+        context.boardId,
+        operation,
+      );
+    const hash = (value: unknown) =>
+      createHash('sha256').update(JSON.stringify(value)).digest('hex');
+    const requestHash =
+      confirmation && hash([destination, listId, cardId, confirmation.impact]);
+    const result = await this.transaction(
+      async (tx) => {
+        const access = async () => {
+          const origin = await this.boardAccess(tx, context);
+          const destinationBoard = await this.boardAccess(tx, target);
+          if (!origin || !destinationBoard) return 'HIDDEN' as const;
+          if (!this.editable(origin) || !this.editable(destinationBoard))
+            return 'READ_ONLY' as const;
+          return null;
+        };
+        const denied = await access();
+        if (denied) return { denied };
+        if (confirmation) {
+          for (const boardId of boards) await lockBoardMembers(tx, boardId);
+          await lockContainers(tx, [from, to]);
+          const currentDenied = await access();
+          if (currentDenied) return { denied: currentDenied };
+          const receipt = await tx.boardFeedEvent.findUnique({
+            where: { id: eventId! },
+            select: { requestHash: true },
+          });
+          if (receipt) {
+            if (receipt.requestHash !== requestHash) conflict();
+            return { confirmed: true };
+          }
+        }
+        const card = await tx.boardCard.findFirst({
+          where: { id: cardId, listId, list: { boardId: context.boardId } },
+          select: {
+            archived: true,
+            positionRevision: true,
+            list: { select: { archived: true } },
+          },
+        });
+        const destinationList = await tx.boardList.findFirst({
+          where: { id: to.id, boardId: target.boardId },
+          select: { archived: true },
+        });
+        if (!card || !destinationList) return { denied: 'HIDDEN' } as const;
+        if (card.archived || card.list.archived || destinationList.archived)
+          return { denied: 'READ_ONLY' } as const;
+        const assignments = await tx.cardAssignment.findMany({
+          where: { cardId },
+          select: {
+            id: true,
+            accountId: true,
+            member: { select: participantIdentity },
+          },
+          orderBy: { accountId: 'asc' },
+        });
+        const eligible = new Set(
+          (
+            await tx.boardMembership.findMany({
+              where: {
+                workspaceId: context.workspaceId,
+                boardId: target.boardId,
+                role: { in: assignmentRoles },
+                accountId: {
+                  in: assignments.map(({ accountId }) => accountId),
+                },
+                workspaceMember: { account: activeAccount },
+              },
+              select: { accountId: true },
+            })
+          ).map(({ accountId }) => accountId),
+        );
+        const incompatible = assignments.filter(
+          ({ accountId }) => !eligible.has(accountId),
+        );
+        const impact = hash([
+          context.accountId,
+          context.workspaceId,
+          context.boardId,
+          listId,
+          cardId,
+          destination.boardId,
+          destination.listId,
+          card.positionRevision,
+          incompatible.map(({ id }) => id),
+        ]);
+        if (!confirmation)
+          return {
+            impact,
+            incompatible: incompatible.map(({ member }) =>
+              participantView(member),
+            ),
+          };
+        if (confirmation.impact !== impact) conflict();
+
+        const original = (await siblings(tx, from)).filter(
+          ({ archived }) => !archived,
+        );
+        const sourceIndex = original.findIndex(({ id }) => id === cardId);
+        const items = await siblings(tx, to);
+        const position = await positionAt(tx, to, items, items.length);
+        await tx.cardAssignment.deleteMany({ where: { cardId } });
+        const preserved = assignments
+          .filter(({ accountId }) => eligible.has(accountId))
+          .map(({ id, accountId }) => ({
+            id,
+            accountId,
+            cardId,
+            workspaceId: context.workspaceId,
+            boardId: target.boardId,
+          }));
+        if (preserved.length)
+          await tx.cardAssignment.createMany({ data: preserved });
+        await tx.boardCard.update({
+          where: { id: cardId },
+          data: { listId: to.id, position, positionRevision: { increment: 1 } },
+          select: { id: true },
+        });
+        for (const boardId of boards)
+          await advanceOrder(tx, boardId, 'CARD', [
+            boardId === context.boardId ? listId : to.id,
+          ]);
+
+        const now = new Date();
+        const beforeData = {
+          containerId: listId,
+          leftId: original[sourceIndex - 1]?.id ?? null,
+          rightId: original[sourceIndex + 1]?.id ?? null,
+        };
+        const lastActive = items.filter(({ archived }) => !archived).at(-1);
+        const afterData = {
+          containerId: to.id,
+          leftId: lastActive?.id ?? null,
+          rightId: null,
+        };
+        const audit = {
+          occurredAt: now,
+          actorAccountId: context.accountId,
+          origin: 'HTTP',
+          scope: 'BOARD',
+          result: 'SUCCESS',
+          entityType: 'CARD',
+          entityId: cardId,
+          operationId: eventId!,
+          correlationId: eventId!,
+        };
+        await tx.auditEvent.createMany({
+          data: [
+            {
+              ...audit,
+              id: randomUUID(),
+              sequence: 1,
+              operation,
+              context: {
+                workspaceId: context.workspaceId,
+                boardId: context.boardId,
+                counterpartBoardId: target.boardId,
+              },
+              beforeData,
+              afterData,
+            },
+            {
+              ...audit,
+              id: randomUUID(),
+              sequence: 2,
+              operation: 'CARD_RECEIVED',
+              context: {
+                workspaceId: context.workspaceId,
+                boardId: target.boardId,
+                counterpartBoardId: context.boardId,
+              },
+              beforeData,
+              afterData,
+            },
+            ...incompatible.map(({ accountId }, index) => ({
+              ...audit,
+              id: randomUUID(),
+              sequence: index + 3,
+              operation: 'CARD_ASSIGNEE_REMOVED',
+              context: {
+                workspaceId: context.workspaceId,
+                boardId: context.boardId,
+              },
+              beforeData: { accountId },
+            })),
+          ],
+        });
+        await tx.boardFeedEvent.createMany({
+          data: [
+            {
+              id: eventId!,
+              boardId: context.boardId,
+              actorId: context.accountId,
+              occurredAt: now,
+              operation,
+              listId,
+              cardId,
+              requestHash,
+              counterpartBoardId: target.boardId,
+              counterpartListId: to.id,
+            },
+            {
+              id: randomUUID(),
+              boardId: target.boardId,
+              actorId: context.accountId,
+              occurredAt: now,
+              operation: 'CARD_RECEIVED',
+              listId: to.id,
+              cardId,
+              counterpartBoardId: context.boardId,
+              counterpartListId: listId,
+            },
+            ...incompatible.map(({ accountId }) => ({
+              id: randomUUID(),
+              boardId: context.boardId,
+              actorId: context.accountId,
+              occurredAt: now,
+              operation: 'CARD_ASSIGNEE_REMOVED',
+              listId,
+              cardId,
+              subjectAccountId: accountId,
+            })),
+          ],
+        });
+        return { confirmed: true };
+      },
+      confirmation ? 'ReadCommitted' : 'Serializable',
+    );
+    if (result.denied)
+      return this.deny(context, operation, result.denied === 'READ_ONLY');
+    return result;
+  }
+
   async move(
     context: BoardContext,
     kind: Container['kind'],
@@ -1379,6 +1780,8 @@ export class BoardContentService {
           listId,
           cardId: card ? intent.itemId : null,
           requestHash,
+          counterpartBoardId: card ? context.boardId : null,
+          counterpartListId: card ? source.id : null,
         },
       });
       return { confirmed: true };

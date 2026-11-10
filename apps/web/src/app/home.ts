@@ -2,11 +2,12 @@ import { Component, effect, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { AuthApi } from './auth-api';
 import { failureMessage } from './auth-errors';
+import { HistoryPanel } from './history-panel';
 import { Session } from './session';
 
 @Component({
   selector: 'app-home',
-  imports: [RouterLink],
+  imports: [RouterLink, HistoryPanel],
   styleUrl: './auth-page.scss',
   template: `<section class="card" aria-labelledby="page-title">
     <h1 id="page-title" tabindex="-1">Seu acesso ao Bello Flow</h1>
@@ -27,6 +28,11 @@ import { Session } from './session';
         <p><a routerLink="/workspaces">Abrir Workspaces</a></p>
         <p><a routerLink="/notifications">Central de Notificações</a></p>
         <button (click)="logout()" [disabled]="busy()">{{ busy() ? 'Saindo…' : 'Sair' }}</button>
+        <app-history-panel
+          title="Auditoria global"
+          path="/api/workspaces/audit/global"
+          area="GLOBAL"
+        />
       }
     }
     <p id="logout-feedback" tabindex="-1" role="status">{{ message() }}</p>

@@ -255,6 +255,8 @@ model BoardFeedEvent {
   labelId String? @map("label_id") @db.Uuid
   commentId String? @map("comment_id") @db.Uuid
   requestHash String? @map("request_hash") @db.Char(64)
+  counterpartBoardId String? @map("counterpart_board_id") @db.Uuid
+  counterpartListId String? @map("counterpart_list_id") @db.Uuid
   occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
   operation  String   @db.VarChar(60)
   listId     String?  @map("list_id") @db.Uuid
@@ -262,6 +264,7 @@ model BoardFeedEvent {
   board      Board    @relation(fields: [boardId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([boardId, occurredAt, id])
+  @@index([cardId, occurredAt, id])
   @@map("board_feed_event")
 }
 

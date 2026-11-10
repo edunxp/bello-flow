@@ -20,7 +20,7 @@ export async function openGateway({
     async (req, res) => {
       if (
         req.url.startsWith("/api/") ||
-        req.url.split("?")[0] === "/health/live"
+        ["/health/live", "/health/ready"].includes(req.url.split("?")[0])
       ) {
         const headers = { ...req.headers };
         for (const name of Object.keys(headers))

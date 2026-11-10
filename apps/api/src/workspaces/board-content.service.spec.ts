@@ -21,6 +21,7 @@ describe('BoardContentService', () => {
     };
     const tx = {
       $queryRaw: vi.fn(),
+      account: { findMany: vi.fn().mockResolvedValue([]) },
       cardComment: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
       workspaceLabel: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -37,8 +38,13 @@ describe('BoardContentService', () => {
       cardAssignment: {
         createMany: vi.fn().mockResolvedValue({ count: 1 }),
         deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findMany: vi.fn().mockResolvedValue([]),
       },
-      board: { findFirst: vi.fn().mockResolvedValue(board), update: vi.fn() },
+      board: {
+        findFirst: vi.fn().mockResolvedValue(board),
+        findMany: vi.fn().mockResolvedValue([]),
+        update: vi.fn(),
+      },
       boardList: {
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn(),
@@ -56,6 +62,7 @@ describe('BoardContentService', () => {
       boardFeedEvent: {
         createMany: vi.fn(),
         findUnique: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
       },
     };
     const db = {
@@ -66,6 +73,209 @@ describe('BoardContentService', () => {
     const service = new BoardContentService(db as unknown as PrismaService);
     return { service, tx, db };
   }
+
+  it('previews, revalidates and atomically transfers a card with eligible assignments', async () => {
+    const { service, tx } = setup();
+    const target = { boardId: 'other-board', listId: 'target-list' };
+    const card = {
+      archived: false,
+      positionRevision: 2,
+      list: { archived: false },
+    };
+    const person = (accountId: string) => ({
+      id: accountId + '-assignment',
+      accountId,
+      member: {
+        accountId,
+        workspaceMember: {
+          account: { emailKey: accountId + '@example.invalid' },
+        },
+      },
+    });
+    tx.boardCard.findFirst.mockResolvedValue(card);
+    tx.boardList.findFirst.mockResolvedValue({ archived: false });
+    tx.cardAssignment.findMany.mockResolvedValue([
+      person('keep'),
+      person('remove'),
+    ]);
+    tx.boardMembership.findMany.mockResolvedValue([{ accountId: 'keep' }]);
+    tx.boardCard.findMany
+      .mockResolvedValueOnce([
+        { id: 'card', position: 100n },
+        { id: 'other', position: 101n },
+      ])
+      .mockResolvedValueOnce([{ id: 'last', position: 500n }]);
+
+    const preview = await service.transferCard(context, target, 'list', 'card');
+    expect(preview).toMatchObject({ incompatible: [{ accountId: 'remove' }] });
+    expect(tx.boardCard.update).not.toHaveBeenCalled();
+    const confirmation = { impact: preview.impact!, operationId: 'operation' };
+    await expect(
+      service.transferCard(context, target, 'list', 'card', {
+        ...confirmation,
+        impact: 'stale',
+      }),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    expect(tx.cardAssignment.deleteMany).not.toHaveBeenCalled();
+
+    await expect(
+      service.transferCard(context, target, 'list', 'card', confirmation),
+    ).resolves.toEqual({ confirmed: true });
+    expect(tx.boardCard.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'card' },
+        data: expect.objectContaining({ listId: target.listId }),
+      }),
+    );
+    expect(tx.cardAssignment.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          id: 'keep-assignment',
+          accountId: 'keep',
+          cardId: 'card',
+          workspaceId: 'workspace',
+          boardId: target.boardId,
+        },
+      ],
+    });
+    expect(tx.auditEvent.createMany).toHaveBeenLastCalledWith({
+      data: [
+        expect.objectContaining({
+          operation: 'CARD_TRANSFERRED',
+          beforeData: { containerId: 'list', leftId: null, rightId: 'other' },
+        }),
+        expect.objectContaining({
+          operation: 'CARD_RECEIVED',
+          afterData: {
+            containerId: target.listId,
+            leftId: 'last',
+            rightId: null,
+          },
+        }),
+        expect.objectContaining({
+          operation: 'CARD_ASSIGNEE_REMOVED',
+          beforeData: { accountId: 'remove' },
+        }),
+      ],
+    });
+    const requestHash =
+      tx.boardFeedEvent.createMany.mock.calls[0]![0].data[0].requestHash;
+    tx.boardFeedEvent.findUnique.mockResolvedValue({ requestHash });
+    await service.transferCard(context, target, 'list', 'card', confirmation);
+    expect(tx.boardCard.update).toHaveBeenCalledOnce();
+    await expect(
+      service.transferCard(
+        context,
+        target,
+        'list',
+        'different-card',
+        confirmation,
+      ),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+  });
+
+  it('rejects unavailable and read-only transfer contexts and lists safe destinations', async () => {
+    const { service, tx } = setup();
+    const target = { boardId: 'other-board', listId: 'target-list' };
+    const card = {
+      archived: false,
+      positionRevision: 2,
+      list: { archived: false },
+    };
+    await expect(
+      service.transferCard(
+        context,
+        { ...target, boardId: context.boardId },
+        'list',
+        'card',
+      ),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    tx.board.findFirst.mockResolvedValueOnce(null);
+    await expect(
+      service.transferCard(context, target, 'list', 'card'),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    tx.board.findFirst.mockResolvedValueOnce({
+      archived: false,
+      members: [{ role: 'OBSERVER' }],
+    });
+    await expect(
+      service.transferCard(context, target, 'list', 'card'),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    await expect(
+      service.transferCard(context, target, 'list', 'card'),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    tx.boardCard.findFirst.mockResolvedValue(card);
+    await expect(
+      service.transferCard(context, target, 'list', 'card'),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    tx.boardList.findFirst.mockResolvedValue({ archived: true });
+    await expect(
+      service.transferCard(context, target, 'list', 'card'),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    for (const inaccessible of [
+      null,
+      { archived: true, members: [{ role: 'ADMIN' }] },
+    ]) {
+      tx.board.findFirst.mockResolvedValueOnce(inaccessible);
+      await expect(service.transferTargets(context)).rejects.toMatchObject({
+        code: 'RESOURCE_NOT_FOUND',
+      });
+    }
+    await expect(service.transferTargets(context)).resolves.toEqual([]);
+    expect(tx.board.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { not: context.boardId },
+          archived: false,
+        }),
+      }),
+    );
+  });
+
+  it('redacts historical feed data and keeps pagination independent of private event identifiers', async () => {
+    const { service, tx } = setup();
+    const before = new Date();
+    const page = { before, offset: 30, operation: 'CARD_EDITED' };
+    tx.board.findFirst.mockResolvedValueOnce(null);
+    await expect(service.feed(context, undefined, page)).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    await expect(service.feed(context, 'card', page)).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+
+    tx.boardCard.findFirst.mockResolvedValue({ id: 'card' });
+    const event = {
+      id: 'private-id',
+      boardId: 'private-board',
+      actorId: 'private-actor',
+      occurredAt: before,
+      operation: 'PRIVATE',
+    };
+    tx.boardFeedEvent.findMany.mockResolvedValue([
+      { ...event, id: 'visible-id', boardId: 'board', actorId: 'actor' },
+      ...Array.from({ length: 30 }, () => event),
+    ]);
+    tx.board.findMany.mockResolvedValue([{ id: 'board', name: 'Current' }]);
+    tx.account.findMany.mockResolvedValue([
+      { id: 'actor', emailKey: 'actor@example.invalid' },
+    ]);
+    const result = await service.feed(context, 'card', page);
+    expect(result.next).toEqual({ before, offset: 60 });
+    expect(result.events[0]).toMatchObject({
+      restricted: false,
+      boardName: 'Current',
+      author: 'actor@example.invalid',
+    });
+    expect(result.events[1]).toEqual({ restricted: true, occurredAt: before });
+    expect(tx.account.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['actor'] } } }),
+    );
+    tx.boardFeedEvent.findMany.mockResolvedValue([]);
+    await expect(
+      service.feed(context, undefined, { before, offset: 0 }),
+    ).resolves.toEqual({ events: [], next: null });
+  });
 
   it('archives and restores atomically with revisions and replay protection', async () => {
     const { service, tx } = setup();

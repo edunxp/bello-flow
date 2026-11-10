@@ -164,7 +164,9 @@ try {
     local ? frontend : network,
     "--shm-size",
     "1g",
-    ...(local ? ["--publish", "127.0.0.1:" + port + ":" + port] : []),
+    ...(local
+      ? ["--publish", "127.0.0.1:" + (localCheck ? "" : port) + ":" + port]
+      : []),
     "--env",
     "BELLO_E2E_RUN",
     "--env",
@@ -197,7 +199,7 @@ try {
       Object.keys(bindings).length !== 1 ||
       bindings[port + "/tcp"]?.length !== 1 ||
       bindings[port + "/tcp"][0].HostIp !== "127.0.0.1" ||
-      bindings[port + "/tcp"][0].HostPort !== String(port)
+      (!localCheck && bindings[port + "/tcp"][0].HostPort !== String(port))
     )
       throw new Error("Loopback binding not proved");
     docker(["start", runner]);
@@ -220,10 +222,14 @@ try {
       throw new Error("Effective loopback publication not proved");
     if (localCheck) {
       const { get } = await import("node:https");
-      for (const path of ["/health/live", "/login"]) {
+      const checkPort = Number(effective[0].HostPort);
+      if (!Number.isInteger(checkPort) || checkPort < 1 || checkPort > 65535)
+        throw new Error("Effective check port not proved");
+      const checkOrigin = "https://127.0.0.1:" + checkPort;
+      for (const path of ["/health/live", "/health/ready", "/login"]) {
         await new Promise((resolve, reject) => {
           const req = get(
-            origin + path,
+            checkOrigin + path,
             { rejectUnauthorized: false },
             (res) => {
               let body = "";

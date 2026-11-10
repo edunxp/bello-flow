@@ -57,6 +57,11 @@ it('rechecks sessions after logout and all affected boards after workspace chang
   for (const [path, params, expected] of [
     ['/api/auth/logout', {}, []],
     ['/workspace', { workspaceId: 'work' }, ['work', undefined]],
+    [
+      '/board/lists/list/cards/card/transfer',
+      { workspaceId: 'work', boardId: 'board' },
+      ['work', undefined],
+    ],
   ] as const) {
     const { invalidate, interceptor, context } = setup('POST', path, params);
     await lastValueFrom(

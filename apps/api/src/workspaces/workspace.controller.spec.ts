@@ -40,8 +40,12 @@ function setup() {
     comments: vi.fn(),
     changeComment: vi.fn(),
     move: vi.fn(),
+    feed: vi.fn(),
+    transferCard: vi.fn(),
+    transferTargets: vi.fn(),
   };
   const sharing = { changeBoardMember: vi.fn(), boardMemberImpact: vi.fn() };
+  const audit = { query: vi.fn() };
   const controller = new WorkspaceController(
     workspaces as unknown as WorkspaceService,
     {
@@ -49,6 +53,7 @@ function setup() {
     } as unknown as AuthenticationService,
     sharing as unknown as SharingService,
     content as unknown as BoardContentService,
+    audit as never,
   );
   const headers = [
     'X-Bello-Flow-Request',
@@ -70,6 +75,7 @@ function setup() {
   }
   return {
     controller,
+    audit,
     workspaces,
     content,
     identity,
@@ -96,6 +102,156 @@ describe('WorkspaceController', () => {
     await expect(controller.boards(req, 'invalid')).rejects.toMatchObject({
       code: HTTP_ERROR_CODE.INVALID_REQUEST,
     });
+  });
+
+  it('keeps audit scopes separate and passes validated filters from the authenticated request', async () => {
+    const { controller, audit, request } = setup();
+    const params = { workspaceId: id, boardId: id };
+    await controller.globalAudit(request(), {});
+    expect(audit.query).toHaveBeenLastCalledWith(
+      id,
+      'GLOBAL',
+      null,
+      null,
+      expect.anything(),
+    );
+    await controller.workspaceAudit(request(), params, {});
+    expect(audit.query).toHaveBeenLastCalledWith(
+      id,
+      'GOVERNANCE',
+      id,
+      null,
+      expect.anything(),
+    );
+    await controller.boardAudit(request(), params, {});
+    expect(audit.query).toHaveBeenLastCalledWith(
+      id,
+      'GOVERNANCE',
+      id,
+      id,
+      expect.anything(),
+    );
+    const filters = {
+      from: '2026-01-01T00:00:00Z',
+      until: '2026-02-01T00:00:00Z',
+      entityType: 'COMMENT',
+      entityId: id,
+      operation: 'COMMENT_EDITED',
+      result: 'SUCCESS',
+      actor: id,
+      cursorAt: '2026-01-15T01:00:00.123456+00:00',
+      cursorId: id,
+    };
+    await controller.boardAudit(request(), params, {
+      ...filters,
+      area: 'CONTENT',
+    });
+    expect(audit.query).toHaveBeenLastCalledWith(
+      id,
+      'CONTENT',
+      id,
+      id,
+      filters,
+    );
+    await controller.cardAudit(
+      request(),
+      { ...params, cardId: id },
+      { before: filters.from, offset: '30' },
+    );
+    expect(audit.query).toHaveBeenLastCalledWith(
+      id,
+      'CONTENT',
+      id,
+      id,
+      expect.anything(),
+      { cardId: id, before: filters.from, offset: 30 },
+    );
+
+    expect(() =>
+      controller.boardAudit(request(), params, { area: 'GLOBAL' }),
+    ).toThrow();
+    for (const invalid of [
+      { from: 4 },
+      { from: 'invalid' },
+      { from: '2026-01-01T30:00:00Z' },
+      { from: '2026-02-30T00:00:00Z' },
+      { from: '0000-01-01T00:00:00Z' },
+      { operation: ['INVALID'] },
+      { operation: 'invalid' },
+      { cursorId: id },
+    ]) {
+      await expect(
+        controller.globalAudit(request(), invalid),
+      ).rejects.toMatchObject({
+        code: HTTP_ERROR_CODE.INVALID_REQUEST,
+      });
+    }
+  });
+
+  it('dispatches transfer previews and requires an impact token for confirmed moves', async () => {
+    const { controller, request, content } = setup();
+    const params = { workspaceId: id, boardId: id, listId: id, cardId: id };
+    const target = { destinationBoardId: id, destinationListId: id };
+    const context = { accountId: id, workspaceId: id, boardId: id };
+    await controller.transferTargets(request(), params);
+    expect(content.transferTargets).toHaveBeenCalledWith(context);
+    await controller.transferImpact(request(), params, target);
+    expect(content.transferCard).toHaveBeenLastCalledWith(
+      context,
+      { boardId: id, listId: id },
+      id,
+      id,
+    );
+    const impact = 'a'.repeat(64);
+    await controller.transferCard(
+      request({ ...target, impact, operationId: id }),
+      params,
+    );
+    expect(content.transferCard).toHaveBeenLastCalledWith(
+      context,
+      { boardId: id, listId: id },
+      id,
+      id,
+      { impact, operationId: id },
+    );
+    for (const body of [undefined, { ...target, impact: 'wrong' }]) {
+      await expect(
+        controller.transferCard(request(body), params),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    }
+  });
+
+  it('validates bounded feed offsets and passes filters without exposing cursor identifiers', async () => {
+    const { controller, request, content } = setup();
+    const params = { workspaceId: id, boardId: id };
+    const context = { accountId: id, workspaceId: id, boardId: id };
+    await controller.feed(request(), params, {});
+    expect(content.feed).toHaveBeenLastCalledWith(context, undefined, {
+      offset: 0,
+      before: expect.any(Date),
+      operation: undefined,
+    });
+    const before = '2026-11-10T00:00:00.123Z';
+    await controller.feed(
+      request(),
+      { ...params, cardId: id },
+      { offset: '30', before, operation: 'CARD_CREATED' },
+    );
+    expect(content.feed).toHaveBeenLastCalledWith(context, id, {
+      offset: 30,
+      before: new Date(before),
+      operation: 'CARD_CREATED',
+    });
+    for (const query of [
+      { offset: 5 },
+      { offset: '-1' },
+      { offset: '12' },
+      { offset: '1000000000' },
+    ]) {
+      await expect(
+        controller.feed(request(), params, query),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    }
   });
 
   it('normalizes names and preserves descriptions', async () => {

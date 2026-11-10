@@ -3424,6 +3424,263 @@ try {
     },
   );
 
+  await scenario(
+    "card transfer preserves relationships and protects historical feeds and audit",
+    async () => {
+      const [owner, member, reader] = await Promise.all([
+        fixture(),
+        fixture(),
+        fixture(),
+      ]);
+      const [admin, sourceOnly, destinationOnly] = await Promise.all([
+        pageFor(),
+        pageFor(),
+        pageFor(),
+      ]);
+      const tabs = [admin, sourceOnly, destinationOnly];
+      const headers = { "X-Bello-Flow-Request": "1", Origin: origin };
+      const post = async (tab, path, data, status) => {
+        const response = await tab.context.request.post(origin + path, {
+          headers,
+          data,
+        });
+        observations.push(response.status());
+        check(response.status() === status);
+        return response;
+      };
+      const get = async (tab, path, status = 200) => {
+        const response = await tab.context.request.get(origin + path, {
+          headers,
+        });
+        observations.push(response.status());
+        check(response.status() === status);
+        return response;
+      };
+      const create = async (path, data) =>
+        (
+          await (
+            await post(admin, path, { ...data, operationId: randomUUID() }, 201)
+          ).json()
+        ).id;
+      try {
+        for (const [index, account] of [owner, member, reader].entries())
+          await login(tabs[index].page, account);
+        const workspaceId = await create("/api/workspaces", {
+          name: "Transferência",
+          timeZone: "Etc/UTC",
+        });
+        const workspace = "/api/workspaces/" + workspaceId;
+        for (const account of [member, reader])
+          await post(
+            admin,
+            workspace + "/members",
+            { email: account.email, role: "MEMBER" },
+            204,
+          );
+        const boardId = await create(workspace + "/boards", {
+          name: "Origem reservada",
+          description: "Origem",
+        });
+        const targetId = await create(workspace + "/boards", {
+          name: "Destino",
+          description: "Destino",
+        });
+        const from = workspace + "/boards/" + boardId;
+        const to = workspace + "/boards/" + targetId;
+        await post(
+          admin,
+          from + "/members",
+          { email: member.email, role: "MEMBER" },
+          204,
+        );
+        await post(
+          admin,
+          to + "/members",
+          { email: reader.email, role: "ADMIN" },
+          204,
+        );
+        const listId = await create(from + "/lists", { name: "Origem" });
+        const targetListId = await create(to + "/lists", { name: "Destino" });
+        const cardId = await create(from + "/lists/" + listId + "/cards", {
+          title: "Cartão transferido",
+        });
+        const card = from + "/lists/" + listId + "/cards/" + cardId;
+        const labelId = await create(workspace + "/labels", {
+          name: "Etiqueta preservada",
+        });
+        await post(
+          admin,
+          card + "/labels",
+          { labelId, applied: true, operationId: randomUUID() },
+          204,
+        );
+        for (const account of [owner, member])
+          await post(
+            admin,
+            card + "/assignees",
+            {
+              accountId: account.id,
+              assigned: true,
+              operationId: randomUUID(),
+            },
+            204,
+          );
+        await post(
+          admin,
+          card + "/comments",
+          {
+            kind: "CREATE",
+            content: "Comentário preservado",
+            operationId: randomUUID(),
+          },
+          204,
+        );
+        const params = {
+          destinationBoardId: targetId,
+          destinationListId: targetListId,
+        };
+        const preview = card + "/transfer?" + new URLSearchParams(params);
+        await get(sourceOnly, preview, 404);
+        const review = await (await get(admin, preview)).json();
+        check(
+          review.incompatible.length === 1 &&
+            review.incompatible[0].accountId === member.id,
+        );
+        const intent = {
+          ...params,
+          impact: review.impact,
+          operationId: randomUUID(),
+        };
+        await post(
+          admin,
+          card + "/transfer",
+          { ...intent, impact: "0".repeat(64) },
+          409,
+        );
+        const race = await Promise.all(
+          [intent, { ...intent, operationId: randomUUID() }].map(
+            async (data) => ({
+              data,
+              status: (
+                await admin.context.request.post(origin + card + "/transfer", {
+                  headers,
+                  data,
+                })
+              ).status(),
+            }),
+          ),
+        );
+        check(race.filter(({ status }) => status === 204).length === 1);
+        check(
+          race.filter(({ status }) => status === 404 || status === 409)
+            .length === 1,
+        );
+        await post(
+          admin,
+          card + "/transfer",
+          race.find(({ status }) => status === 204).data,
+          204,
+        );
+        const source = await (await get(admin, from + "/lists")).json();
+        const target = await (await get(destinationOnly, to + "/lists")).json();
+        check(source.lists[0].cards.length === 0);
+        const moved = target.lists[0].cards[0];
+        check(moved.id === cardId && moved.labels[0].id === labelId);
+        check(
+          moved.assignees.length === 1 &&
+            moved.assignees[0].accountId === owner.id,
+        );
+        const comments = await (
+          await get(
+            destinationOnly,
+            to + "/lists/" + targetListId + "/cards/" + cardId + "/comments",
+          )
+        ).json();
+        check(comments.comments[0].content === "Comentário preservado");
+        const cardFeed = to + "/cards/" + cardId + "/feed";
+        const redacted = await (await get(destinationOnly, cardFeed)).json();
+        check(redacted.events.some(({ restricted }) => restricted));
+        check(
+          redacted.events.some(
+            ({ operation }) => operation === "CARD_RECEIVED",
+          ),
+        );
+        check(
+          redacted.events
+            .filter(({ restricted }) => restricted)
+            .every(
+              (event) =>
+                Object.keys(event).sort().join() === "occurredAt,restricted",
+            ),
+        );
+        check(!JSON.stringify(redacted).includes(boardId));
+        const full = await (await get(admin, cardFeed)).json();
+        check(
+          full.events.some(({ operation }) => operation === "CARD_TRANSFERRED"),
+        );
+        const sourceAudit = await (
+          await get(
+            admin,
+            from + "/audit?area=CONTENT&operation=CARD_TRANSFERRED",
+          )
+        ).json();
+        check(
+          sourceAudit.events.length === 1 &&
+            sourceAudit.events[0].afterData.containerId === targetListId,
+        );
+        const targetAudit = await (
+          await get(destinationOnly, to + "/audit?area=CONTENT")
+        ).json();
+        check(
+          targetAudit.events.some(
+            ({ operation }) => operation === "CARD_RECEIVED",
+          ),
+        );
+        check(!JSON.stringify(targetAudit).includes(boardId));
+        const cardAudit = to + "/cards/" + cardId + "/audit";
+        const destinationHistory = await (
+          await get(destinationOnly, cardAudit + "?operation=COMMENT_CREATED")
+        ).json();
+        check(destinationHistory.events.some(({ restricted }) => restricted));
+        check(
+          destinationHistory.events.every(
+            ({ restricted, operation }) =>
+              restricted || operation === "COMMENT_CREATED",
+          ),
+        );
+        check(!JSON.stringify(destinationHistory).includes(boardId));
+        const authorizedHistory = await (
+          await get(admin, cardAudit + "?operation=COMMENT_CREATED")
+        ).json();
+        check(
+          authorizedHistory.events.some(
+            ({ operation, afterData }) =>
+              operation === "COMMENT_CREATED" &&
+              afterData.content === "Comentário preservado",
+          ),
+        );
+
+        await get(sourceOnly, from + "/audit?area=CONTENT", 403);
+        const governance = await (
+          await get(admin, workspace + "/audit")
+        ).json();
+        check(
+          governance.events.some(
+            ({ operation }) => operation === "BOARD_CREATED",
+          ),
+        );
+        check(
+          governance.events.every(
+            ({ entityType }) =>
+              entityType !== "CARD" && entityType !== "COMMENT",
+          ),
+        );
+      } finally {
+        await Promise.all(tabs.map((tab) => tab.context.close()));
+      }
+    },
+  );
+
   await scenario("generic rejected login (real stack)", async () => {
     const account = await fixture();
     const { page, context } = await pageFor();

@@ -1430,3 +1430,29 @@ O estado, a revisão de sincronização, a auditoria e o feed
 (`BOARD_ARCHIVED` ou `BOARD_RESTORED`) são gravados na mesma transação.
 O recibo do feed permite repetir a mesma operação. A migration acrescenta
 somente `UPDATE(archived)` em `public.board` para `bello_runtime`.
+
+## Consultas e movimento entre quadros
+
+A consulta formal passa por uma função PostgreSQL que verifica conta ativa,
+participação e escopo e projeta os campos autorizados. A API obtém o ator da
+sessão autenticada e o passa como parâmetro. A fronteira confia na aplicação
+para identificar o ator. A função limita o acesso da API e a capacidade de
+runtime permanece sem acesso direto aos valores privados de auditoria.
+Uma credencial de runtime comprometida ainda opera com os privilégios já
+concedidos sobre sessões e vínculos. Denegações com contexto mínimo, quando
+sem identificador de Workspace, são consultadas no escopo global de segurança.
+
+A transferência usa os privilégios existentes para atualizar a lista do cartão
+e recriar no destino as atribuições elegíveis com seus mesmos identificadores.
+Confirmação reavalia os responsáveis incompatíveis sob bloqueio. As revisões,
+o movimento, as atribuições e seus registros de feed e auditoria fazem parte
+da mesma transação. Origem e destino possuem eventos próprios. A contraparte
+só é apresentada quando o leitor tem acesso adequado a ambos os contextos.
+No histórico do cartão, contexto restrito produz marcador com instante, sem
+identificador de evento, ator ou tipo. A consulta formal tem corte de 24 meses
+mesmo antes do expurgo, e o feed tem retenção independente.
+
+O expurgo usa função distinta, acessível pela capacidade de manutenção,
+que retorna o limite aplicado e a quantidade removida. O executor sanitizado
+e o ensaio de restauração estão descritos na
+[homologação local](../operacao/homologacao-local.md).

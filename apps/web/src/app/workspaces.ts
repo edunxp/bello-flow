@@ -3,6 +3,7 @@ import { Component, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { HistoryPanel } from './history-panel';
 import { BoardContent } from './board-content';
 import { Session } from './session';
 
@@ -25,7 +26,7 @@ interface BoardLifecycle {
 
 @Component({
   selector: 'app-workspaces',
-  imports: [RouterLink, BoardContent],
+  imports: [RouterLink, BoardContent, HistoryPanel],
   styleUrl: './auth-page.scss',
   template: `
     <section class="card" aria-labelledby="page-title">
@@ -54,7 +55,24 @@ interface BoardLifecycle {
               <a [routerLink]="['/workspaces', workspaceId(), 'labels']">Etiquetas do Workspace</a>
             </p>
           }
+          @if (workspaceId() && accessible() && !boardId()) {
+            <app-history-panel
+              title="Auditoria administrativa do Workspace"
+              [path]="path() + '/audit'"
+              area="GOVERNANCE"
+            />
+          }
           @if (board(); as selected) {
+            <app-history-panel
+              title="Auditoria administrativa do quadro"
+              [path]="path() + '/audit'"
+              area="GOVERNANCE"
+            />
+            <app-history-panel
+              title="Auditoria de conteúdo do quadro"
+              [path]="path() + '/audit'"
+              area="CONTENT"
+            />
             <h2>{{ selected.name }}</h2>
             <p>{{ selected.description }}</p>
             @if (session.identity(); as identity) {

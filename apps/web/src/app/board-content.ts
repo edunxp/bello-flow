@@ -3,6 +3,8 @@ import { Component, effect, inject, input, output, signal } from '@angular/core'
 import { catchError, EMPTY, exhaustMap, firstValueFrom, throwError, timer } from 'rxjs';
 
 import { backgroundHeaders, BOARD_REALTIME } from './board-realtime';
+import { CardTransfer } from './card-transfer';
+import { HistoryPanel } from './history-panel';
 import { CardComments } from './card-comments';
 import type { Label } from './workspace-labels';
 
@@ -58,7 +60,7 @@ interface DragItem {
 
 @Component({
   selector: 'app-board-content',
-  imports: [CardComments],
+  imports: [CardComments, CardTransfer, HistoryPanel],
   styles: `
     section {
       margin-block: 1.25rem;
@@ -95,6 +97,7 @@ interface DragItem {
       <p role="status">{{ message() }}</p>
     }
     @if (content(); as board) {
+      <app-history-panel title="Atividades do quadro" [path]="boardPath() + '/feed'" />
       @if (board.archived) {
         <p>Quadro arquivado</p>
       }
@@ -221,6 +224,18 @@ interface DragItem {
                   [path]="path() + '/' + list.id + '/cards/' + card.id + '/comments'"
                   [cardId]="card.id"
                   [revision]="board.syncRevision"
+                />
+              }
+              <app-history-panel
+                title="Atividades do cartão"
+                [path]="boardPath() + '/cards/' + card.id + '/feed'"
+              />
+              @if (editableCard) {
+                <app-card-transfer
+                  [cardId]="card.id"
+                  [boardPath]="boardPath()"
+                  [path]="path() + '/' + list.id + '/cards/' + card.id + '/transfer'"
+                  (moved)="reloadAfterTransfer()"
                 />
               }
               <h5>Etiquetas</h5>
@@ -478,6 +493,15 @@ export class BoardContent {
   private readonly readOptions = { ...this.options, headers: backgroundHeaders };
   private readonly reload = signal(0);
   private accessLost = false;
+
+  boardPath() {
+    return this.path().slice(0, -'/lists'.length);
+  }
+
+  reloadAfterTransfer() {
+    this.message.set('Cartão movido.');
+    this.reload.update((revision) => revision + 1);
+  }
 
   constructor() {
     effect((onCleanup) => {

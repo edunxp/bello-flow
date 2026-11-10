@@ -111,3 +111,49 @@ autorização próprios: ambiente, chave privada, destinatário e volume definid
 tracking desativado confirmado e condições de tratamento externo aceitas.
 Domínio verificado, MFA e TLS de envio configurados no painel do provider não
 encerram a PT-009 nem declaram prontidão produtiva.
+
+## Prontidão e prova isolada de restauração
+
+O gateway de homologação encaminha `/health/live` e `/health/ready` à API.
+Atividade verifica o processo HTTP. Prontidão verifica se o PostgreSQL responde
+pela conexão de runtime. Em falha, a API responde 503 sem detalhes do banco.
+O teste de publicação local verifica as duas rotas por HTTPS em uma porta
+loopback temporária atribuída pelo Docker.
+
+Na raiz do projeto, execute `bash scripts/restore-drill.sh`. O ensaio requer
+a imagem local `postgres:18.6-bookworm` e cria um contêiner sem rede, com socket
+privado e armazenamento temporário. Aplica os SQL versionados, verifica o
+backup-base com `pg_verifybackup` e reproduz WAL até um ponto nomeado. O aceite
+confere a alteração sintética com sua auditoria, a revogação de sessão, os
+vínculos administrativos, os limites de acesso do runtime à auditoria e a
+remoção exclusiva de eventos vencidos pela credencial de manutenção. O contêiner do ensaio é
+removido ao encerrar.
+
+A duração reportada começa na criação do ponto de restauração e inclui o
+arquivamento do segmento e a validação no banco restaurado. O ensaio comprova
+a recuperação desse ponto com a carga sintética local. A homologação de
+produção depende de medições com carga representativa, destino externo
+protegido, política de retenção e alertas operacionais. Os critérios de monitoramento e recuperação estão em
+[Infraestrutura e operação](../arquitetura/infraestrutura-e-operacao.md).
+
+A função `public.purge_expired_audit_events()` calcula o limite de 24 meses
+em UTC no PostgreSQL e devolve o limite aplicado e o número de linhas removidas.
+Ela é executável pela capacidade `bello_audit_maintenance`. Para uma implantação
+autorizada, o agendador de manutenção deve registrar limite, quantidade e
+resultado, alertar em falha e usar uma conexão própria. Depois de restaurar
+um backup, execute o expurgo antes de disponibilizar consultas, para evitar
+reapresentar eventos que venceram depois da captura. O ensaio comprova esse
+procedimento apenas com dados sintéticos.
+
+### Verificações de monitoramento
+
+| Sinal | Prova isolada | Evidência para homologação operacional |
+| --- | --- | --- |
+| Disponibilidade e PostgreSQL | HTTPS em loopback verifica atividade, prontidão e shell Angular. O teste de prontidão injeta falha de consulta e verifica 503 sanitizado. | Exercitar o alerta de indisponibilidade e o retorno à prontidão pela origem canônica. |
+| Backup-base e WAL | O ensaio verifica o manifesto, espera o arquivamento do segmento e mede até o aceite da restauração. | Conferir último backup e WAL no destino externo e exercitar alerta de atraso com o RPO de até 1 hora. Medir restauração mensal isolada e comparar com o RTO de até 4 horas. |
+| Retenção | O executor consulta com conexão separada e registra limite e quantidade em JSON. Uma execução repetida remove zero eventos. | Agendar `PGSERVICE=<serviço-de-manutenção> bash scripts/audit-retention.sh`. O agendador registra instante e falha. A credencial de manutenção deve vir de um serviço PostgreSQL próprio e fora da configuração HTTP. |
+| Disco, TLS e aplicação | A execução isolada usa armazenamento descartável e certificado temporário. | Conferir espaço e crescimento, validade do certificado, falhas de migration, notificações, erros e latência HTTP e falhas WebSocket. Exercitar alertas e validar destino e responsável. |
+
+A homologação real depende de hospedagem, credenciais e destino de backup
+autorizados. Ferramentas e limiares pendentes continuam registrados em PT-010
+a PT-014.

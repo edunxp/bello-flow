@@ -10,6 +10,7 @@ import {
   ACCESS_NOTIFICATION_MAIL,
   AccessNotificationDelivery,
 } from './workspaces/access-notification-delivery.js';
+import { AuditQueryService } from './workspaces/audit-query.service.js';
 import { BoardContentService } from './workspaces/board-content.service.js';
 import { SharingService } from './workspaces/sharing.service.js';
 import { WorkspaceController } from './workspaces/workspace.controller.js';
@@ -23,6 +24,7 @@ import { WorkspaceService } from './workspaces/workspace.service.js';
     { provide: APP_INTERCEPTOR, useClass: RevisionNotificationInterceptor },
     WorkspaceService,
     BoardContentService,
+    AuditQueryService,
     SharingService,
     AccessNotificationDelivery,
     { provide: ACCESS_NOTIFICATION_MAIL, useValue: null },
