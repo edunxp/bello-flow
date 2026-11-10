@@ -39,6 +39,9 @@ interface Resource {
           }
           @if (workspaceId() && accessible()) {
             <p><a [routerLink]="sharingLink()">Participantes</a></p>
+            <p>
+              <a [routerLink]="['/workspaces', workspaceId(), 'labels']">Etiquetas do Workspace</a>
+            </p>
           }
           @if (board(); as selected) {
             <h2>{{ selected.name }}</h2>

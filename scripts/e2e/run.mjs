@@ -1406,6 +1406,268 @@ try {
           }
         }
 
+        const workCatalog = work + "/labels";
+        const homeCatalog = home + "/labels";
+        const createLabel = (tab, path, data) =>
+          post(tab, path, {
+            ...data,
+            operationId: data.operationId ?? randomUUID(),
+          });
+        await open(ownerTab, workCatalog);
+        await ownerTab.page.getByLabel("Nome da etiqueta").fill("Straße");
+        await ownerTab.page.getByLabel("Cor da etiqueta").fill("#1144AA");
+        await ownerTab.page
+          .getByRole("button", { name: "Criar etiqueta" })
+          .click();
+        await expect(
+          ownerTab.page.getByText("Straße", { exact: true }),
+        ).toBeVisible();
+        const catalog = await (await get(teamTab, workCatalog)).json();
+        const [label] = catalog.labels;
+        check(
+          !catalog.editable &&
+            label.name === "Straße" &&
+            label.color === "#1144aa",
+        );
+        check(Object.keys(label).sort().join(",") === "color,id,name");
+        check(
+          (
+            await createLabel(ownerTab, workCatalog, { name: "STRASSE" })
+          ).status() === 409,
+        );
+        check(
+          (
+            await createLabel(teamTab, workCatalog, { name: "Indevida" })
+          ).status() === 403,
+        );
+        check((await get(personalTab, workCatalog)).status() === 403);
+        const homeLabelResponse = await createLabel(ownerTab, homeCatalog, {
+          name: "STRASSE",
+        });
+        check(homeLabelResponse.status() === 201);
+        const homeLabel = await homeLabelResponse.json();
+        const erpLabels =
+          lists + "/" + finalList.id + "/cards/" + createdCard.id + "/labels";
+        const privateLabels = personalCards + "/" + personalCard.id + "/labels";
+        const useLabel = (
+          tab,
+          path,
+          labelId,
+          applied = true,
+          operationId = randomUUID(),
+        ) => post(tab, path, { labelId, applied, operationId });
+        check(
+          (await useLabel(teamTab, erpLabels, homeLabel.id)).status() === 404,
+        );
+        check(
+          (
+            await useLabel(personalTab, privateLabels, homeLabel.id)
+          ).status() === 403,
+        );
+        check(
+          (await useLabel(ownerTab, privateLabels, homeLabel.id)).status() ===
+            204,
+        );
+        await open(personalTab, homeBoard);
+        await expect(
+          personalTab.page.getByText("STRASSE", { exact: true }),
+        ).toBeVisible();
+        await expect(
+          personalTab.page.getByRole("button", { name: "Aplicar etiqueta" }),
+        ).toHaveCount(0);
+
+        const teamCreates = async (path, fields) => {
+          const response = await post(teamTab, path, {
+            ...fields,
+            operationId: randomUUID(),
+          });
+          check(response.status() === 201);
+          return (await response.json()).id;
+        };
+        const privateWorkBoard =
+          work +
+          "/boards/" +
+          (await teamCreates(work + "/boards", {
+            name: "Quadro restrito",
+            description: "Privado",
+          }));
+        const privateWorkLists = privateWorkBoard + "/lists";
+        const privateWorkList = await teamCreates(privateWorkLists, {
+          name: "Restrita",
+        });
+        const privateWorkCards =
+          privateWorkLists + "/" + privateWorkList + "/cards";
+        const privateWorkCard = await teamCreates(privateWorkCards, {
+          title: "Cartão restrito",
+        });
+        const restrictedLabels =
+          privateWorkCards + "/" + privateWorkCard + "/labels";
+        check((await get(ownerTab, privateWorkLists)).status() === 404);
+        check(
+          (await useLabel(teamTab, restrictedLabels, label.id)).status() ===
+            204,
+        );
+        await open(teamTab, erp);
+        const article = teamTab.page.getByRole("article").filter({
+          has: teamTab.page.getByRole("heading", { name: "ERP validado" }),
+        });
+        await article.getByLabel("Adicionar etiqueta").selectOption(label.id);
+        await article.getByRole("button", { name: "Aplicar etiqueta" }).click();
+        await expect(
+          article.getByRole("button", { name: "Remover etiqueta Straße" }),
+        ).toBeVisible();
+        const manualRemoval = randomUUID();
+        check(
+          (
+            await useLabel(teamTab, erpLabels, label.id, false, manualRemoval)
+          ).status() === 204,
+        );
+        check(
+          (
+            await useLabel(teamTab, erpLabels, label.id, false, manualRemoval)
+          ).status() === 204,
+        );
+        check((await useLabel(teamTab, erpLabels, label.id)).status() === 204);
+        const renamedLabel = { name: "Urgente", color: "#229944" };
+        check(
+          (
+            await patch(ownerTab, workCatalog + "/" + label.id, {
+              ...renamedLabel,
+              operationId: randomUUID(),
+            })
+          ).status() === 200,
+        );
+        await expect(
+          article.getByRole("button", { name: "Remover etiqueta Urgente" }),
+        ).toBeVisible({ timeout: 10000 });
+        const restricted = () =>
+          get(teamTab, privateWorkLists).then((response) => response.json());
+        check(
+          (await restricted()).lists[0].cards[0].labels[0].name === "Urgente",
+        );
+
+        const deletePath = workCatalog + "/" + label.id + "/delete";
+        check(
+          (await createLabel(ownerTab, deletePath, renamedLabel)).status() ===
+            400,
+        );
+        check(
+          (
+            await createLabel(ownerTab, deletePath, {
+              ...label,
+              confirmed: true,
+            })
+          ).status() === 409,
+        );
+        await migrator.query(`CREATE FUNCTION public.e2e_reject_label_removal() RETURNS trigger
+          LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic label failure'; END; $$;
+          CREATE TRIGGER e2e_reject_label_removal BEFORE INSERT ON public.board_feed_event
+          FOR EACH ROW WHEN (NEW.operation='CARD_LABEL_REMOVED') EXECUTE FUNCTION public.e2e_reject_label_removal();`);
+        try {
+          check(
+            (
+              await createLabel(ownerTab, deletePath, {
+                ...renamedLabel,
+                confirmed: true,
+              })
+            ).status() === 500,
+          );
+          check((await restricted()).lists[0].cards[0].labels.length === 1);
+          check(
+            (await (await get(ownerTab, workCatalog)).json()).labels.length ===
+              1,
+          );
+        } finally {
+          await migrator.query(
+            "DROP TRIGGER e2e_reject_label_removal ON public.board_feed_event; DROP FUNCTION public.e2e_reject_label_removal();",
+          );
+        }
+        await open(ownerTab, workCatalog);
+        await ownerTab.page
+          .getByRole("button", { name: "Excluir Urgente" })
+          .click();
+        await expect(
+          ownerTab.page.getByText("o histórico será preservado", {
+            exact: false,
+          }),
+        ).toBeVisible();
+        await ownerTab.page
+          .getByRole("button", { name: "Confirmar exclusão" })
+          .click();
+        await expect(
+          ownerTab.page.getByText("Nenhuma etiqueta cadastrada."),
+        ).toBeVisible();
+        await expect(
+          article.getByRole("button", { name: "Remover etiqueta Urgente" }),
+        ).toHaveCount(0, { timeout: 10000 });
+        check((await restricted()).lists[0].cards[0].labels.length === 0);
+        check(
+          (await (await get(ownerTab, homeCatalog)).json()).labels.length === 1,
+        );
+        const createRace = { name: "Corrida", operationId: randomUUID() };
+        const raceResponse = await createLabel(
+          ownerTab,
+          workCatalog,
+          createRace,
+        );
+        check(raceResponse.status() === 201);
+        const raceLabel = await raceResponse.json();
+        const racePath = workCatalog + "/" + raceLabel.id + "/delete";
+        const deleteRace = {
+          name: raceLabel.name,
+          color: null,
+          confirmed: true,
+          operationId: randomUUID(),
+        };
+        await migrator.query("BEGIN");
+        let concurrentLabels;
+        try {
+          await migrator.query(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+            ["bello-labels:" + work.split("/").at(-1)],
+          );
+          concurrentLabels = Promise.all([
+            useLabel(teamTab, restrictedLabels, raceLabel.id),
+            createLabel(ownerTab, racePath, deleteRace),
+          ]);
+          let waiting = false;
+          for (let attempt = 0; attempt < 60; attempt++) {
+            const { rows } = await migrator.query(
+              "SELECT count(*)::int AS n FROM pg_locks WHERE locktype='advisory' AND NOT granted",
+            );
+            if (rows[0].n >= 2) {
+              waiting = true;
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 25));
+          }
+          check(waiting);
+        } finally {
+          await migrator.query("ROLLBACK");
+        }
+        const [applyResult, deleteResult] = await concurrentLabels;
+        check(
+          [204, 404].includes(applyResult.status()) &&
+            deleteResult.status() === 204,
+        );
+        check((await restricted()).lists[0].cards[0].labels.length === 0);
+        check(
+          (await createLabel(ownerTab, racePath, deleteRace)).status() === 409,
+        );
+        check(
+          (await createLabel(ownerTab, workCatalog, createRace)).status() ===
+            409,
+        );
+        const labelHistory = await migrator.query(
+          `SELECT
+          (SELECT count(*)::int FROM public.audit_event WHERE entity_id=$1 AND operation='WORKSPACE_LABEL_DELETED' AND before_data->>'name'='Urgente' AND context=$2::jsonb) AS audit,
+          (SELECT count(*)::int FROM public.board_feed_event WHERE label_id=$1 AND operation='CARD_LABEL_REMOVED') AS feed`,
+          [label.id, JSON.stringify({ workspaceId: work.split("/").at(-1) })],
+        );
+        check(
+          labelHistory.rows[0].audit === 1 && labelHistory.rows[0].feed === 3,
+        );
+
         const repeats = await Promise.all([
           post(ownerTab, erp + "/members", {
             email: team.email,

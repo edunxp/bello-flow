@@ -1,8 +1,21 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '../generated/prisma/client.js';
+import { Prisma } from '../generated/prisma/client.js';
 import { HTTP_ERROR_CODE, HttpContractError } from '../http/http-errors.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+
+import { activeAccount } from './card-assignments.js';
+import {
+  labelFields,
+  labelOrder,
+  lockWorkspaceLabels,
+  recordCardLabels,
+  type LabelFields,
+} from './card-labels.js';
+
+type LabelChange =
+  | { kind: 'CREATE'; fields: LabelFields }
+  | { kind: 'UPDATE' | 'DELETE'; id: string; fields: LabelFields };
 
 type Fields = { name: string; description?: string };
 type BoardFields = Fields & { description: string };
@@ -44,6 +57,179 @@ export class WorkspaceService {
     return this.db.workspace.findMany({
       where: { members: { some: { accountId } } },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  async labels(accountId: string, workspaceId: string) {
+    const catalog = await this.db.$transaction(
+      async (tx) => {
+        const member = await this.labelMembership(tx, accountId, workspaceId);
+        if (!member) return null;
+        const labels = await tx.workspaceLabel.findMany({
+          where: { workspaceId },
+          select: labelFields,
+          orderBy: labelOrder,
+        });
+        return { editable: member.role === 'ADMIN', labels };
+      },
+      { isolationLevel: 'RepeatableRead' },
+    );
+    if (!catalog) return this.deny(accountId, 'READ_WORKSPACE_LABELS');
+    return catalog;
+  }
+
+  async changeLabel(
+    accountId: string,
+    workspaceId: string,
+    change: LabelChange,
+    operationId: string,
+  ) {
+    const eventId = creationId(
+      accountId,
+      operationId,
+      workspaceId,
+      'WORKSPACE_LABEL_OPERATION',
+    );
+    const operation =
+      change.kind === 'CREATE'
+        ? 'WORKSPACE_LABEL_CREATED'
+        : change.kind === 'UPDATE'
+          ? 'WORKSPACE_LABEL_UPDATED'
+          : 'WORKSPACE_LABEL_DELETED';
+    try {
+      const result = await this.db.$transaction(
+        async (tx) => {
+          const admin = async () =>
+            (await this.labelMembership(tx, accountId, workspaceId))?.role ===
+            'ADMIN';
+          if (!(await admin())) return { denied: true } as const;
+          await lockWorkspaceLabels(tx, workspaceId);
+          if (!(await admin())) return { denied: true } as const;
+          const id = change.kind === 'CREATE' ? eventId : change.id;
+          const where = { workspaceId, id };
+          const before =
+            change.kind === 'CREATE'
+              ? null
+              : await tx.workspaceLabel.findFirst({
+                  where,
+                  select: labelFields,
+                });
+          const resource =
+            change.kind === 'DELETE' ? null : { id, ...change.fields };
+          const now = new Date();
+          // Reserve the operation without granting read access to audit. A later
+          // validation or mandatory write failure rolls this reservation back.
+          const receipt = await tx.auditEvent.createMany({
+            data: {
+              id: eventId,
+              occurredAt: now,
+              actorAccountId: accountId,
+              origin: 'HTTP',
+              scope: 'WORKSPACE',
+              operation,
+              result: 'SUCCESS',
+              entityType: 'LABEL',
+              entityId: id,
+              context: { workspaceId },
+              operationId: eventId,
+              correlationId: eventId,
+              sequence: 1,
+              beforeData: before ?? undefined,
+              afterData: resource ?? undefined,
+            },
+            skipDuplicates: true,
+          });
+          if (!receipt.count)
+            throw new HttpContractError(HTTP_ERROR_CODE.OPERATION_CONFLICT);
+          if (change.kind !== 'CREATE' && !before)
+            throw new HttpContractError(HTTP_ERROR_CODE.RESOURCE_NOT_FOUND);
+          const matches =
+            before?.name === change.fields.name &&
+            before.color === change.fields.color;
+          if (
+            (change.kind === 'DELETE' && !matches) ||
+            (change.kind === 'UPDATE' && matches)
+          )
+            throw new HttpContractError(HTTP_ERROR_CODE.OPERATION_CONFLICT);
+
+          const links =
+            change.kind === 'CREATE'
+              ? []
+              : await tx.cardLabel.findMany({
+                  where: {
+                    workspaceId,
+                    labelId: id,
+                    card: { list: { board: { workspaceId } } },
+                  },
+                  select: {
+                    card: {
+                      select: {
+                        id: true,
+                        listId: true,
+                        list: { select: { boardId: true } },
+                      },
+                    },
+                  },
+                  orderBy: { cardId: 'asc' },
+                });
+          if (change.kind === 'DELETE') {
+            await tx.cardLabel.deleteMany({
+              where: { workspaceId, labelId: id },
+            });
+            await tx.workspaceLabel.delete({ where, select: { id: true } });
+          } else if (change.kind === 'UPDATE') {
+            await tx.workspaceLabel.update({
+              where,
+              data: change.fields,
+              select: { id: true },
+            });
+          } else {
+            await tx.workspaceLabel.create({
+              data: { ...where, ...change.fields },
+              select: { id: true },
+            });
+          }
+          await tx.board.updateMany({
+            where: { workspaceId },
+            data: { syncRevision: { increment: 1 } },
+          });
+          await recordCardLabels(
+            tx,
+            { workspaceId, actorId: accountId, labelId: id },
+            links.map(({ card }) => ({
+              id: card.id,
+              boardId: card.list.boardId,
+              listId: card.listId,
+            })),
+            change.kind === 'DELETE'
+              ? 'CARD_LABEL_REMOVED'
+              : 'CARD_LABEL_UPDATED',
+            { id: eventId, now, catalog: true },
+          );
+          return { resource };
+        },
+        { isolationLevel: 'ReadCommitted' },
+      );
+      if (result.denied) return this.deny(accountId, operation);
+      return result.resource;
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      )
+        throw new HttpContractError(HTTP_ERROR_CODE.OPERATION_CONFLICT);
+      throw error;
+    }
+  }
+
+  private labelMembership(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    workspaceId: string,
+  ) {
+    return tx.workspaceMembership.findFirst({
+      where: { workspaceId, accountId, account: activeAccount },
+      select: { role: true },
     });
   }
 

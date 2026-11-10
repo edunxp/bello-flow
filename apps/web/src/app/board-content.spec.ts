@@ -429,4 +429,49 @@ describe('BoardContent', () => {
     expect(element.textContent).toContain('first@example.test');
     expect(element.querySelector('#assignee-card')).toBeNull();
   });
+  it('renders card labels and lets editors add or remove them', async () => {
+    const { fixture, http, page } = setup();
+    const first = { id: 'first', name: 'Primeira', color: '#112233' };
+    const second = { id: 'second', name: 'Segunda', color: null };
+    const [list] = lists;
+    const card = { ...list.cards[0], labels: [first] };
+    const state = {
+      ...calendar,
+      editable: true,
+      orderRevision: 0,
+      syncRevision: 0,
+      availableLabels: [first, second],
+      lists: [{ ...list, cards: [card] }],
+    };
+    page.content.set(state);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const select = element.querySelector<HTMLSelectElement>('#label-card')!;
+    expect([...select.options].map(({ value }) => value)).toEqual(['', 'second']);
+    page.applyLabel(new Event('submit'), list, card, '');
+    http.expectNone(path + '/list/cards/card/labels');
+    select.value = 'second';
+    select.form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    const url = path + '/list/cards/card/labels';
+    const add = http.expectOne(url);
+    expect(add.request.body).toMatchObject({ labelId: 'second', applied: true });
+    add.flush(null);
+    await Promise.resolve();
+    fixture.detectChanges();
+    http.expectOne(path).flush(state);
+    fixture.detectChanges();
+    element.querySelector<HTMLButtonElement>('[aria-label="Remover etiqueta Primeira"]')!.click();
+    const remove = http.expectOne(url);
+    expect(remove.request.body).toMatchObject({ labelId: 'first', applied: false });
+    remove.error(new ProgressEvent('network'));
+    await Promise.resolve();
+    expect(page.message()).toContain('etiquetas atualizadas');
+    fixture.detectChanges();
+    http.expectOne(path).flush({ ...state, editable: false });
+    fixture.detectChanges();
+    expect(element.textContent).toContain('Primeira');
+    await page.changeLabel(list, card, first.id, true);
+    http.expectNone(url);
+    expect(element.querySelector('#label-card')).toBeNull();
+  });
 });

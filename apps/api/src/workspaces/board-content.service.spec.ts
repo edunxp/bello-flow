@@ -20,6 +20,14 @@ describe('BoardContentService', () => {
     };
     const tx = {
       $queryRaw: vi.fn(),
+      workspaceLabel: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue({ id: 'label' }),
+      },
+      cardLabel: {
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       boardMembership: {
         findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue({ accountId: 'actor' }),
@@ -69,6 +77,7 @@ describe('BoardContentService', () => {
       await expect(service.read(context)).resolves.toEqual({
         editable,
         eligibleAssignees: [],
+        availableLabels: [],
         orderRevision: 0,
         syncRevision: 0,
         timeZone: 'Etc/UTC',
@@ -438,6 +447,7 @@ describe('BoardContentService', () => {
               ...unscheduled,
               id: 'card',
               assignments: [],
+              labels: [],
               dueDate: new Date('2026-11-09T00:00:00.000Z'),
             },
           ],
@@ -492,5 +502,42 @@ describe('BoardContentService', () => {
       code: 'RESOURCE_NOT_FOUND',
     });
     expect(tx.cardAssignment.createMany).not.toHaveBeenCalled();
+  });
+  it('applies and removes a label and reconciles a previous application', async () => {
+    const { service, tx } = setup();
+    tx.boardCard.findFirst.mockResolvedValue({ id: 'card' });
+    const change = (applied: boolean, op: string) =>
+      service.changeCardLabel(context, 'list', 'card', 'label', applied, op);
+    await change(true, 'apply');
+    const { requestHash } =
+      tx.boardFeedEvent.createMany.mock.calls[0]![0].data[0];
+    tx.boardFeedEvent.findUnique.mockResolvedValue({ requestHash });
+    await change(true, 'apply');
+    await expect(change(false, 'apply')).rejects.toMatchObject({
+      code: 'OPERATION_CONFLICT',
+    });
+    tx.boardFeedEvent.findUnique.mockResolvedValue(null);
+    await change(false, 'remove');
+    tx.cardLabel.deleteMany.mockResolvedValue({ count: 0 });
+    await expect(change(false, 'second-remove')).rejects.toMatchObject({
+      code: 'OPERATION_CONFLICT',
+    });
+    tx.workspaceLabel.findFirst.mockResolvedValue(null);
+    await expect(change(true, 'foreign')).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    expect(tx.cardLabel.createMany).toHaveBeenCalledOnce();
+  });
+
+  it('allows observers to read labels on cards and denies mutations', async () => {
+    const { service, tx } = setup('OBSERVER');
+    await expect(
+      service.changeCardLabel(context, 'list', 'card', 'label', true, 'apply'),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    tx.board.findFirst.mockResolvedValue(null);
+    await expect(
+      service.changeCardLabel(context, 'list', 'card', 'label', true, 'apply'),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    expect(tx.cardLabel.createMany).not.toHaveBeenCalled();
   });
 });

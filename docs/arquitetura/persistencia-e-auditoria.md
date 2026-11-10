@@ -1307,3 +1307,31 @@ recebe `accountId`, `assigned` e `operationId`. A governança usa
 `confirmAssignments` na alteração confirmada. A saída ou remoção de um
 Workspace, quando implementada, precisa revogar os vínculos e atribuições
 afetados com o mesmo protocolo, na mesma transação.
+
+## Catálogo e aplicação de etiquetas
+
+Participantes do Workspace consultam o catálogo com identificador, nome e
+cor opcional no formato hexadecimal `#RRGGBB`. Apenas Administradores do
+Workspace o gerenciam. O índice PostgreSQL aplica normalização e casefold
+Unicode à chave de unicidade por Workspace, preservando o nome apresentado.
+
+A aplicação e a remoção em cartões exigem vínculo explícito e papel
+Administrador ou Membro do quadro. A API valida o Workspace da etiqueta e
+o caminho do cartão. A chave de associação é única por cartão e etiqueta.
+Observadores veem as etiquetas aplicadas sem obter acesso a outros cartões.
+
+Alterações globais e associações adquirem o mesmo bloqueio do Workspace.
+A exclusão confirma nome e cor, remove associações e preserva cartões e
+histórico. A revisão do quadro propaga as mudanças às abas abertas.
+Auditoria de catálogo guarda somente os valores da etiqueta. Eventos
+relativos a cartões são registrados separadamente em seus quadros.
+
+As mutações recebem `operationId`. No catálogo, a unicidade da operação na
+auditoria permite recusar repetição com 409 sem conceder leitura da auditoria
+ao runtime. A interface recarrega o catálogo e reutiliza o identificador se
+o mesmo intento for repetido após resposta incerta na tela. Associações
+reconciliam repetições pelo recibo no feed.
+
+Antes de implementar arquivamento de quadros, é preciso resolver como a
+imutabilidade de RN-055 se aplica a alterações globais de RN-088 sobre
+etiquetas associadas a cartões arquivados.

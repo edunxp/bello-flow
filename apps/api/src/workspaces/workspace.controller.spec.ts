@@ -19,6 +19,8 @@ function setup() {
   const identity = vi.fn().mockResolvedValue({ accountId: id });
   const workspaces = {
     list: vi.fn(),
+    labels: vi.fn(),
+    changeLabel: vi.fn(),
     create: vi.fn(),
     listBoards: vi.fn(),
     board: vi.fn(),
@@ -30,6 +32,7 @@ function setup() {
     revision: vi.fn(),
     schedule: vi.fn(),
     changeAssignee: vi.fn(),
+    changeCardLabel: vi.fn(),
     move: vi.fn(),
   };
   const sharing = { changeBoardMember: vi.fn(), boardMemberImpact: vi.fn() };
@@ -405,5 +408,56 @@ describe('assignee HTTP contract', () => {
       }),
       params,
     );
+  });
+});
+
+describe('label HTTP contract', () => {
+  it('validates Unicode names, optional colors, confirmation and association intent', async () => {
+    const { controller, request, workspaces, content } = setup();
+    const scope = {
+      workspaceId: id,
+      boardId: id,
+      listId: id,
+      cardId: id,
+      labelId: id,
+    };
+    const fields = { name: '  Étapa  ', color: '#AABBCC', operationId: id };
+    await controller.labels(request(), id);
+    await controller.createLabel(request(fields), id);
+    expect(workspaces.changeLabel).toHaveBeenLastCalledWith(
+      id,
+      id,
+      { kind: 'CREATE', fields: { name: 'Étapa', color: '#aabbcc' } },
+      id,
+    );
+    await controller.editLabel(request({ ...fields, color: null }), scope);
+    await controller.deleteLabel(
+      request({ ...fields, confirmed: true }),
+      scope,
+    );
+    await controller.changeCardLabel(
+      request({ labelId: id, applied: true, operationId: id }),
+      scope,
+    );
+    expect(content.changeCardLabel).toHaveBeenCalledOnce();
+    for (const change of [
+      { name: ' ' },
+      { name: '🧪'.repeat(51) },
+      { color: 4 },
+      { color: 'red' },
+    ]) {
+      await expect(
+        controller.createLabel(request({ ...fields, ...change }), id),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    }
+    await expect(
+      controller.deleteLabel(request(fields), scope),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(
+      controller.changeCardLabel(
+        request({ labelId: id, applied: 'yes' }),
+        scope,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
   });
 });

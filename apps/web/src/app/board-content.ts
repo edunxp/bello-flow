@@ -2,6 +2,8 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, effect, inject, input, output, signal } from '@angular/core';
 import { catchError, EMPTY, exhaustMap, firstValueFrom, throwError, timer } from 'rxjs';
 
+import type { Label } from './workspace-labels';
+
 interface Assignee {
   accountId: string;
   email: string;
@@ -18,6 +20,7 @@ interface Card {
   completedById: string | null;
   overdue: boolean;
   assignees?: Assignee[];
+  labels?: Label[];
 }
 interface List {
   id: string;
@@ -29,6 +32,7 @@ interface List {
 interface Content {
   editable: boolean;
   eligibleAssignees?: Assignee[];
+  availableLabels?: Label[];
   orderRevision: number;
   syncRevision: number;
   today: string;
@@ -57,6 +61,12 @@ interface DragItem {
     }
     textarea {
       min-height: 5rem;
+    }
+    .label-color {
+      display: inline-block;
+      width: 1em;
+      height: 1em;
+      border: 1px solid currentColor;
     }
     .drop-zone {
       padding: 0.75rem;
@@ -142,6 +152,47 @@ interface DragItem {
                     board.timeZone
                   }})
                 </p>
+              }
+              <h5>Etiquetas</h5>
+              <ul>
+                @for (label of card.labels ?? []; track label.id) {
+                  <li>
+                    @if (label.color) {
+                      <span
+                        class="label-color"
+                        [style.backgroundColor]="label.color"
+                        aria-hidden="true"
+                      ></span>
+                    }
+                    {{ label.name }}
+                    @if (board.editable) {
+                      <button
+                        type="button"
+                        [disabled]="saving()"
+                        [attr.aria-label]="'Remover etiqueta ' + label.name"
+                        (click)="changeLabel(list, card, label.id, false)"
+                      >
+                        Remover
+                      </button>
+                    }
+                  </li>
+                } @empty {
+                  <li>Sem etiquetas.</li>
+                }
+              </ul>
+              @if (board.editable && board.availableLabels?.length) {
+                <form (submit)="applyLabel($event, list, card, labelChoice.value)">
+                  <label [attr.for]="'label-' + card.id">Adicionar etiqueta</label>
+                  <select [id]="'label-' + card.id" #labelChoice required>
+                    <option value="">Escolher etiqueta</option>
+                    @for (label of board.availableLabels; track label.id) {
+                      @if (!hasLabel(card, label.id)) {
+                        <option [value]="label.id">{{ label.name }}</option>
+                      }
+                    }
+                  </select>
+                  <button [disabled]="saving()">Aplicar etiqueta</button>
+                </form>
               }
               <h5>Responsáveis</h5>
               <ul>
@@ -473,6 +524,36 @@ export class BoardContent {
       );
     } catch {
       this.message.set('Não foi possível confirmar o movimento. Confira a ordem atualizada.');
+    } finally {
+      this.reload.update((value) => value + 1);
+      this.saving.set(false);
+    }
+  }
+
+  hasLabel(card: Card, labelId: string) {
+    return card.labels?.some((label) => label.id === labelId) ?? false;
+  }
+
+  applyLabel(event: Event, list: List, card: Card, labelId: string) {
+    event.preventDefault();
+    if (labelId) return this.changeLabel(list, card, labelId, true);
+    return;
+  }
+
+  async changeLabel(list: List, card: Card, labelId: string, applied: boolean) {
+    if (!this.content()?.editable || this.saving()) return;
+    this.saving.set(true);
+    this.message.set('');
+    try {
+      await firstValueFrom(
+        this.http.post(
+          this.path() + '/' + list.id + '/cards/' + card.id + '/labels',
+          { labelId, applied, operationId: crypto.randomUUID() },
+          this.options,
+        ),
+      );
+    } catch {
+      this.message.set('Não foi possível confirmar a alteração. Confira as etiquetas atualizadas.');
     } finally {
       this.reload.update((value) => value + 1);
       this.saving.set(false);

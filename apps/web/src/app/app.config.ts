@@ -4,6 +4,7 @@ import { provideRouter } from '@angular/router';
 import { AccessSharing } from './access-sharing';
 import { AuthPage } from './auth-page';
 import { Home } from './home';
+import { WorkspaceLabels } from './workspace-labels';
 import { Workspaces } from './workspaces';
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -16,6 +17,7 @@ export const appConfig: ApplicationConfig = {
       { path: 'reset-password', component: AuthPage, data: { mode: 'reset' } },
       { path: 'notifications', component: AccessSharing, data: { central: true } },
       { path: 'workspaces/:workspaceId/boards/:boardId/members', component: AccessSharing },
+      { path: 'workspaces/:workspaceId/labels', component: WorkspaceLabels },
       { path: 'workspaces/:workspaceId/members', component: AccessSharing },
       { path: 'workspaces/:workspaceId/boards/:boardId', component: Workspaces },
       { path: 'workspaces/:workspaceId', component: Workspaces },

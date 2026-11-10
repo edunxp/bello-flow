@@ -55,6 +55,17 @@ function text(value: unknown, max: number, trim: boolean): string {
   return result;
 }
 
+function labelFields(body: Record<string, unknown> | undefined) {
+  const name = text(body?.name, 50, true);
+  const color = body?.color ?? null;
+  if (
+    color !== null &&
+    (typeof color !== 'string' || !/^#[0-9a-f]{6}$/iu.test(color))
+  )
+    invalid();
+  return { name, color: color?.toLowerCase() ?? null };
+}
+
 @Controller('api/workspaces')
 @UseFilters(HttpBoundaryErrorFilter)
 export class WorkspaceController {
@@ -204,6 +215,73 @@ export class WorkspaceController {
     });
   }
 
+  @Get(':workspaceId/labels')
+  async labels(
+    @Req() request: Request,
+    @Param('workspaceId') workspaceId: string,
+  ) {
+    return this.workspaces.labels(
+      await this.account(request),
+      identifier(workspaceId),
+    );
+  }
+
+  @Post(':workspaceId/labels')
+  async createLabel(
+    @Req() request: Request,
+    @Param('workspaceId') workspaceId: string,
+  ) {
+    const body = request.body as Record<string, unknown> | undefined;
+    return this.workspaces.changeLabel(
+      await this.account(request, true),
+      identifier(workspaceId),
+      {
+        kind: 'CREATE',
+        fields: labelFields(body),
+      },
+      identifier(body?.operationId),
+    );
+  }
+
+  @Patch(':workspaceId/labels/:labelId')
+  async editLabel(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const body = request.body as Record<string, unknown> | undefined;
+    return this.workspaces.changeLabel(
+      await this.account(request, true),
+      identifier(params.workspaceId),
+      {
+        kind: 'UPDATE',
+        id: identifier(params.labelId),
+        fields: labelFields(body),
+      },
+      identifier(body?.operationId),
+    );
+  }
+
+  @Post(':workspaceId/labels/:labelId/delete')
+  @HttpCode(204)
+  async deleteLabel(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const accountId = await this.account(request, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    if (body?.confirmed !== true) invalid();
+    await this.workspaces.changeLabel(
+      accountId,
+      identifier(params.workspaceId),
+      {
+        kind: 'DELETE',
+        id: identifier(params.labelId),
+        fields: labelFields(body),
+      },
+      identifier(body?.operationId),
+    );
+  }
+
   @Get(':workspaceId/boards')
   async boards(
     @Req() request: Request,
@@ -320,6 +398,25 @@ export class WorkspaceController {
           params.listId === undefined ? undefined : identifier(params.listId),
       },
       params.listId === undefined ? identifier(body?.operationId) : '',
+    );
+  }
+
+  @Post(':workspaceId/boards/:boardId/lists/:listId/cards/:cardId/labels')
+  @HttpCode(204)
+  async changeCardLabel(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const context = await this.contentContext(request, params, true);
+    const body = request.body as Record<string, unknown> | undefined;
+    if (typeof body?.applied !== 'boolean') invalid();
+    await this.content.changeCardLabel(
+      context,
+      identifier(params.listId),
+      identifier(params.cardId),
+      identifier(body.labelId),
+      body.applied,
+      identifier(body.operationId),
     );
   }
 

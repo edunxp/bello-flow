@@ -581,6 +581,23 @@ e os endpoints de recuperação permanecem no
   remoção transacional e preservação dos vínculos em falhas de auditoria
   ou feed. Registro anterior ao CI remoto.
 
+## Etiquetas do Workspace e dos cartões
+
+- **Ciclo:** `work/etiquetas-cartoes`,
+  `BASE_MAIN_SHA=53eb5589ed90d3891ec302dbea2ff263f11ee6a1`.
+  Recorte BEL-022, com catálogo por Workspace, aplicação em cartões,
+  unicidade Unicode sem distinção de caixa e exclusão confirmada.
+- **Privilégios autorizados:** SELECT, INSERT, DELETE e UPDATE apenas
+  de nome e cor em `workspace_label`, e SELECT, INSERT e DELETE em
+  `card_label`. O [contrato](arquitetura/persistencia-e-auditoria.md#catálogo-e-aplicação-de-etiquetas)
+  registra autorização, concorrência e rastreabilidade.
+
+- **Validação local — VERIFICADO:** gate completo com 836 testes da API,
+  95 da web e 16 cenários em Docker aprovados. A prova verificou unicidade
+  Unicode, isolamento, propagação entre quadros, confirmação, concorrência
+  entre aplicação e exclusão, repetição e rollback preservando vínculos e
+  histórico. Registro anterior ao CI remoto.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,

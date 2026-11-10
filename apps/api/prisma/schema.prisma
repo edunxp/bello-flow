@@ -193,6 +193,8 @@ model Workspace {
   boards        Board[]
   accessNotices AccessNotification[]
 
+  labels WorkspaceLabel[]
+
   @@map("workspace")
 }
 
@@ -248,6 +250,7 @@ model BoardFeedEvent {
   boardId    String   @map("board_id") @db.Uuid
   actorId    String   @map("actor_id") @db.Uuid
   subjectAccountId String? @map("subject_account_id") @db.Uuid
+  labelId String? @map("label_id") @db.Uuid
   requestHash String? @map("request_hash") @db.Char(64)
   occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
   operation  String   @db.VarChar(60)
@@ -323,6 +326,8 @@ model BoardCard {
 
   assignments CardAssignment[]
 
+  labels CardLabel[]
+
   @@index([listId, createdAt, id])
   @@unique([listId, position])
   @@map("board_card")
@@ -340,4 +345,28 @@ model CardAssignment {
   @@unique([cardId, accountId])
   @@index([workspaceId, boardId, accountId])
   @@map("card_assignment")
+}
+
+model WorkspaceLabel {
+  id          String @id @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  name        String @db.VarChar(50)
+  color       String? @db.VarChar(7)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cards       CardLabel[]
+
+  @@unique([workspaceId, id])
+  @@map("workspace_label")
+}
+
+model CardLabel {
+  cardId      String @map("card_id") @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  labelId     String @map("label_id") @db.Uuid
+  card        BoardCard @relation(fields: [cardId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  label       WorkspaceLabel @relation(fields: [workspaceId, labelId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([cardId, labelId])
+  @@index([workspaceId, labelId])
+  @@map("card_label")
 }

@@ -28,6 +28,12 @@ import {
   participantView,
   recordAssignments,
 } from './card-assignments.js';
+import {
+  labelFields,
+  labelOrder,
+  lockWorkspaceLabels,
+  recordCardLabels,
+} from './card-labels.js';
 import { creationId } from './workspace.service.js';
 
 export type BoardContext = {
@@ -84,6 +90,11 @@ export class BoardContentService {
                 select: {
                   ...cardFields,
                   ...scheduleFields,
+                  labels: {
+                    where: { workspaceId: context.workspaceId },
+                    select: { label: { select: labelFields } },
+                    orderBy: { label: { name: 'asc' } },
+                  },
                   assignments: {
                     where: {
                       workspaceId: context.workspaceId,
@@ -130,28 +141,45 @@ export class BoardContentService {
             orderBy: { accountId: 'asc' },
           })
         : [];
+      const availableLabels = editable
+        ? await tx.workspaceLabel.findMany({
+            where: { workspaceId: context.workspaceId },
+            select: labelFields,
+            orderBy: labelOrder,
+          })
+        : [];
       return {
         board,
         editable,
         eligibleAssignees,
+        availableLabels,
         timeZone,
         today,
         overdue: new Set(overdue.map(({ id }) => id)),
       };
     });
     if (!result) return this.deny(context, 'READ_BOARD_CONTENT', false);
-    const { board, timeZone, today, overdue, editable, eligibleAssignees } =
-      result;
+    const {
+      board,
+      timeZone,
+      today,
+      overdue,
+      editable,
+      eligibleAssignees,
+      availableLabels,
+    } = result;
     return {
       timeZone,
       today,
       editable,
       eligibleAssignees: eligibleAssignees.map(participantView),
+      availableLabels,
       orderRevision: board.orderRevision,
       syncRevision: board.syncRevision,
       lists: board.lists.map(({ cards, ...list }) => ({
         ...list,
-        cards: cards.map(({ assignments, ...card }) => ({
+        cards: cards.map(({ assignments, labels, ...card }) => ({
+          labels: labels.map(({ label }) => label),
           ...card,
           assignees: assignments.map(({ member }) => participantView(member)),
           ...scheduleView(card, overdue.has(card.id)),
@@ -387,6 +415,98 @@ export class BoardContentService {
       today: workspaceToday(board.workspace.timeZone),
       timeZone: board.workspace.timeZone,
     };
+  }
+
+  async changeCardLabel(
+    context: BoardContext,
+    listId: string,
+    cardId: string,
+    labelId: string,
+    applied: boolean,
+    operationId: string,
+  ) {
+    const operation = applied ? 'CARD_LABEL_ADDED' : 'CARD_LABEL_REMOVED';
+    const eventId = creationId(
+      context.accountId,
+      operationId,
+      context.workspaceId,
+      context.boardId,
+      'CARD_LABEL',
+    );
+    const requestHash = createHash('sha256')
+      .update(JSON.stringify([listId, cardId, labelId, applied]))
+      .digest('hex');
+    const result = await this.transaction(async (tx) => {
+      const access = () =>
+        tx.board.findFirst({
+          where: this.boardScope(context),
+          select: {
+            archived: true,
+            members: {
+              where: { accountId: context.accountId },
+              select: { role: true },
+            },
+          },
+        });
+      const board = await access();
+      if (!board) return { denied: 'HIDDEN' } as const;
+      if (!this.editable(board)) return { denied: 'READ_ONLY' } as const;
+      await lockWorkspaceLabels(tx, context.workspaceId);
+      await lockBoardMembers(tx, context.boardId);
+      const current = await access();
+      if (!current) return { denied: 'HIDDEN' } as const;
+      if (!this.editable(current)) return { denied: 'READ_ONLY' } as const;
+      const receipt = await tx.boardFeedEvent.findUnique({
+        where: { id: eventId },
+        select: { requestHash: true },
+      });
+      const card = await tx.boardCard.findFirst({
+        where: {
+          id: cardId,
+          ...(receipt ? {} : { listId }),
+          list: { boardId: context.boardId },
+        },
+        select: { id: true },
+      });
+      if (!card) return { denied: 'HIDDEN' } as const;
+      if (receipt) {
+        if (receipt.requestHash !== requestHash) conflict();
+        return { confirmed: true };
+      }
+      if (
+        !(await tx.workspaceLabel.findFirst({
+          where: { id: labelId, workspaceId: context.workspaceId },
+          select: { id: true },
+        }))
+      )
+        return { denied: 'HIDDEN' } as const;
+
+      const where = { cardId, workspaceId: context.workspaceId, labelId };
+      const change = applied
+        ? await tx.cardLabel.createMany({ data: where, skipDuplicates: true })
+        : await tx.cardLabel.deleteMany({ where });
+      if (!change.count) conflict();
+      await tx.board.update({
+        where: { id: context.boardId },
+        select: { id: true },
+        data: { syncRevision: { increment: 1 } },
+      });
+      await recordCardLabels(
+        tx,
+        {
+          workspaceId: context.workspaceId,
+          actorId: context.accountId,
+          labelId,
+        },
+        [{ id: cardId, boardId: context.boardId, listId }],
+        operation,
+        { id: eventId, now: new Date(), requestHash },
+      );
+      return { confirmed: true };
+    }, 'ReadCommitted');
+    if (result.denied)
+      return this.deny(context, operation, result.denied === 'READ_ONLY');
+    return result;
   }
 
   async changeAssignee(
