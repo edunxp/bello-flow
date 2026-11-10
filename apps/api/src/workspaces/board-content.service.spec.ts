@@ -67,6 +67,75 @@ describe('BoardContentService', () => {
     return { service, tx, db };
   }
 
+  it('archives and restores atomically with revisions and replay protection', async () => {
+    const { service, tx } = setup();
+    tx.boardList.findFirst.mockResolvedValue({ id: 'list' });
+    tx.boardCard.findFirst.mockResolvedValue({ archived: false });
+    await service.archiveCard(context, 'list', 'card', true, 'operation');
+    expect(tx.boardCard.update).toHaveBeenCalledWith({
+      where: { id: 'card' },
+      data: { archived: true, positionRevision: { increment: 1 } },
+      select: { id: true },
+    });
+    expect(tx.boardList.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['list'] } },
+      data: { cardOrderRevision: { increment: 1 } },
+    });
+    const { requestHash } = tx.boardFeedEvent.createMany.mock.calls[0]![0].data;
+    tx.boardFeedEvent.findUnique.mockResolvedValue({ requestHash });
+    await service.archiveCard(context, 'list', 'card', true, 'operation');
+    await expect(
+      service.archiveCard(context, 'list', 'card', false, 'operation'),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    expect(tx.boardCard.update).toHaveBeenCalledOnce();
+    tx.boardFeedEvent.findUnique.mockResolvedValue(null);
+    tx.boardCard.findFirst.mockResolvedValue({ archived: true });
+    await expect(
+      service.archiveCard(context, 'list', 'card', true, 'other'),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    await service.archiveCard(context, 'list', 'card', false, 'other');
+    expect(tx.auditEvent.createMany).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        operation: 'CARD_RESTORED',
+        beforeData: { archived: true },
+        afterData: { archived: false },
+      }),
+    });
+  });
+
+  it('checks membership and card scope before changing the archived state', async () => {
+    const { service, tx } = setup('OBSERVER');
+    await expect(
+      service.archiveCard(context, 'list', 'card', true, 'operation'),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    tx.board.findFirst.mockResolvedValue(null);
+    await expect(
+      service.archiveCard(context, 'list', 'card', false, 'operation'),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    const editor = setup();
+    await expect(
+      editor.service.archiveCard(
+        context,
+        'foreign',
+        'card',
+        false,
+        'operation',
+      ),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    expect(editor.tx.$queryRaw).toHaveBeenCalledTimes(1);
+    editor.tx.boardList.findFirst.mockResolvedValue({ id: 'list' });
+    await expect(
+      editor.service.archiveCard(
+        context,
+        'list',
+        'foreign',
+        false,
+        'operation',
+      ),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    expect(editor.tx.boardCard.update).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['ADMIN', false, true],
     ['MEMBER', false, true],

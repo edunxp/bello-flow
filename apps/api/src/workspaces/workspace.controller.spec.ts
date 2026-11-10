@@ -31,6 +31,7 @@ function setup() {
     write: vi.fn(),
     revision: vi.fn(),
     schedule: vi.fn(),
+    archiveCard: vi.fn(),
     changeAssignee: vi.fn(),
     changeCardLabel: vi.fn(),
     comments: vi.fn(),
@@ -500,5 +501,31 @@ describe('comment HTTP contract', () => {
         code: 'INVALID_REQUEST',
       });
     }
+  });
+});
+
+describe('card archive HTTP contract', () => {
+  it('validates intent and forwards the authorized card scope', async () => {
+    const { controller, request, content } = setup();
+    const params = { workspaceId: id, boardId: id, listId: id, cardId: id };
+    for (const archived of [true, false]) {
+      await controller.archiveCard(
+        request({ archived, operationId: id }),
+        params,
+      );
+      expect(content.archiveCard).toHaveBeenLastCalledWith(
+        { workspaceId: id, boardId: id, accountId: id },
+        id,
+        id,
+        archived,
+        id,
+      );
+    }
+    await expect(
+      controller.archiveCard(
+        request({ archived: 'false', operationId: id }),
+        params,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
   });
 });

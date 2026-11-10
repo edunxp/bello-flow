@@ -80,6 +80,39 @@ describe('BoardContent', () => {
     expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Cartão');
   });
 
+  it('discloses archived cards and restores them without editing archived content', async () => {
+    const { fixture, http, page } = setup();
+    const card = { ...lists[0].cards[0], archived: true };
+    const list = { ...lists[0], cards: [], archivedCards: [card] };
+    page.content.set({ ...page.content()!, lists: [list] });
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector('h4')).toBeNull();
+    const disclosure = Array.from(element.querySelectorAll('button')).find((button) =>
+      button.textContent.includes('Cartões arquivados'),
+    );
+    disclosure?.click();
+    fixture.detectChanges();
+    expect(element.querySelector('h4')?.textContent).toContain(card.title);
+    expect(element.querySelector('article form')).toBeNull();
+    const pending = page.changeArchive(list, card);
+    const archivePath = path + '/list/cards/card/archive';
+    const first = http.expectOne({ url: archivePath, method: 'POST' });
+    expect(first.request.body.archived).toBe(false);
+    first.error(new ProgressEvent('error'));
+    await pending;
+    fixture.detectChanges();
+    http.expectOne(path).flush({ editable: true, lists: [list] });
+    const retry = page.changeArchive(list, card);
+    const second = http.expectOne(archivePath);
+    expect(second.request.body.operationId).toBe(first.request.body.operationId);
+    second.flush(null);
+    await retry;
+    fixture.detectChanges();
+    http.expectOne(path).flush({ editable: true, lists });
+    expect(page.message()).toBe('Cartão restaurado.');
+  });
+
   it('renders content and omits the write controls for observers', () => {
     const { fixture } = setup(false);
     const element = fixture.nativeElement as HTMLElement;

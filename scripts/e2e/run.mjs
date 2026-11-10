@@ -2648,6 +2648,247 @@ try {
     }
   });
 
+  await scenario("card archive, restoration, scope and rollback", async () => {
+    const [owner, reader] = await Promise.all([fixture(), fixture()]);
+    const [admin, observer] = await Promise.all([pageFor(), pageFor()]);
+    const headers = { "X-Bello-Flow-Request": "1", Origin: origin };
+    const post = (path, data, tab = admin) =>
+      tab.context.request.post(origin + path, { headers, data });
+    const create = async (path, data) => {
+      const response = await post(path, { ...data, operationId: randomUUID() });
+      check(response.status() === 201);
+      return (await response.json()).id;
+    };
+    try {
+      await login(admin.page, owner);
+      await login(observer.page, reader);
+      const workspace =
+        "/api/workspaces/" +
+        (await create("/api/workspaces", {
+          name: "Ciclo de vida",
+          timeZone: "Etc/UTC",
+        }));
+      const board =
+        workspace +
+        "/boards/" +
+        (await create(workspace + "/boards", {
+          name: "Arquivo",
+          description: "Validação do ciclo de vida",
+        }));
+      const lists = board + "/lists";
+      const list = await create(lists, { name: "Fila" });
+      const cards = lists + "/" + list + "/cards";
+      const first = await create(cards, { title: "Primeiro" });
+      const target = await create(cards, {
+        title: "Preservado",
+        description: "Descrição preservada",
+      });
+      const last = await create(cards, { title: "Último" });
+      const move = await create(cards, { title: "Movido" });
+      const card = cards + "/" + target;
+      const read = async () => {
+        const response = await admin.context.request.get(origin + lists, {
+          headers,
+        });
+        check(response.status() === 200);
+        return (await response.json()).lists[0];
+      };
+      const attempt = { archived: true, operationId: randomUUID() };
+      const archive = (data = attempt, tab = admin) =>
+        post(card + "/archive", data, tab);
+      check(
+        (
+          await post(card + "/schedule", {
+            completed: true,
+            operationId: randomUUID(),
+          })
+        ).status() === 204,
+      );
+      check(
+        (
+          await post(card + "/comments", {
+            kind: "CREATE",
+            content: "Comentário preservado",
+            operationId: randomUUID(),
+          })
+        ).status() === 204,
+      );
+      check(
+        (
+          await post(workspace + "/members", {
+            email: reader.email,
+            role: "MEMBER",
+          })
+        ).status() === 204,
+      );
+      check((await archive(attempt, observer)).status() === 404);
+      check(
+        (
+          await post(board + "/members", {
+            email: reader.email,
+            role: "OBSERVER",
+          })
+        ).status() === 204,
+      );
+      check((await archive(attempt, observer)).status() === 403);
+      const labelId = await create(workspace + "/labels", {
+        name: "Preservada",
+      });
+      const label = { labelId, applied: true };
+      const assignment = { accountId: owner.id, assigned: true };
+      const change = (action, fields) =>
+        post(card + "/" + action, { ...fields, operationId: randomUUID() });
+      check((await change("labels", label)).status() === 204);
+      check((await change("assignees", assignment)).status() === 204);
+      const privileges = await migrator.query(`SELECT
+        has_column_privilege('bello_runtime','public.board_card','archived','UPDATE') AS archive,
+        has_table_privilege('bello_runtime','public.board_card','UPDATE') AS full_update,
+        has_table_privilege('bello_runtime','public.board_card','DELETE') AS remove`);
+      check(
+        privileges.rows[0].archive &&
+          !privileges.rows[0].full_update &&
+          !privileges.rows[0].remove,
+      );
+      const original = await read();
+      for (const table of ["audit_event", "board_feed_event"]) {
+        await migrator.query(`CREATE FUNCTION public.e2e_reject_archive() RETURNS trigger
+          LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic archive failure'; END; $$;
+          CREATE TRIGGER e2e_reject_archive BEFORE INSERT ON public.${table}
+          FOR EACH ROW WHEN (NEW.operation = 'CARD_ARCHIVED') EXECUTE FUNCTION public.e2e_reject_archive();`);
+        try {
+          check((await archive()).status() === 500);
+          check(JSON.stringify(await read()) === JSON.stringify(original));
+        } finally {
+          await migrator.query(`DROP TRIGGER e2e_reject_archive ON public.${table};
+            DROP FUNCTION public.e2e_reject_archive();`);
+        }
+      }
+      const parallel = await Promise.all([archive(), archive()]);
+      check(parallel.every((response) => response.status() === 204));
+      const active = await read();
+      check(
+        active.cards.map(({ id }) => id).join() === [first, last, move].join(),
+      );
+      check(active.archivedCards[0].id === target);
+      check(
+        active.archivedCards[0].completedAt === original.cards[1].completedAt,
+      );
+      check(
+        (
+          await admin.context.request.patch(origin + card, {
+            headers,
+            data: { title: "Indevido" },
+          })
+        ).status() === 403,
+      );
+      check(
+        (
+          await post(card + "/schedule", {
+            completed: false,
+            operationId: randomUUID(),
+          })
+        ).status() === 403,
+      );
+
+      for (const [action, fields] of [
+        ["labels", { ...label, applied: false }],
+        ["assignees", { ...assignment, assigned: false }],
+        ["comments", { kind: "CREATE", content: "Comentário indevido" }],
+      ]) {
+        check((await change(action, fields)).status() === 403);
+      }
+      const moveWithinList = (itemId, itemRevision) =>
+        post(lists + "/move", {
+          kind: "CARD",
+          itemId,
+          leftId: first,
+          rightId: last,
+          sourceId: list,
+          destinationId: list,
+          itemRevision,
+          sourceRevision: active.cardOrderRevision,
+          destinationRevision: active.cardOrderRevision,
+          operationId: randomUUID(),
+        });
+      check(
+        (
+          await moveWithinList(target, active.archivedCards[0].positionRevision)
+        ).status() === 403,
+      );
+
+      const boardUrl = origin + board.replace(/^\/api/, "");
+      await observer.page.goto(boardUrl);
+      await expect(
+        observer.page.getByRole("heading", { name: "Primeiro" }),
+      ).toBeVisible();
+      await expect(
+        observer.page.getByRole("heading", { name: "Preservado" }),
+      ).toHaveCount(0);
+      await observer.page
+        .getByRole("button", { name: "Cartões arquivados (1)" })
+        .click();
+      await expect(
+        observer.page.getByText("Descrição preservada"),
+      ).toBeVisible();
+      await expect(
+        observer.page.getByRole("button", { name: "Restaurar cartão" }),
+      ).toHaveCount(0);
+      await observer.page
+        .getByRole("article")
+        .filter({ hasText: "Descrição preservada" })
+        .getByRole("button", { name: "Comentários" })
+        .click();
+      await expect(
+        observer.page.getByText("Comentário preservado"),
+      ).toBeVisible();
+
+      check(
+        (
+          await moveWithinList(move, active.cards[2].positionRevision)
+        ).status() === 204,
+      );
+
+      await admin.page.goto(boardUrl);
+      await admin.page
+        .getByRole("button", { name: "Cartões arquivados (1)" })
+        .click();
+      await admin.page
+        .getByRole("button", { name: "Restaurar cartão" })
+        .click();
+      await expect(
+        admin.page.getByText("Cartão restaurado.", { exact: true }),
+      ).toBeVisible();
+      await admin.page.reload();
+      await expect(
+        admin.page.getByRole("heading", { name: "Preservado" }),
+      ).toBeVisible();
+      check((await archive()).status() === 204);
+      const restored = await read();
+      check(restored.archivedCards.length === 0);
+      check(
+        restored.cards.map(({ id }) => id).join() ===
+          [first, move, target, last].join(),
+      );
+      check(restored.cards[2].completedAt === original.cards[1].completedAt);
+      check(restored.cards[2].labels[0].id === labelId);
+      check(restored.cards[2].assignees[0].accountId === owner.id);
+      for (const table of ["audit_event", "board_feed_event"]) {
+        const eventIdColumn = table === "audit_event" ? "entity_id" : "card_id";
+        const events = await migrator.query(
+          `SELECT operation FROM public.${table}
+          WHERE ${eventIdColumn}=$1 AND operation IN ('CARD_ARCHIVED','CARD_RESTORED') ORDER BY operation`,
+          [target],
+        );
+        check(
+          events.rows.map(({ operation }) => operation).join() ===
+            "CARD_ARCHIVED,CARD_RESTORED",
+        );
+      }
+    } finally {
+      await Promise.all([admin.context.close(), observer.context.close()]);
+    }
+  });
+
   await scenario("generic rejected login (real stack)", async () => {
     const account = await fixture();
     const { page, context } = await pageFor();

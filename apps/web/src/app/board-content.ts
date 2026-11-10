@@ -12,6 +12,7 @@ interface Assignee {
 }
 
 interface Card {
+  archived?: boolean;
   id: string;
   title: string;
   positionRevision: number;
@@ -30,6 +31,7 @@ interface List {
   positionRevision: number;
   cardOrderRevision: number;
   cards: Card[];
+  archivedCards?: Card[];
 }
 interface Content {
   editable: boolean;
@@ -128,9 +130,27 @@ interface DragItem {
               </form>
             </details>
           }
-          @for (card of list.cards; track card.id) {
+          @if (list.archivedCards?.length) {
+            <button
+              type="button"
+              [attr.aria-expanded]="showArchived() === list.id"
+              (click)="showArchived.set(showArchived() === list.id ? null : list.id)"
+            >
+              Cartões arquivados ({{ list.archivedCards?.length }})
+            </button>
+          }
+          @for (
+            card of showArchived() === list.id
+              ? list.cards.concat(list.archivedCards ?? [])
+              : list.cards;
+            track card.id
+          ) {
+            @let editableCard = board.editable && !card.archived;
             <article>
               <h4>{{ card.title }}</h4>
+              @if (card.archived) {
+                <p>Cartão arquivado</p>
+              }
               <p class="description">{{ card.description }}</p>
               <p>
                 @if (card.completedAt) {
@@ -182,7 +202,7 @@ interface DragItem {
                       ></span>
                     }
                     {{ label.name }}
-                    @if (board.editable) {
+                    @if (editableCard) {
                       <button
                         type="button"
                         [disabled]="saving()"
@@ -197,7 +217,7 @@ interface DragItem {
                   <li>Sem etiquetas.</li>
                 }
               </ul>
-              @if (board.editable && board.availableLabels?.length) {
+              @if (editableCard && board.availableLabels?.length) {
                 <form (submit)="applyLabel($event, list, card, labelChoice.value)">
                   <label [attr.for]="'label-' + card.id">Adicionar etiqueta</label>
                   <select [id]="'label-' + card.id" #labelChoice required>
@@ -216,7 +236,7 @@ interface DragItem {
                 @for (person of card.assignees ?? []; track person.accountId) {
                   <li>
                     {{ person.email }}
-                    @if (board.editable) {
+                    @if (editableCard) {
                       <button
                         type="button"
                         [disabled]="saving()"
@@ -231,7 +251,7 @@ interface DragItem {
                   <li>Sem responsáveis.</li>
                 }
               </ul>
-              @if (board.editable && board.eligibleAssignees?.length) {
+              @if (editableCard && board.eligibleAssignees?.length) {
                 <form (submit)="addAssignee($event, list, card, candidate.value)">
                   <label [attr.for]="'assignee-' + card.id">Adicionar responsável</label>
                   <select [id]="'assignee-' + card.id" #candidate required>
@@ -245,7 +265,7 @@ interface DragItem {
                   <button [disabled]="saving()">Atribuir</button>
                 </form>
               }
-              @if (board.editable) {
+              @if (editableCard) {
                 <button
                   type="button"
                   draggable="true"
@@ -265,7 +285,7 @@ interface DragItem {
                 </button>
                 <button
                   type="button"
-                  [disabled]="$last || saving()"
+                  [disabled]="$index >= list.cards.length - 1 || saving()"
                   (click)="moveStep(list, card, 1)"
                 >
                   Descer cartão
@@ -340,6 +360,11 @@ interface DragItem {
                   </form>
                 </details>
               }
+              @if (board.editable) {
+                <button type="button" [disabled]="saving()" (click)="changeArchive(list, card)">
+                  {{ card.archived ? 'Restaurar cartão' : 'Arquivar cartão' }}
+                </button>
+              }
             </article>
           }
           @if (board.editable) {
@@ -400,6 +425,7 @@ export class BoardContent {
   readonly message = signal('');
   readonly saving = signal(false);
   readonly commentsCard = signal<string | null>(null);
+  readonly showArchived = signal<string | null>(null);
   readonly drag = signal<DragItem | null>(null);
   private readonly http = inject(HttpClient);
   private readonly connectRealtime = inject(BOARD_REALTIME);
@@ -670,6 +696,32 @@ export class BoardContent {
         error instanceof HttpErrorResponse && error.status === 400
           ? 'Confira as datas informadas.'
           : 'Não foi possível confirmar a alteração. Confira o estado atualizado do cartão.',
+      );
+    } finally {
+      this.reload.update((value) => value + 1);
+      this.saving.set(false);
+    }
+  }
+
+  async changeArchive(list: List, card: Card) {
+    if (this.saving()) return;
+    this.saving.set(true);
+    this.message.set('');
+    const archived = !card.archived;
+    const path = this.path() + '/' + list.id + '/cards/' + card.id + '/archive';
+    const key =
+      'bello.pending-archive:' + this.accountId() + ':' + path + ':' + card.positionRevision;
+    try {
+      const operationId = sessionStorage.getItem(key) ?? crypto.randomUUID();
+      sessionStorage.setItem(key, operationId);
+      await firstValueFrom(this.http.post(path, { archived, operationId }, this.options));
+      sessionStorage.removeItem(key);
+      this.message.set(archived ? 'Cartão arquivado.' : 'Cartão restaurado.');
+    } catch (error) {
+      if (error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500)
+        sessionStorage.removeItem(key);
+      this.message.set(
+        'Não foi possível confirmar a alteração. Confira o estado atualizado do cartão.',
       );
     } finally {
       this.reload.update((value) => value + 1);

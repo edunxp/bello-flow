@@ -1363,3 +1363,25 @@ Mutações compartilham o bloqueio de participação do quadro e revalidam
 papel, autoria e cartão. Comentário, revisão, auditoria e feed confirmam
 juntos. O identificador na auditoria impede reaplicar uma operação
 confirmada sem conceder leitura de auditoria ao runtime.
+
+## Arquivamento e restauração de cartões
+
+O BEL-012 alterna o estado de `board_card.archived` por meio de
+`POST /api/workspaces/:workspaceId/boards/:boardId/lists/:listId/cards/:cardId/archive`,
+com `archived` e `operationId`. A leitura autorizada separa `cards` de
+`archivedCards` por lista. Administradores e Membros do quadro podem alterar
+o estado. Observadores podem consultar o cartão arquivado, inclusive seus
+comentários. Os demais comandos operacionais do cartão exigem estado ativo.
+
+A posição do cartão arquivado continua reservada na lista e acompanha o
+rebalanceamento. A movimentação usa vizinhos ativos para interpretar a
+intenção e inclui as posições reservadas ao calcular a chave disponível.
+Restaurar na lista ativa de origem reapresenta o cartão na sua posição
+reservada. O tratamento de listas arquivadas faz parte do BEL-013.
+
+A transação bloqueia mudanças concorrentes de participação e ordenação na
+lista, revalida o escopo e grava estado, revisões, auditoria e feed. O feed
+registra `CARD_ARCHIVED` ou `CARD_RESTORED` com os identificadores do cartão e
+da lista. A auditoria registra também os estados anterior e posterior. O
+recibo permite repetir a mesma intenção após perda da resposta. A migration
+acrescenta somente `UPDATE(archived)` a `bello_runtime`.

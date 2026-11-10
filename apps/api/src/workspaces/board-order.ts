@@ -17,7 +17,7 @@ export interface MoveIntent {
 }
 
 export type Container = { kind: 'LIST' | 'CARD'; id: string };
-type Positioned = { id: string; position: bigint };
+type Positioned = { id: string; position: bigint; archived?: boolean };
 
 export function conflict(): never {
   throw new HttpContractError(HTTP_ERROR_CODE.OPERATION_CONFLICT);
@@ -38,7 +38,10 @@ export async function lockContainers(
   `;
 }
 
-export function siblings(tx: Prisma.TransactionClient, container: Container) {
+export function siblings(
+  tx: Prisma.TransactionClient,
+  container: Container,
+): Promise<Positioned[]> {
   const select = { id: true, position: true } as const;
   const orderBy = { position: 'asc' } as const;
   return container.kind === 'LIST'
@@ -49,7 +52,7 @@ export function siblings(tx: Prisma.TransactionClient, container: Container) {
       })
     : tx.boardCard.findMany({
         where: { listId: container.id },
-        select,
+        select: { ...select, archived: true },
         orderBy,
       });
 }

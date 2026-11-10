@@ -633,6 +633,29 @@ e os endpoints de recuperação permanecem no
   recuperação após queda, revogação de participação e sessão e preservação do
   prazo de inatividade. Registro anterior ao CI remoto.
 
+- **Integração — VERIFICADO:** fast-forward da `main` para
+  `7491f919cdbd5f74a698e4db4f1acef6c608ce08`. Revisão independente aprovada.
+  [CI final 42746783990](https://github.com/edunxp/bello-flow/actions/runs/42746783990)
+  aprovado nos quatro jobs no push da `main`.
+
+## Arquivamento e restauração de cartões
+
+- **Ciclo:** `work/arquivamento-cartoes`,
+  `BASE_MAIN_SHA=7491f919cdbd5f74a698e4db4f1acef6c608ce08`.
+  BEL-012, com separação entre ativos e arquivados, posição reservada,
+  restauração na lista de origem, acesso por papel e auditoria e feed
+  atômicos. O risco principal é a concorrência com movimentação e
+  alterações de conteúdo. [Persistência e auditoria](arquitetura/persistencia-e-auditoria.md#arquivamento-e-restauração-de-cartões).
+- **Privilégio autorizado:** `UPDATE(archived)` em `public.board_card`
+  para `bello_runtime`. Validação em PostgreSQL descartável.
+
+- **Validação local — VERIFICADO:** 853 testes da API, 102 da web e 18
+  cenários Chromium em Docker. A prova cobriu bloqueio de mutações em cartão
+  arquivado, acesso de Observador, escopo do quadro, repetição concorrente,
+  posição após movimentação, preservação de dados e rollback por falha
+  obrigatória de auditoria ou feed. O gate de cobertura foi aprovado.
+  Registro anterior ao CI remoto.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,
