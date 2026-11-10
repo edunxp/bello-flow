@@ -29,6 +29,8 @@ model Account {
   bootstrapStates         BootstrapState[]
   auditEvents             AuditEvent[]
   workspaceMemberships    WorkspaceMembership[]
+  comments                CardComment[] @relation("CommentAuthor")
+  removedComments         CardComment[] @relation("CommentRemover")
   completedCards          BoardCard[]
   accessNoticesReceived   AccessNotification[]      @relation("AccessNoticeRecipient")
   accessNoticesIssued     AccessNotification[]      @relation("AccessNoticeActor")
@@ -251,6 +253,7 @@ model BoardFeedEvent {
   actorId    String   @map("actor_id") @db.Uuid
   subjectAccountId String? @map("subject_account_id") @db.Uuid
   labelId String? @map("label_id") @db.Uuid
+  commentId String? @map("comment_id") @db.Uuid
   requestHash String? @map("request_hash") @db.Char(64)
   occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
   operation  String   @db.VarChar(60)
@@ -328,6 +331,8 @@ model BoardCard {
 
   labels CardLabel[]
 
+  comments CardComment[]
+
   @@index([listId, createdAt, id])
   @@unique([listId, position])
   @@map("board_card")
@@ -369,4 +374,21 @@ model CardLabel {
   @@id([cardId, labelId])
   @@index([workspaceId, labelId])
   @@map("card_label")
+}
+
+model CardComment {
+  id          String @id @db.Uuid
+  cardId      String @map("card_id") @db.Uuid
+  authorId    String @map("author_id") @db.Uuid
+  content     String? @db.VarChar(10000)
+  createdAt   DateTime @map("created_at") @db.Timestamptz(6)
+  editedAt    DateTime? @map("edited_at") @db.Timestamptz(6)
+  removedAt   DateTime? @map("removed_at") @db.Timestamptz(6)
+  removedById String? @map("removed_by_id") @db.Uuid
+  card        BoardCard @relation(fields: [cardId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  author      Account @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  removedBy   Account? @relation("CommentRemover", fields: [removedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([cardId, createdAt, id])
+  @@map("card_comment")
 }

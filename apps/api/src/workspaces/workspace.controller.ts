@@ -55,6 +55,12 @@ function text(value: unknown, max: number, trim: boolean): string {
   return result;
 }
 
+function commentText(value: unknown, max: number) {
+  const content = text(value, max, false);
+  if (/^[\p{White_Space}\p{Cf}]*$/u.test(content)) invalid();
+  return content;
+}
+
 function labelFields(body: Record<string, unknown> | undefined) {
   const name = text(body?.name, 50, true);
   const color = body?.color ?? null;
@@ -398,6 +404,80 @@ export class WorkspaceController {
           params.listId === undefined ? undefined : identifier(params.listId),
       },
       params.listId === undefined ? identifier(body?.operationId) : '',
+    );
+  }
+
+  @Get(':workspaceId/boards/:boardId/lists/:listId/cards/:cardId/comments')
+  async comments(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const context = await this.contentContext(request, params);
+    return this.content.comments(
+      context,
+      identifier(params.listId),
+      identifier(params.cardId),
+    );
+  }
+
+  @Post(':workspaceId/boards/:boardId/lists/:listId/cards/:cardId/comments')
+  @HttpCode(204)
+  async changeComment(
+    @Req() request: Request,
+    @Param() params: Record<string, string>,
+  ) {
+    const context = await this.contentContext(request, params, true);
+    const listId = identifier(params.listId);
+    const cardId = identifier(params.cardId);
+    const body = request.body as Record<string, unknown> | undefined;
+    const operationId = identifier(body?.operationId);
+    if (body?.kind === 'CREATE') {
+      await this.content.changeComment(
+        context,
+        listId,
+        cardId,
+        { kind: 'CREATE', content: commentText(body.content, 10000) },
+        operationId,
+      );
+      return;
+    }
+    const id = identifier(body?.id);
+    const version = body?.version;
+    if (typeof version !== 'string' || !/^[0-9a-f]{64}$/u.test(version))
+      invalid();
+    if (body?.kind === 'EDIT') {
+      await this.content.changeComment(
+        context,
+        listId,
+        cardId,
+        {
+          kind: 'EDIT',
+          id,
+          version,
+          content: commentText(body.content, 10000),
+        },
+        operationId,
+      );
+      return;
+    }
+    if (
+      (body?.kind !== 'REMOVE' && body?.kind !== 'MODERATE') ||
+      body.confirmed !== true
+    )
+      invalid();
+    await this.content.changeComment(
+      context,
+      listId,
+      cardId,
+      body.kind === 'MODERATE'
+        ? {
+            kind: 'MODERATE',
+            id,
+            version,
+            justification: commentText(body.justification, 2000),
+          }
+        : { kind: 'REMOVE', id, version },
+      operationId,
     );
   }
 

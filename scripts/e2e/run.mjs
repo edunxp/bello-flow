@@ -1406,6 +1406,198 @@ try {
           }
         }
 
+        const comments =
+          lists + "/" + finalList.id + "/cards/" + createdCard.id + "/comments";
+        const sendComment = (tab, fields, path = comments) =>
+          post(tab, path, {
+            ...fields,
+            operationId: fields.operationId ?? randomUUID(),
+          });
+        const readComments = async (tab, path = comments) =>
+          (await (await get(tab, path)).json()).comments;
+        const draft = {
+          kind: "CREATE",
+          content: "Primeira versão sintética",
+          operationId: randomUUID(),
+        };
+        check((await sendComment(teamTab, draft)).status() === 204);
+        check((await sendComment(teamTab, draft)).status() === 409);
+        check(
+          (
+            await sendComment(teamTab, { kind: "CREATE", content: " \u200b " })
+          ).status() === 400,
+        );
+        check((await get(personalTab, comments)).status() === 404);
+        const [originalComment] = await readComments(teamTab);
+        const edit = {
+          kind: "EDIT",
+          id: originalComment.id,
+          version: originalComment.version,
+          content: "Versão revisada sintética",
+        };
+        check(originalComment.canEdit && !originalComment.canModerate);
+        check((await sendComment(ownerTab, edit)).status() === 403);
+        check((await sendComment(teamTab, edit)).status() === 204);
+        const [editedComment] = await readComments(ownerTab);
+        check(
+          editedComment.createdAt === originalComment.createdAt &&
+            editedComment.editedAt,
+        );
+        check(
+          editedComment.canModerate &&
+            !editedComment.canEdit &&
+            editedComment.content === edit.content,
+        );
+        const moderate = {
+          kind: "MODERATE",
+          id: editedComment.id,
+          version: editedComment.version,
+          confirmed: true,
+          justification: "Motivo sintético de moderação",
+        };
+        check(
+          (
+            await sendComment(ownerTab, { ...moderate, confirmed: false })
+          ).status() === 400,
+        );
+        check(
+          (
+            await sendComment(ownerTab, { ...moderate, justification: " " })
+          ).status() === 400,
+        );
+        check(
+          (
+            await sendComment(ownerTab, {
+              ...moderate,
+              version: originalComment.version,
+            })
+          ).status() === 409,
+        );
+        check((await sendComment(teamTab, moderate)).status() === 403);
+
+        for (const table of ["audit_event", "board_feed_event"]) {
+          await migrator.query(`CREATE FUNCTION public.e2e_reject_comment() RETURNS trigger
+            LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic comment failure'; END; $$;
+            CREATE TRIGGER e2e_reject_comment BEFORE INSERT ON public.${table}
+            FOR EACH ROW WHEN (NEW.operation = 'COMMENT_MODERATED') EXECUTE FUNCTION public.e2e_reject_comment();`);
+          try {
+            check((await sendComment(ownerTab, moderate)).status() === 500);
+            check((await readComments(teamTab))[0].content === edit.content);
+          } finally {
+            await migrator.query(
+              `DROP TRIGGER e2e_reject_comment ON public.${table}; DROP FUNCTION public.e2e_reject_comment();`,
+            );
+          }
+        }
+        await open(ownerTab, erp);
+        const commentCard = ownerTab.page.getByRole("article").filter({
+          has: ownerTab.page.getByRole("heading", { name: "ERP validado" }),
+        });
+        await commentCard
+          .getByRole("button", { name: "Comentários", exact: true })
+          .click();
+        await expect(
+          commentCard.getByText(edit.content, { exact: true }),
+        ).toBeVisible();
+        await commentCard
+          .getByRole("button", { name: "Moderar comentário" })
+          .click();
+        await commentCard
+          .getByLabel("Justificativa de moderação")
+          .fill(moderate.justification);
+        await commentCard
+          .getByRole("button", { name: "Confirmar moderação" })
+          .click();
+        await expect(
+          commentCard.getByText("Comentário removido", { exact: false }),
+        ).toBeVisible();
+        const [removedComment] = await readComments(teamTab);
+        check(
+          removedComment.content === null &&
+            removedComment.author === team.email &&
+            removedComment.removedBy === owner.email,
+        );
+        check(
+          !("justification" in removedComment) &&
+            removedComment.version === null,
+        );
+        check((await sendComment(teamTab, edit)).status() === 409);
+        const commentHistory = await migrator.query(
+          `SELECT operation, before_data, after_data
+          FROM public.audit_event WHERE entity_id=$1 AND entity_type='COMMENT' ORDER BY occurred_at`,
+          [editedComment.id],
+        );
+        check(
+          commentHistory.rows.map(({ operation }) => operation).join(",") ===
+            "COMMENT_CREATED,COMMENT_EDITED,COMMENT_MODERATED",
+        );
+        check(commentHistory.rows[1].before_data.content === draft.content);
+        check(commentHistory.rows[2].before_data.content === edit.content);
+        check(
+          commentHistory.rows[2].after_data.justification ===
+            moderate.justification,
+        );
+        const commentFeed = await migrator.query(
+          "SELECT to_jsonb(event)::text AS data FROM public.board_feed_event event WHERE comment_id=$1",
+          [editedComment.id],
+        );
+        check(
+          commentFeed.rows.length === 3 &&
+            commentFeed.rows.every(
+              ({ data }) =>
+                ![draft.content, edit.content, moderate.justification].some(
+                  (text) => data.includes(text),
+                ),
+            ),
+        );
+        const privateComments =
+          personalCards + "/" + personalCard.id + "/comments";
+        const maxBody =
+          '{"kind":"CREATE","operationId":"' +
+          randomUUID() +
+          '","content":"' +
+          "\\ud83d\\ude00".repeat(10000) +
+          '"}';
+        const maxResponse = await ownerTab.context.request.post(
+          origin + privateComments,
+          {
+            headers: { ...headers, "Content-Type": "application/json" },
+            data: maxBody,
+          },
+        );
+        check(maxResponse.status() === 204);
+        const [ownComment] = await readComments(ownerTab, privateComments);
+        check(Array.from(ownComment.content).length === 10000);
+        const [observed] = await readComments(personalTab, privateComments);
+        check(!observed.canEdit && !observed.canModerate);
+        check(
+          (
+            await sendComment(
+              personalTab,
+              { kind: "CREATE", content: "Negada" },
+              privateComments,
+            )
+          ).status() === 403,
+        );
+        check(
+          (
+            await sendComment(
+              ownerTab,
+              {
+                kind: "REMOVE",
+                id: ownComment.id,
+                version: ownComment.version,
+                confirmed: true,
+              },
+              privateComments,
+            )
+          ).status() === 204,
+        );
+        check(
+          (await readComments(personalTab, privateComments))[0].content ===
+            null,
+        );
+
         const workCatalog = work + "/labels";
         const homeCatalog = home + "/labels";
         const createLabel = (tab, path, data) =>
@@ -2026,6 +2218,16 @@ try {
           }),
         ).toBeVisible();
         check((await assign(participant, cardA, member)).status() === 204);
+        const authoredComments = cards + "/" + cardA + "/comments";
+        check(
+          (
+            await request(participant, authoredComments, {
+              kind: "CREATE",
+              content: "Histórico sintético",
+              operationId: randomUUID(),
+            })
+          ).status() === 204,
+        );
         const oldImpact = await impact();
         check(
           oldImpact.count === 1 &&
@@ -2213,6 +2415,14 @@ try {
           (await readAssignees())
             .map(({ accountId }) => accountId)
             .join(",") === owner.id,
+        );
+        const retainedComments = (
+          await (await get(admin, authoredComments)).json()
+        ).comments;
+        check(
+          retainedComments.length === 1 &&
+            retainedComments[0].author === member.email &&
+            retainedComments[0].content === "Histórico sintético",
         );
         const assignmentHistory = await migrator.query(
           "SELECT count(*)::int AS n FROM public.audit_event WHERE operation='CARD_ASSIGNEE_REMOVED' AND before_data->>'accountId'=$1",

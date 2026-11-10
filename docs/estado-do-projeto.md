@@ -598,6 +598,23 @@ e os endpoints de recuperação permanecem no
   entre aplicação e exclusão, repetição e rollback preservando vínculos e
   histórico. Registro anterior ao CI remoto.
 
+## Comentários e moderação de cartões
+
+- **Ciclo:** `work/comentarios-cartoes`,
+  `BASE_MAIN_SHA=5f1b4c0feabf1ed148cd4edde2e9cc30d18c2069`.
+  Recorte BEL-023 e BEL-030, com autoria, edição própria, remoção e
+  moderação confirmada de terceiros.
+- **Privilégios autorizados:** SELECT, INSERT e UPDATE restrito a conteúdo,
+  última edição, instante e autor da remoção de `card_comment`. O
+  [contrato](arquitetura/persistencia-e-auditoria.md#comentários-e-moderação-de-cartões)
+  registra a proteção de versões e justificativas e o limite do feed.
+
+- **Validação local — VERIFICADO:** gate completo com 841 testes da API,
+  98 da web e 16 cenários em Docker aprovados. A prova verificou autoria,
+  consulta por Observador, retenção após remoção do participante, versões
+  e justificativa restritas, repetição e rollback por falhas obrigatórias.
+  Registro anterior ao CI remoto.
+
 ## Roadmap recomendado do Kanban
 
 O **primeiro Kanban utilizável para validação interna** é um marco intermediário,

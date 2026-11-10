@@ -1335,3 +1335,31 @@ reconciliam repetições pelo recibo no feed.
 Antes de implementar arquivamento de quadros, é preciso resolver como a
 imutabilidade de RN-055 se aplica a alterações globais de RN-088 sobre
 etiquetas associadas a cartões arquivados.
+
+## Comentários e moderação de cartões
+
+Comentários usam texto simples e mantêm autoria, criação e última edição.
+A autorização segue o cartão e o quadro atuais. Administradores e Membros
+podem criar e operar seus próprios comentários. Observadores consultam.
+Somente Administrador do quadro pode moderar comentário de terceiro, com
+confirmação e justificativa. A autoridade administrativa do Workspace
+não concede acesso a comentários privados.
+
+A API usa GET e POST em
+`/api/workspaces/{workspaceId}/boards/{boardId}/lists/{listId}/cards/{cardId}/comments`.
+O POST recebe `operationId` e a ação. Edição e remoção também recebem a
+versão lida. Remoção e moderação exigem confirmação. A versão protege
+contra sobrescrever ou moderar um texto que mudou durante a revisão.
+Perda de acesso ou mudança de versão invalida o formulário aberto.
+
+A remoção preserva o registro e limpa o texto atual. A API retorna o
+marcador e a identidade do responsável pela remoção. A versão anterior
+e a justificativa ficam na auditoria de conteúdo. Na consulta futura
+de BEL-032, eventos `BOARD` de entidade `COMMENT` exigem proteção de
+conteúdo altamente protegido, com as regras de contexto e retenção
+aplicáveis. O feed guarda identificadores e metadados da atividade.
+
+Mutações compartilham o bloqueio de participação do quadro e revalidam
+papel, autoria e cartão. Comentário, revisão, auditoria e feed confirmam
+juntos. O identificador na auditoria impede reaplicar uma operação
+confirmada sem conceder leitura de auditoria ao runtime.

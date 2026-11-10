@@ -38,7 +38,7 @@ export function configureHttpApplication(
     'trust proxy',
     config.trustedProxies.length === 0 ? false : [...config.trustedProxies],
   );
-  // A card description may contain 20,000 supplementary characters escaped as JSON pairs.
+  // A card description may contain 20,000 supplementary characters escaped as JSON pairs; comments may contain 10,000.
   app.useBodyParser('json', {
     limit: '256kb',
     type: (request: IncomingMessage) =>
@@ -46,7 +46,7 @@ export function configureHttpApplication(
       /^application\/json(?:\s*;|$)/iu.test(
         request.headers['content-type'] ?? '',
       ) &&
-      /^\/api\/workspaces\/[^/?]+\/boards\/[^/?]+\/lists\/[^/?]+\/cards(?:\/[^/?]+)?\/?(?:\?|$)/iu.test(
+      /^\/api\/workspaces\/[^/?]+\/boards\/[^/?]+\/lists\/[^/?]+\/cards(?:\/[^/?]+(?:\/comments)?)?\/?(?:\?|$)/iu.test(
         request.url ?? '',
       ),
   });

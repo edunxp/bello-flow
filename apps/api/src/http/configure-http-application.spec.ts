@@ -41,6 +41,9 @@ describe('configureHttpApplication', () => {
     expect(
       accepts({ method: 'PATCH', headers: json, url: url + '/card' }),
     ).toBe(true);
+    expect(
+      accepts({ method: 'POST', headers: json, url: url + '/card/comments' }),
+    ).toBe(true);
     expect(accepts({ method: 'GET', headers: json, url })).toBe(false);
     expect(accepts({ method: 'POST', headers: {}, url })).toBe(false);
     expect(

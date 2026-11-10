@@ -33,6 +33,8 @@ function setup() {
     schedule: vi.fn(),
     changeAssignee: vi.fn(),
     changeCardLabel: vi.fn(),
+    comments: vi.fn(),
+    changeComment: vi.fn(),
     move: vi.fn(),
   };
   const sharing = { changeBoardMember: vi.fn(), boardMemberImpact: vi.fn() };
@@ -459,5 +461,44 @@ describe('label HTTP contract', () => {
         scope,
       ),
     ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+  });
+});
+
+describe('comment HTTP contract', () => {
+  it('requires meaningful text, version and confirmation for the applicable actions', async () => {
+    const { controller, request, content } = setup();
+    const params = { workspaceId: id, boardId: id, listId: id, cardId: id };
+    await controller.comments(request(), params);
+    expect(content.comments).toHaveBeenCalledOnce();
+    const send = (fields: object) =>
+      controller.changeComment(request({ operationId: id, ...fields }), params);
+    const current = { id, version: 'a'.repeat(64) };
+    await send({ kind: 'CREATE', content: ' Linha um \n Linha dois ' });
+    await send({ kind: 'EDIT', ...current, content: 'Mudança' });
+    await send({ kind: 'REMOVE', ...current, confirmed: true });
+    await send({
+      kind: 'MODERATE',
+      ...current,
+      confirmed: true,
+      justification: 'Motivo',
+    });
+    expect(content.changeComment).toHaveBeenCalledTimes(4);
+    for (const bad of [
+      { kind: 'CREATE', content: '\u200b' },
+      { kind: 'CREATE', content: '🧪'.repeat(10001) },
+      { kind: 'EDIT', ...current, version: 'stale', content: 'Mudança' },
+      { kind: 'REMOVE', ...current, confirmed: false },
+      { kind: 'MODERATE', ...current, confirmed: true, justification: ' ' },
+      {
+        kind: 'MODERATE',
+        ...current,
+        confirmed: true,
+        justification: 'a'.repeat(2001),
+      },
+    ]) {
+      await expect(send(bad)).rejects.toMatchObject({
+        code: 'INVALID_REQUEST',
+      });
+    }
   });
 });

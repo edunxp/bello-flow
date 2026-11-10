@@ -474,4 +474,21 @@ describe('BoardContent', () => {
     http.expectNone(url);
     expect(element.querySelector('#label-card')).toBeNull();
   });
+  it('loads comments on demand and closes the thread from the same card', () => {
+    const { fixture, http } = setup();
+    const element = fixture.nativeElement as HTMLElement;
+    const toggle = [...element.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Comentários',
+    )!;
+    const thread = path + '/list/cards/card/comments';
+    http.expectNone(thread);
+    toggle.click();
+    fixture.detectChanges();
+    http.expectOne(thread).flush({ editable: true, comments: [] });
+    fixture.detectChanges();
+    expect(element.textContent).toContain('Nenhum comentário');
+    toggle.click();
+    fixture.detectChanges();
+    expect(element.querySelector('app-card-comments')).toBeNull();
+  });
 });

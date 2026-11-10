@@ -2,6 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, effect, inject, input, output, signal } from '@angular/core';
 import { catchError, EMPTY, exhaustMap, firstValueFrom, throwError, timer } from 'rxjs';
 
+import { CardComments } from './card-comments';
 import type { Label } from './workspace-labels';
 
 interface Assignee {
@@ -50,6 +51,7 @@ interface DragItem {
 
 @Component({
   selector: 'app-board-content',
+  imports: [CardComments],
   styles: `
     section {
       margin-block: 1.25rem;
@@ -152,6 +154,20 @@ interface DragItem {
                     board.timeZone
                   }})
                 </p>
+              }
+              <button
+                type="button"
+                [attr.aria-expanded]="commentsCard() === card.id"
+                (click)="commentsCard.set(commentsCard() === card.id ? null : card.id)"
+              >
+                Comentários
+              </button>
+              @if (commentsCard() === card.id) {
+                <app-card-comments
+                  [path]="path() + '/' + list.id + '/cards/' + card.id + '/comments'"
+                  [cardId]="card.id"
+                  [revision]="board.syncRevision"
+                />
               }
               <h5>Etiquetas</h5>
               <ul>
@@ -382,6 +398,7 @@ export class BoardContent {
   readonly content = signal<Content | null>(null);
   readonly message = signal('');
   readonly saving = signal(false);
+  readonly commentsCard = signal<string | null>(null);
   readonly drag = signal<DragItem | null>(null);
   private readonly http = inject(HttpClient);
   private readonly options = { headers: { 'X-Bello-Flow-Request': '1' }, timeout: 15000 };

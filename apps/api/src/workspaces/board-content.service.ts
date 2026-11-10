@@ -34,6 +34,7 @@ import {
   lockWorkspaceLabels,
   recordCardLabels,
 } from './card-labels.js';
+import { commentVersion, type CommentChange } from './card-comments.js';
 import { creationId } from './workspace.service.js';
 
 export type BoardContext = {
@@ -415,6 +416,210 @@ export class BoardContentService {
       today: workspaceToday(board.workspace.timeZone),
       timeZone: board.workspace.timeZone,
     };
+  }
+
+  async comments(context: BoardContext, listId: string, cardId: string) {
+    const result = await this.transaction(async (tx) => {
+      const access = await this.commentAccess(tx, context);
+      if (!access) return null;
+      const card = await tx.boardCard.findFirst({
+        where: { id: cardId, listId, list: { boardId: context.boardId } },
+        select: {
+          comments: {
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            select: {
+              id: true,
+              authorId: true,
+              content: true,
+              createdAt: true,
+              editedAt: true,
+              removedAt: true,
+              author: { select: { emailKey: true } },
+              removedBy: { select: { emailKey: true } },
+            },
+          },
+        },
+      });
+      if (!card) return null;
+      const editable = this.editable(access);
+      return {
+        editable,
+        comments: card.comments.map(({ author, removedBy, ...comment }) => {
+          const live = comment.removedAt === null;
+          const own = comment.authorId === context.accountId;
+          return {
+            id: comment.id,
+            author: author.emailKey,
+            createdAt: comment.createdAt,
+            editedAt: comment.editedAt,
+            removedAt: comment.removedAt,
+            removedBy: removedBy?.emailKey ?? null,
+            content: live ? comment.content : null,
+            version: live ? commentVersion(comment) : null,
+            canEdit: live && editable && own,
+            canModerate:
+              live && editable && !own && access.members[0]?.role === 'ADMIN',
+          };
+        }),
+      };
+    });
+    if (!result) return this.deny(context, 'READ_CARD_COMMENTS', false);
+    return result;
+  }
+
+  async changeComment(
+    context: BoardContext,
+    listId: string,
+    cardId: string,
+    change: CommentChange,
+    operationId: string,
+  ) {
+    const operation = {
+      CREATE: 'COMMENT_CREATED',
+      EDIT: 'COMMENT_EDITED',
+      REMOVE: 'COMMENT_REMOVED',
+      MODERATE: 'COMMENT_MODERATED',
+    }[change.kind];
+    const eventId = creationId(
+      context.accountId,
+      operationId,
+      context.workspaceId,
+      context.boardId,
+      'CARD_COMMENT',
+    );
+    const id = change.kind === 'CREATE' ? eventId : change.id;
+    const result = await this.transaction(async (tx) => {
+      const access = await this.commentAccess(tx, context);
+      if (!access) return { denied: 'HIDDEN' } as const;
+      if (!this.editable(access)) return { denied: 'READ_ONLY' } as const;
+      await lockBoardMembers(tx, context.boardId);
+      const current = await this.commentAccess(tx, context);
+      if (!current) return { denied: 'HIDDEN' } as const;
+      if (!this.editable(current)) return { denied: 'READ_ONLY' } as const;
+      const card = await tx.boardCard.findFirst({
+        where: { id: cardId, listId, list: { boardId: context.boardId } },
+        select: { id: true },
+      });
+      if (!card) return { denied: 'HIDDEN' } as const;
+
+      const before =
+        change.kind === 'CREATE'
+          ? null
+          : await tx.cardComment.findFirst({
+              where: { id, cardId },
+              select: {
+                authorId: true,
+                content: true,
+                createdAt: true,
+                editedAt: true,
+                removedAt: true,
+              },
+            });
+      if (change.kind !== 'CREATE') {
+        if (!before) return { denied: 'HIDDEN' } as const;
+        const own = before.authorId === context.accountId;
+        if (
+          change.kind === 'MODERATE'
+            ? own || current.members[0]?.role !== 'ADMIN'
+            : !own
+        )
+          return { denied: 'READ_ONLY' } as const;
+        if (before.removedAt || commentVersion(before) !== change.version)
+          conflict();
+      }
+
+      const now = new Date();
+      const content = 'content' in change ? change.content : null;
+      if (change.kind === 'EDIT' && before?.content === content) conflict();
+      const authorId = before?.authorId ?? context.accountId;
+      const removing = change.kind === 'REMOVE' || change.kind === 'MODERATE';
+      const receipt = await tx.auditEvent.createMany({
+        data: {
+          id: eventId,
+          occurredAt: now,
+          actorAccountId: context.accountId,
+          origin: 'HTTP',
+          scope: 'BOARD',
+          operation,
+          result: 'SUCCESS',
+          entityType: 'COMMENT',
+          entityId: id,
+          context: {
+            workspaceId: context.workspaceId,
+            boardId: context.boardId,
+            listId,
+            cardId,
+          },
+          operationId: eventId,
+          correlationId: eventId,
+          sequence: 1,
+          beforeData: before
+            ? { authorId, content: before.content }
+            : undefined,
+          afterData: removing
+            ? {
+                authorId,
+                removedById: context.accountId,
+                removedAt: now.toISOString(),
+                ...(change.kind === 'MODERATE'
+                  ? { justification: change.justification }
+                  : {}),
+              }
+            : { authorId, content },
+        },
+        skipDuplicates: true,
+      });
+      if (!receipt.count) conflict();
+      if (change.kind === 'CREATE') {
+        await tx.cardComment.create({
+          data: { id, cardId, authorId, content, createdAt: now },
+          select: { id: true },
+        });
+      } else {
+        const data = removing
+          ? { content: null, removedAt: now, removedById: context.accountId }
+          : { content, editedAt: now };
+        await tx.cardComment.update({
+          where: { id },
+          data,
+          select: { id: true },
+        });
+      }
+      await tx.board.update({
+        where: { id: context.boardId },
+        select: { id: true },
+        data: { syncRevision: { increment: 1 } },
+      });
+      await tx.boardFeedEvent.createMany({
+        data: {
+          id: eventId,
+          boardId: context.boardId,
+          listId,
+          cardId,
+          commentId: id,
+          actorId: context.accountId,
+          occurredAt: now,
+          operation,
+        },
+      });
+      return { confirmed: true };
+    }, 'ReadCommitted');
+    if (result.denied)
+      return this.deny(context, operation, result.denied === 'READ_ONLY');
+    return result;
+  }
+
+  private commentAccess(tx: Prisma.TransactionClient, context: BoardContext) {
+    return tx.board.findFirst({
+      where: this.boardScope(context),
+      select: {
+        archived: true,
+        members: {
+          where: { accountId: context.accountId },
+          select: { role: true },
+        },
+      },
+    });
   }
 
   async changeCardLabel(

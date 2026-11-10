@@ -1,3 +1,4 @@
+import { commentVersion } from './card-comments.js';
 import { Prisma } from '../generated/prisma/client.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import { BoardContentService } from './board-content.service.js';
@@ -20,6 +21,7 @@ describe('BoardContentService', () => {
     };
     const tx = {
       $queryRaw: vi.fn(),
+      cardComment: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
       workspaceLabel: {
         findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue({ id: 'label' }),
@@ -50,7 +52,7 @@ describe('BoardContentService', () => {
         createMany: vi.fn(),
         update: vi.fn(),
       },
-      auditEvent: { createMany: vi.fn() },
+      auditEvent: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       boardFeedEvent: {
         createMany: vi.fn(),
         findUnique: vi.fn().mockResolvedValue(null),
@@ -539,5 +541,188 @@ describe('BoardContentService', () => {
       service.changeCardLabel(context, 'list', 'card', 'label', true, 'apply'),
     ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
     expect(tx.cardLabel.createMany).not.toHaveBeenCalled();
+  });
+  const comment = {
+    id: 'comment',
+    authorId: context.accountId,
+    author: { emailKey: 'actor@example.test' },
+    content: 'Anterior',
+    createdAt: new Date('2026-11-09T12:00:00Z'),
+    editedAt: null,
+    removedAt: null,
+    removedBy: null,
+  };
+
+  it('lists authorized comments, redacts removed text and determines actions', async () => {
+    const { service, tx } = setup('ADMIN');
+    tx.boardCard.findFirst.mockResolvedValue({
+      comments: [
+        comment,
+        { ...comment, id: 'other', authorId: 'other' },
+        {
+          ...comment,
+          id: 'removed',
+          removedAt: new Date(),
+          removedBy: { emailKey: 'mod@example.test' },
+        },
+      ],
+    });
+    const result = await service.comments(context, 'list', 'card');
+    expect(result.comments).toMatchObject([
+      {
+        content: 'Anterior',
+        canEdit: true,
+        canModerate: false,
+        version: commentVersion(comment),
+      },
+      { content: 'Anterior', canEdit: false, canModerate: true },
+      {
+        content: null,
+        canEdit: false,
+        canModerate: false,
+        version: null,
+        removedBy: 'mod@example.test',
+      },
+    ]);
+    tx.boardCard.findFirst.mockResolvedValue(null);
+    await expect(
+      service.comments(context, 'list', 'card'),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    tx.board.findFirst.mockResolvedValue(null);
+    await expect(
+      service.comments(context, 'list', 'card'),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+  });
+
+  it('creates once, edits its own comment and removes text without deleting the record', async () => {
+    const { service, tx } = setup();
+    tx.boardCard.findFirst.mockResolvedValue({ id: 'card' });
+    tx.cardComment.findFirst.mockResolvedValue(comment);
+    await service.changeComment(
+      context,
+      'list',
+      'card',
+      { kind: 'CREATE', content: 'Criação' },
+      'create',
+    );
+    tx.auditEvent.createMany.mockResolvedValueOnce({ count: 0 });
+    await expect(
+      service.changeComment(
+        context,
+        'list',
+        'card',
+        { kind: 'CREATE', content: 'Criação' },
+        'create',
+      ),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    expect(tx.cardComment.create).toHaveBeenCalledOnce();
+    const item = { id: comment.id, version: commentVersion(comment) };
+    await service.changeComment(
+      context,
+      'list',
+      'card',
+      { kind: 'EDIT', ...item, content: 'Novo' },
+      'edit',
+    );
+    await service.changeComment(
+      context,
+      'list',
+      'card',
+      { kind: 'REMOVE', ...item },
+      'remove',
+    );
+    expect(tx.cardComment.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: {
+          content: null,
+          removedAt: expect.any(Date),
+          removedById: context.accountId,
+        },
+      }),
+    );
+    expect(tx.boardFeedEvent.createMany).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        operation: 'COMMENT_REMOVED',
+        commentId: comment.id,
+      }),
+    });
+  });
+
+  it('allows moderation of third-party text only, with protected audit and version checks', async () => {
+    const { service, tx } = setup('ADMIN');
+    tx.boardCard.findFirst.mockResolvedValue({ id: 'card' });
+    const other = { ...comment, authorId: 'another' };
+    tx.cardComment.findFirst.mockResolvedValue(other);
+    const item = { id: comment.id, version: commentVersion(other) };
+    await expect(
+      service.changeComment(
+        context,
+        'list',
+        'card',
+        { kind: 'EDIT', ...item, content: 'Negada' },
+        'edit',
+      ),
+    ).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    const moderate = {
+      kind: 'MODERATE',
+      ...item,
+      justification: 'Motivo',
+    } as const;
+    await expect(
+      service.changeComment(
+        context,
+        'list',
+        'card',
+        { ...moderate, version: 'outdated' },
+        'moderate',
+      ),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+    await service.changeComment(context, 'list', 'card', moderate, 'moderate');
+    expect(tx.auditEvent.createMany).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        operation: 'COMMENT_MODERATED',
+        beforeData: { authorId: 'another', content: 'Anterior' },
+        afterData: expect.objectContaining({ justification: 'Motivo' }),
+      }),
+      skipDuplicates: true,
+    });
+    tx.cardComment.findFirst.mockResolvedValue({
+      ...other,
+      removedAt: new Date(),
+    });
+    await expect(
+      service.changeComment(
+        context,
+        'list',
+        'card',
+        moderate,
+        'new-moderation',
+      ),
+    ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' });
+  });
+
+  it('refuses observers and rechecks authorization and card ownership after locking', async () => {
+    const { service, tx } = setup('OBSERVER');
+    const submit = () =>
+      service.changeComment(
+        context,
+        'list',
+        'card',
+        { kind: 'CREATE', content: 'Texto' },
+        'create',
+      );
+    await expect(submit()).rejects.toMatchObject({ code: 'REQUEST_FORBIDDEN' });
+    const member = { archived: false, members: [{ role: 'MEMBER' }] };
+    tx.board.findFirst.mockResolvedValueOnce(member).mockResolvedValue(null);
+    await expect(submit()).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    await expect(submit()).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+    tx.board.findFirst.mockResolvedValue(member);
+    await expect(submit()).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
   });
 });
