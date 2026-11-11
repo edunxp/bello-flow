@@ -723,6 +723,9 @@ try {
           ownerTab.page.getByText("Este quadro ainda não tem listas."),
         ).toBeVisible();
         const createList = async (tab, name) => {
+          const addList = tab.page.locator(".add-list");
+          if ((await addList.getAttribute("open")) === null)
+            await addList.getByText("+ Nova lista", { exact: true }).click();
           await tab.page.getByLabel("Nome da nova lista").fill(name);
           await tab.page.getByRole("button", { name: "Criar lista" }).click();
           await expect(
@@ -738,6 +741,7 @@ try {
         const todoRegion = teamTab.page.getByRole("region", {
           name: "A fazer",
         });
+        await todoRegion.getByLabel("Opções da lista", { exact: true }).click();
         await todoRegion.getByText("Renomear lista", { exact: true }).click();
         await todoRegion.getByLabel("Novo nome da lista").fill("A fazer 📝");
         await todoRegion.getByRole("button", { name: "Salvar nome" }).click();
@@ -759,6 +763,7 @@ try {
           },
           { times: 1 },
         );
+        await renamed.getByText("+ Adicionar", { exact: true }).click();
         await renamed.getByLabel("Título do novo cartão").fill("Validar ERP");
         await renamed
           .getByLabel("Descrição do novo cartão")
@@ -777,6 +782,20 @@ try {
           await (await get(teamTab, lists)).json()
         ).lists.find((item) => item.id === todo.id).cards;
         const cardPath = cards + "/" + createdCard.id;
+        await expect(renamed.locator(".dialog-columns")).toHaveCount(0);
+        const cardTrigger = renamed.getByRole("button", {
+          name: "Validar ERP",
+          exact: true,
+        });
+        await cardTrigger.click();
+        await expect(
+          renamed
+            .getByRole("dialog")
+            .getByRole("button", { name: "Fechar", exact: true }),
+        ).toBeFocused();
+        await teamTab.page.keyboard.press("Escape");
+        await expect(cardTrigger).toBeFocused();
+        await cardTrigger.click();
         await renamed.getByText("Editar cartão", { exact: true }).click();
         await renamed
           .getByLabel("Título do cartão", { exact: true })
@@ -786,11 +805,16 @@ try {
           .fill("Descrição atualizada");
         await renamed.getByRole("button", { name: "Salvar cartão" }).click();
         await expect(
-          renamed.getByRole("heading", { name: "ERP validado" }),
+          teamTab.page.getByRole("dialog", { name: "ERP validado" }),
         ).toBeVisible();
         await teamTab.page.reload();
+        await renamed
+          .getByRole("button", { name: "ERP validado", exact: true })
+          .click();
         await expect(
-          renamed.getByText("Descrição atualizada", { exact: true }),
+          teamTab.page
+            .getByRole("dialog", { name: "ERP validado" })
+            .getByText("Descrição atualizada", { exact: true }),
         ).toBeVisible();
         const replay = await post(teamTab, cards, original);
         check(
@@ -1005,8 +1029,13 @@ try {
             })
           ).status() === 403,
         );
+        await personalTab.page
+          .getByRole("button", { name: "Cartão pessoal", exact: true })
+          .click();
         await expect(
-          personalTab.page.getByText("Conteúdo pessoal", { exact: true }),
+          personalTab.page
+            .getByRole("dialog", { name: "Cartão pessoal" })
+            .getByText("Conteúdo pessoal", { exact: true }),
         ).toBeVisible();
         await expect(
           personalTab.page.getByRole("button", { name: "Criar cartão" }),
@@ -1175,17 +1204,17 @@ try {
               name: "Arrastar lista " + firstList.name,
             }),
           );
-        await expect(teamTab.page.locator("h3")).toHaveText([
+        await expect(teamTab.page.locator(".lane-header h3")).toHaveText([
           secondList.name,
           firstList.name,
           thirdList.name,
         ]);
-        await expect(ownerTab.page.locator("h3")).toHaveText(
+        await expect(ownerTab.page.locator(".lane-header h3")).toHaveText(
           [secondList.name, firstList.name, thirdList.name],
           { timeout: 10000 },
         );
         await teamTab.page.reload();
-        await expect(teamTab.page.locator("h3")).toHaveText([
+        await expect(teamTab.page.locator(".lane-header h3")).toHaveText([
           secondList.name,
           firstList.name,
           thirdList.name,
@@ -1494,6 +1523,9 @@ try {
           has: ownerTab.page.getByRole("heading", { name: "ERP validado" }),
         });
         await commentCard
+          .getByRole("button", { name: "ERP validado", exact: true })
+          .click();
+        await commentCard
           .getByRole("button", { name: "Comentários", exact: true })
           .click();
         await expect(
@@ -1662,7 +1694,9 @@ try {
         );
         await open(personalTab, homeBoard);
         await expect(
-          personalTab.page.getByText("STRASSE", { exact: true }),
+          personalTab.page
+            .locator(".card-tags")
+            .getByText("STRASSE", { exact: true }),
         ).toBeVisible();
         await expect(
           personalTab.page.getByRole("button", { name: "Aplicar etiqueta" }),
@@ -1703,6 +1737,9 @@ try {
         const article = teamTab.page.getByRole("article").filter({
           has: teamTab.page.getByRole("heading", { name: "ERP validado" }),
         });
+        await article
+          .getByRole("button", { name: "ERP validado", exact: true })
+          .click();
         await article.getByLabel("Adicionar etiqueta").selectOption(label.id);
         await article.getByRole("button", { name: "Aplicar etiqueta" }).click();
         await expect(
@@ -2207,6 +2244,9 @@ try {
           has: admin.page.getByRole("heading", { name: "Cartão um" }),
         });
         await article
+          .getByRole("button", { name: "Cartão um", exact: true })
+          .click();
+        await article
           .getByLabel("Adicionar responsável")
           .selectOption(owner.id);
         await article
@@ -2259,7 +2299,7 @@ try {
         );
         await open(participant, board);
         await expect(
-          participant.page.getByRole("button", { name: "Criar lista" }),
+          participant.page.getByText("+ Nova lista", { exact: true }),
         ).toBeVisible();
         await open(admin, members);
         async function manage(option) {
@@ -2286,7 +2326,7 @@ try {
         await manage("OBSERVER");
         await expect(admin.page.getByText("Papel atualizado.")).toBeVisible();
         await expect(
-          participant.page.getByRole("button", { name: "Criar lista" }),
+          participant.page.getByText("+ Nova lista", { exact: true }),
         ).toHaveCount(0, { timeout: 10000 });
         await expect(
           participant.page.getByRole("heading", { name: "Entrega" }),
@@ -2825,10 +2865,19 @@ try {
         observer.page.getByRole("heading", { name: "Preservado" }),
       ).toHaveCount(0);
       await observer.page
+        .getByRole("region", { name: "Fila" })
+        .getByLabel("Opções da lista", { exact: true })
+        .click();
+      await observer.page
         .getByRole("button", { name: "Cartões arquivados (1)" })
         .click();
+      await observer.page
+        .getByRole("button", { name: "Preservado", exact: true })
+        .click();
       await expect(
-        observer.page.getByText("Descrição preservada"),
+        observer.page
+          .getByRole("dialog", { name: "Preservado" })
+          .getByText("Descrição preservada"),
       ).toBeVisible();
       await expect(
         observer.page.getByRole("button", { name: "Restaurar cartão" }),
@@ -2850,7 +2899,14 @@ try {
 
       await admin.page.goto(boardUrl);
       await admin.page
+        .getByRole("region", { name: "Fila" })
+        .getByLabel("Opções da lista", { exact: true })
+        .click();
+      await admin.page
         .getByRole("button", { name: "Cartões arquivados (1)" })
+        .click();
+      await admin.page
+        .getByRole("button", { name: "Preservado", exact: true })
         .click();
       await admin.page
         .getByRole("button", { name: "Restaurar cartão" })
@@ -3062,7 +3118,10 @@ try {
           observer.page.getByRole("heading", { name: "Volta com a lista" }),
         ).toBeVisible();
         await expect(
-          observer.page.getByRole("button", { name: "Restaurar lista" }),
+          observer.page.getByRole("button", {
+            name: "Restaurar lista",
+            exact: true,
+          }),
         ).toHaveCount(0);
 
         check(
@@ -3088,6 +3147,12 @@ try {
           .getByRole("article")
           .filter({ hasText: "Retirar sem restaurar lista" });
         await extracted
+          .getByRole("button", {
+            name: "Retirar sem restaurar lista",
+            exact: true,
+          })
+          .click();
+        await extracted
           .getByLabel("Restaurar em lista ativa")
           .selectOption(first);
         await extracted
@@ -3109,6 +3174,10 @@ try {
             "Histórico preservado",
         );
 
+        await admin.page
+          .getByRole("region", { name: "Lista de origem", exact: true })
+          .getByLabel("Opções da lista", { exact: true })
+          .click();
         const restoreList = admin.page
           .getByRole("region", { name: "Lista de origem", exact: true })
           .getByRole("button", { name: "Restaurar lista", exact: true });
@@ -3364,6 +3433,9 @@ try {
             "Etiqueta atualizada",
         );
 
+        await owner.page
+          .getByRole("button", { name: "Configurações do quadro" })
+          .click();
         await owner.page
           .getByRole("button", { name: "Restaurar quadro", exact: true })
           .click();

@@ -39,6 +39,62 @@ Procedimentos: [homologação local](operacao/homologacao-local.md),
 Integração na main exige autorização posterior para o SHA final aprovado no CI
 e na revisão independente.
 
+## Avaliação local do layout do quadro
+
+- **Base — VERIFICADO:** `BASE_MAIN_SHA=ce5ad3fae0c46f3ed4017a021556af57558af3b6`,
+  integrada à main e aprovada no [CI 42825545245](https://github.com/edunxp/bello-flow/actions/runs/42825545245).
+- **Escopo — VERIFICADO:** branch `work/layout-quadro`, com colunas coloridas,
+  navegação compacta, seletor de Workspace, cartões e detalhes em janela.
+  A preferência de tema do quadro admite Claro, Escuro e Seguir o sistema,
+  e fica no navegador. A foto é temporária. O cabeçalho reaproveita a lista
+  de participantes autorizada pelo endpoint atual e apresenta os e-mails retornados.
+- **Risco:** regressão de navegação e acesso aos controles de cartão e lista.
+  A sessão isolada confirmou login, tema após recarga, reação à preferência do
+  sistema, troca entre Workspaces, abertura de cartão e largura móvel de 360 px.
+  A comparação com a prova de conceito motivou mover participantes para o
+  cabeçalho e atividade/arquivamento para a engrenagem, recolher a criação de
+  lista e recuperar descrição e rodapé nos cartões. O aceite visual pelo
+  responsável permanece pendente.
+
+- **Homologação do contrato — VERIFICADO em Chromium:** cenário sintético
+  conforme o [DESIGN.md](../DESIGN.md), com quatro listas em 898 × 675 px e
+  rolagem no quadro em 360 px. O seletor fechou por clique fora, `Esc` e
+  saída de foco. A criação de listas e cartões recolheu os formulários e
+  devolveu o foco após confirmação. A falha de rede simulada na criação da
+  lista preservou o texto para nova tentativa. Foram verificados os temas,
+  a restauração do fundo e o acesso de leitura aos cartões.
+
+
+- **Revisão Angular do quadro — implementação local:** os detalhes de cada
+  cartão são montados na primeira abertura. O conteúdo permanece montado após
+  fechar, preservando rascunhos ao reabrir. O cabeçalho e o botão de fechar
+  continuam disponíveis para o foco nativo da janela. Atualizações próximas
+  do conteúdo agrupam a consulta de participantes após 250 ms de estabilidade;
+  a primeira consulta é imediata e a perda da permissão de gestão limpa a lista.
+- **Ensaio sintético — VERIFICADO em Chromium:** no quadro com oito listas e
+  200 cartões, a abertura passou de 12.743 para 1.943 elementos, com 600 elementos
+  nos detalhes fechados em vez de 11.400. Seis movimentos próximos produziram
+  uma consulta adicional de participantes em vez de seis. Abertura da janela,
+  foco interno, fechamento por Esc e retorno ao cartão passaram. Os tempos
+  de abertura variaram entre execuções e ainda não permitem afirmar ganho de
+  latência. O ensaio usa banco descartável e não encerra a PT-016.
+- **Validação local da revisão Angular — VERIFICADO:** gate completo aprovado
+  com afinidade em dois núcleos, 873 testes da API e 116 da web, cobertura acima
+  de 90% nas quatro métricas e build concluído. Os 21 cenários completos de
+  navegador passaram em PostgreSQL descartável, incluindo a verificação de
+  montagem sob demanda, foco inicial no botão de fechar e retorno por Esc.
+  As duas execuções anteriores
+  excederam os cinco segundos do teste de inicialização da API; os limites de
+  aprovação foram mantidos. Persistem os avisos de orçamento de estilos de
+  `board-content.scss` e `workspaces-board.scss`. Correções locais na branch
+  `work/layout-quadro`; aceite visual e publicação do conjunto permanecem pendentes.
+- **Consolidação para publicação:** o AGENTS.md passa a referenciar o DESIGN.md
+  nas tarefas de apresentação do quadro. Os controles das janelas usam os tokens
+  de cor e espaçamento do quadro, inclusive nos componentes filhos, com foco
+  visível nos temas claro e escuro. A revisão visual utiliza seis capturas
+  sintéticas de quadro e cartão em desktop e tela de 360 px. O aceite visual
+  pelo responsável permanece pendente.
+
 ## Etapas concluídas
 
 | Etapa                                                         | Classificação do registro                                                                                                                                                         | Evidências                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |

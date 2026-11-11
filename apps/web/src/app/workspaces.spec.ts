@@ -35,6 +35,120 @@ describe('Workspaces', () => {
   afterEach(() => {
     TestBed.inject(HttpTestingController).verify();
     sessionStorage.clear();
+    localStorage.clear();
+  });
+
+  it('applies a valid photo for the current board and releases it on reset', () => {
+    const { http, page, fixture } = setup();
+    http.expectOne(base).flush([]);
+    const objectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:board-photo');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const select = (file?: File) =>
+      page.setWallpaper({
+        files: file ? [file] : [],
+        value: 'photo',
+      } as unknown as HTMLInputElement);
+    select();
+    expect(page.wallpaper()).toBeNull();
+    select(new File(['text'], 'photo.txt', { type: 'text/plain' }));
+    expect(page.wallpaperMessage()).toContain('até 12 MB');
+    select(new File(['image'], 'photo.png', { type: 'image/png' }));
+    expect(page.wallpaper()).toBe('url("blob:board-photo")');
+    expect(page.wallpaperMessage()).toBe('');
+    page.resetWallpaper();
+    expect(revoke).toHaveBeenCalledWith('blob:board-photo');
+    expect(page.wallpaper()).toBeNull();
+    fixture.destroy();
+    objectUrl.mockRestore();
+    revoke.mockRestore();
+  });
+
+  it('reopens the navigation and puts the appearance controls in board settings', () => {
+    const { http, fixture, page } = setup({ workspaceId: workspace.id, boardId: board.id });
+    const path = base + '/workspace/boards/board';
+    http.expectOne(path).flush(board);
+    http.expectOne(base).flush([workspace]);
+    fixture.detectChanges();
+    http.expectOne(path + '/lists').flush({ editable: false, canArchive: true, lists: [] });
+    fixture.detectChanges();
+    http
+      .expectOne(path + '/members')
+      .flush({ members: [{ accountId: 'other', email: 'other@example.test' }] });
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const menu = element.querySelector<HTMLDetailsElement>('.workspace-switch')!;
+    const summary = menu.querySelector('summary')!;
+    const workspaceLink = menu.querySelector('a')!;
+    menu.open = true;
+    menu.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: workspaceLink }));
+    expect(menu.open).toBe(true);
+    element.querySelector('h2')!.click();
+    expect(menu.open).toBe(false);
+    menu.open = true;
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(menu.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
+    menu.open = true;
+    menu.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+    expect(menu.open).toBe(false);
+    expect(element.querySelector('.workspace-switch summary')?.textContent).toContain(
+      workspace.name,
+    );
+    expect(element.querySelector('a[aria-current="true"]')?.textContent).toContain(workspace.name);
+    const participants = element.querySelector<HTMLDialogElement>(
+      'dialog[aria-labelledby="board-people-title"]',
+    )!;
+    participants.showModal = vi.fn();
+    participants.close = vi.fn();
+    element.querySelector<HTMLButtonElement>('.board-people')!.click();
+    expect(participants.showModal).toHaveBeenCalledOnce();
+    expect(participants.textContent).toContain('other@example.test');
+    participants.querySelector('button')!.click();
+    expect(participants.close).toHaveBeenCalledOnce();
+    const appearance = element.querySelector<HTMLDialogElement>(
+      'dialog[aria-labelledby="board-appearance-title"]',
+    )!;
+    appearance.showModal = vi.fn();
+    appearance.close = vi.fn();
+    element.querySelector<HTMLButtonElement>('[aria-label="Aparência pessoal"]')!.click();
+    expect(appearance.showModal).toHaveBeenCalledOnce();
+    const radios = appearance.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+    radios[1]!.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(element.querySelector('.board-shell')?.getAttribute('data-theme')).toBe('dark');
+    radios[2]!.dispatchEvent(new Event('change'));
+    expect(localStorage.getItem('bello-flow-board-theme')).toBe('system');
+    appearance.querySelector('button')!.click();
+    expect(appearance.close).toHaveBeenCalledOnce();
+    const navigation = element.querySelector<HTMLButtonElement>(
+      '[aria-controls="board-navigation"]',
+    )!;
+    navigation.click();
+    fixture.detectChanges();
+    expect(element.querySelector<HTMLElement>('#board-navigation')?.hidden).toBe(true);
+    expect(navigation.getAttribute('aria-label')).toBe('Mostrar navegação');
+    navigation.click();
+    fixture.detectChanges();
+    expect(navigation.getAttribute('aria-expanded')).toBe('true');
+
+    const settings = element.querySelector<HTMLDialogElement>(
+      'dialog[aria-labelledby="board-settings-title"]',
+    )!;
+    settings.showModal = vi.fn();
+    settings.close = vi.fn();
+    element.querySelector<HTMLButtonElement>('[aria-label="Configurações do quadro"]')!.click();
+    expect(settings.showModal).toHaveBeenCalledOnce();
+    const photo = settings.querySelector<HTMLInputElement>('#board-wallpaper')!;
+    Object.defineProperty(photo, 'files', {
+      value: [new File(['text'], 'photo.txt', { type: 'text/plain' })],
+    });
+    photo.dispatchEvent(new Event('change'));
+    expect(page.wallpaperMessage()).toContain('até 12 MB');
+    const [close, reset] = [...settings.querySelectorAll('button')];
+    reset!.click();
+    expect(page.wallpaperMessage()).toBe('');
+    close!.click();
+    expect(settings.close).toHaveBeenCalledOnce();
   });
 
   it('loads and creates Workspaces using the application request header', async () => {
@@ -201,10 +315,12 @@ describe('Workspaces', () => {
       boardId: board.id,
     });
     http.expectOne(base + '/workspace/boards/board').flush(board);
+    http.expectOne(base).flush([workspace]);
     expect(page.board()).toEqual(board);
     params.next(convertToParamMap({ workspaceId: workspace.id, boardId: 'private' }));
     fixture.detectChanges();
     expect(page.board()).toBeNull();
+    http.expectOne(base).flush([workspace]);
     http
       .expectOne(base + '/workspace/boards/private')
       .flush({}, { status: 403, statusText: 'Forbidden' });
@@ -221,6 +337,7 @@ describe('Workspaces', () => {
     });
     const path = base + '/workspace/boards/board';
     http.expectOne(path).flush(board);
+    http.expectOne(base).flush([workspace]);
     fixture.detectChanges();
     http
       .expectOne(path + '/lists')
@@ -234,5 +351,6 @@ describe('Workspaces', () => {
     expect(page.board()).toBeNull();
     expect(element.textContent).not.toContain('Lista privada');
     http.expectOne(path).flush({}, { status: 403, statusText: 'Forbidden' });
+    http.expectOne(base).flush([]);
   });
 });

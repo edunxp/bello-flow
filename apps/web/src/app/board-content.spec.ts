@@ -34,7 +34,11 @@ describe('BoardContent', () => {
     },
   ];
 
-  function setup(editable = true, connectRealtime: typeof connectBoardRealtime = () => vi.fn()) {
+  function setup(
+    editable = true,
+    connectRealtime: typeof connectBoardRealtime = () => vi.fn(),
+    openDetails = true,
+  ) {
     TestBed.configureTestingModule({
       imports: [BoardContent],
       providers: [
@@ -50,12 +54,64 @@ describe('BoardContent', () => {
     const http = TestBed.inject(HttpTestingController);
     http.expectOne({ url: path, method: 'GET' }).flush({ editable, lists });
     fixture.detectChanges();
+    if (openDetails) {
+      const element = fixture.nativeElement as HTMLElement;
+      const dialog = element.querySelector<HTMLDialogElement>('dialog.card-dialog')!;
+      dialog.showModal = vi.fn();
+      element.querySelector<HTMLButtonElement>('.card-title')!.click();
+      fixture.detectChanges();
+    }
     return { fixture, http, page: fixture.componentInstance };
   }
 
   afterEach(() => {
     TestBed.inject(HttpTestingController).verify();
     sessionStorage.clear();
+  });
+
+  it('mounts details only after opening a card and preserves its draft on reopening', () => {
+    const { fixture } = setup(true, () => vi.fn(), false);
+    const element = fixture.nativeElement as HTMLElement;
+    const dialog = element.querySelector<HTMLDialogElement>('dialog.card-dialog')!;
+    dialog.showModal = vi.fn();
+    expect(dialog.querySelector('.dialog-columns')).toBeNull();
+    const trigger = element.querySelector<HTMLButtonElement>('.card-title')!;
+    trigger.click();
+    fixture.detectChanges();
+    const title = dialog.querySelector<HTMLInputElement>('#title-card')!;
+    title.value = 'Rascunho';
+    dialog.dispatchEvent(new Event('close'));
+    fixture.detectChanges();
+    trigger.click();
+    fixture.detectChanges();
+    expect(dialog.querySelector<HTMLInputElement>('#title-card')!.value).toBe('Rascunho');
+  });
+
+  it('groups close revisions without clearing participants and clears them on loss of permission', async () => {
+    vi.useFakeTimers();
+    try {
+      const { fixture, http, page } = setup();
+      const board = { ...page.content()!, canArchive: true };
+      const membersPath = path.replace(/\/lists$/u, '/members');
+      const members = [{ accountId: 'participant', email: 'participant@example.test' }];
+      page.content.set(board);
+      fixture.detectChanges();
+      http.expectOne(membersPath).flush({ members });
+      fixture.detectChanges();
+      page.content.set({ ...board, syncRevision: 1 });
+      fixture.detectChanges();
+      page.content.set({ ...board, syncRevision: 2 });
+      fixture.detectChanges();
+      expect(page.participants()).toEqual(members);
+      http.expectNone(membersPath);
+      await vi.advanceTimersByTimeAsync(250);
+      http.expectOne(membersPath).flush({ members });
+      page.content.set({ ...board, canArchive: false });
+      fixture.detectChanges();
+      expect(page.participants()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('refreshes only for newer notices and clears content on revocation', () => {
@@ -159,9 +215,16 @@ describe('BoardContent', () => {
     const board = { ...page.content()!, archived: true, canArchive: true, syncRevision: 4 };
     page.content.set(board);
     fixture.detectChanges();
+    http.expectOne(path.replace(/\/lists$/u, '/members')).flush({
+      members: [{ accountId: 'participant', email: 'participant@example.test' }],
+    });
+    fixture.detectChanges();
     const element = fixture.nativeElement as HTMLElement;
+    expect(page.participants()).toEqual([
+      { accountId: 'participant', email: 'participant@example.test' },
+    ]);
     expect(element.textContent).toContain('Quadro arquivado');
-    expect(element.textContent).toContain('Restaurar quadro');
+    expect(page.boardActions()).toBeDefined();
     expect(element.querySelector('article form')).toBeNull();
     const restore = page.changeBoardArchive(board);
     const request = http.expectOne(path.replace(/\/lists$/u, '/archive'));
@@ -185,6 +248,9 @@ describe('BoardContent', () => {
     const element = fixture.nativeElement as HTMLElement;
     const input = element.querySelector<HTMLInputElement>('#new-list-name')!;
     const form = input.form!;
+    const disclosure = form.closest('details')!;
+    disclosure.open = true;
+    input.focus();
     input.value = 'Concluído';
     const send = () => form.dispatchEvent(new Event('submit', { cancelable: true }));
     send();
@@ -193,6 +259,8 @@ describe('BoardContent', () => {
     first.error(new ProgressEvent('network'));
     await fixture.whenStable();
     expect(page.message()).toContain('Repita com os mesmos dados');
+    expect(disclosure.open).toBe(true);
+    expect(input.value).toBe('Concluído');
     expect(sessionStorage.getItem(key)).toBe(first.request.body.operationId);
 
     send();
@@ -203,6 +271,8 @@ describe('BoardContent', () => {
     fixture.detectChanges();
     http.expectOne({ url: path, method: 'GET' }).flush({ editable: true, lists });
     expect(input.value).toBe('');
+    expect(disclosure.open).toBe(false);
+    expect(document.activeElement).toBe(disclosure.querySelector('summary'));
     expect(sessionStorage.getItem(key)).toBeNull();
   });
 
@@ -394,7 +464,7 @@ describe('BoardContent', () => {
     const element = fixture.nativeElement as HTMLElement;
     const target = (selector: string, label: string) =>
       [...element.querySelectorAll<HTMLElement>(selector)].find(
-        (node) => node.textContent?.trim() === label,
+        (node) => (node.getAttribute('aria-label') ?? node.textContent?.trim()) === label,
       )!;
     const event = (node: HTMLElement, name: string) =>
       node.dispatchEvent(new Event(name, { cancelable: true, bubbles: true }));
@@ -439,6 +509,11 @@ describe('BoardContent', () => {
       [...element.querySelectorAll<HTMLButtonElement>('button')].find(
         (node) => node.textContent?.trim() === label && !node.disabled,
       )!;
+    const otherTitle = target('button', 'Outro');
+    const otherDialog = otherTitle.closest('article')!.querySelector<HTMLDialogElement>('dialog')!;
+    otherDialog.showModal = vi.fn();
+    otherTitle.click();
+    fixture.detectChanges();
     for (const label of ['Subir lista', 'Subir cartão', 'Descer cartão']) {
       enabled(label).click();
       await confirm();
@@ -594,6 +669,21 @@ describe('BoardContent', () => {
     http.expectNone(url);
     expect(element.querySelector('#label-card')).toBeNull();
   });
+  it('opens details from the compact card and clears comments when it closes', () => {
+    const { fixture, page } = setup();
+    const element = fixture.nativeElement as HTMLElement;
+    const dialog = element.querySelector<HTMLDialogElement>('dialog.card-dialog')!;
+    dialog.showModal = vi.fn();
+    dialog.close = vi.fn();
+    element.querySelector<HTMLButtonElement>('.card-title')!.click();
+    expect(dialog.showModal).toHaveBeenCalledOnce();
+    dialog.querySelector<HTMLButtonElement>('.quiet-button')!.click();
+    expect(dialog.close).toHaveBeenCalledOnce();
+    page.commentsCard.set('card');
+    dialog.dispatchEvent(new Event('close'));
+    expect(page.commentsCard()).toBeNull();
+  });
+
   it('loads comments on demand and closes the thread from the same card', () => {
     const { fixture, http } = setup();
     const element = fixture.nativeElement as HTMLElement;

@@ -1,11 +1,23 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Component, effect, inject, signal } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  ElementRef,
+  effect,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { HistoryPanel } from './history-panel';
 import { BoardContent } from './board-content';
 import { Session } from './session';
+
+type BoardTheme = 'light' | 'dark' | 'system';
+const themeKey = 'bello-flow-board-theme';
 
 interface Resource {
   id: string;
@@ -26,12 +38,16 @@ interface BoardLifecycle {
 
 @Component({
   selector: 'app-workspaces',
-  imports: [RouterLink, BoardContent, HistoryPanel],
-  styleUrl: './auth-page.scss',
+  imports: [RouterLink, BoardContent, HistoryPanel, NgTemplateOutlet],
+  styleUrls: ['./auth-page.scss', './workspaces-board.scss'],
+  host: {
+    '(document:click)': 'dismissWorkspaceMenu($event.target)',
+    '(document:keydown.escape)': 'closeWorkspaceMenu($event)',
+  },
   template: `
-    <section class="card" aria-labelledby="page-title">
-      <h1 id="page-title" tabindex="-1">{{ title() }}</h1>
-      <p><a [routerLink]="workspaceId() ? '/workspaces' : '/'">Voltar</a></p>
+    <section class="card" [class.board-page]="board()" aria-labelledby="page-title">
+      <h1 id="page-title" tabindex="-1" [hidden]="board()">{{ title() }}</h1>
+      <p [hidden]="board()"><a [routerLink]="workspaceId() ? '/workspaces' : '/'">Voltar</a></p>
       @switch (session.state()) {
         @case ('loading') {
           <p role="status">Consultando sessão…</p>
@@ -49,7 +65,7 @@ interface BoardLifecycle {
           @if (message()) {
             <p role="status">{{ message() }}</p>
           }
-          @if (workspaceId() && accessible()) {
+          @if (workspaceId() && accessible() && !board()) {
             <p><a [routerLink]="sharingLink()">Participantes</a></p>
             <p>
               <a [routerLink]="['/workspaces', workspaceId(), 'labels']">Etiquetas do Workspace</a>
@@ -63,24 +79,257 @@ interface BoardLifecycle {
             />
           }
           @if (board(); as selected) {
-            <app-history-panel
-              title="Auditoria administrativa do quadro"
-              [path]="path() + '/audit'"
-              area="GOVERNANCE"
-            />
-            <app-history-panel
-              title="Auditoria de conteúdo do quadro"
-              [path]="path() + '/audit'"
-              area="CONTENT"
-            />
-            <h2>{{ selected.name }}</h2>
-            <p>{{ selected.description }}</p>
             @if (session.identity(); as identity) {
-              <app-board-content
-                [path]="path() + '/lists'"
-                [accountId]="identity.account.id"
-                (revoked)="clearBoard()"
-              />
+              <div
+                class="board-shell"
+                [class.nav-closed]="!navigationOpen()"
+                [attr.data-theme]="theme()"
+              >
+                <nav
+                  id="board-navigation"
+                  aria-label="Navegação do quadro"
+                  [hidden]="!navigationOpen()"
+                >
+                  <a routerLink="/workspaces" aria-label="Workspaces" title="Workspaces"
+                    ><svg viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="3" y="3" width="7" height="7" rx="1" />
+                      <rect x="14" y="3" width="7" height="7" rx="1" />
+                      <rect x="3" y="14" width="7" height="7" rx="1" />
+                      <rect x="14" y="14" width="7" height="7" rx="1" /></svg
+                  ></a>
+                  <span aria-current="page" aria-label="Quadro atual" title="Quadro atual"
+                    ><svg viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="3" y="4" width="18" height="16" rx="2" />
+                      <path d="M9 4v16m6-16v16" /></svg
+                  ></span>
+                  <a [routerLink]="sharingLink()" aria-label="Participantes" title="Participantes"
+                    ><svg viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="9" cy="8" r="3" />
+                      <path
+                        d="M3 20v-2a6 6 0 0 1 12 0v2m2-15a3 3 0 0 1 0 6m4 9v-2a6 6 0 0 0-3-5"
+                      /></svg
+                  ></a>
+                  <a
+                    [routerLink]="['/workspaces', workspaceId(), 'labels']"
+                    aria-label="Etiquetas do Workspace"
+                    title="Etiquetas do Workspace"
+                    ><svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M3 3h8l10 10-8 8L3 11z" />
+                      <circle cx="7.5" cy="7.5" r="1" /></svg
+                  ></a>
+                  <a routerLink="/notifications" aria-label="Notificações" title="Notificações"
+                    ><svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zm5 3a2 2 0 0 0 4 0" /></svg
+                  ></a>
+                </nav>
+                <div class="board-surface" [style.background-image]="wallpaper()">
+                  <div class="board-toolbar">
+                    <a class="board-wordmark" routerLink="/" aria-label="Bello Flow, início">
+                      <span class="board-mark" aria-hidden="true"><i></i><i></i><i></i></span>Bello
+                      Flow
+                    </a>
+                    <details
+                      #workspaceMenu
+                      class="workspace-switch"
+                      (focusout)="dismissWorkspaceMenu($event.relatedTarget)"
+                    >
+                      <summary>
+                        {{ currentWorkspaceName() }} <span aria-hidden="true">⌄</span>
+                      </summary>
+                      <div class="workspace-menu">
+                        @for (workspace of boardWorkspaces(); track workspace.id) {
+                          <a
+                            [routerLink]="['/workspaces', workspace.id]"
+                            [attr.aria-current]="workspace.id === workspaceId() ? 'true' : null"
+                            >{{ workspace.name }}</a
+                          >
+                        }
+                        <a routerLink="/workspaces" (click)="workspaceMenu.open = false"
+                          >Todos os Workspaces</a
+                        >
+                      </div>
+                    </details>
+                    <button
+                      type="button"
+                      class="board-icon appearance-trigger"
+                      aria-label="Aparência pessoal"
+                      title="Aparência pessoal"
+                      aria-haspopup="dialog"
+                      (click)="appearance.showModal()"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="20"
+                        height="20"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.7"
+                        aria-hidden="true"
+                      >
+                        <path d="M20 15a8 8 0 0 1-11-11 8 8 0 1 0 11 11Z" />
+                        <path d="M17 3v6m-3-3h6" />
+                      </svg>
+                    </button>
+
+                    <button
+                      type="button"
+                      class="board-icon"
+                      [attr.aria-label]="
+                        navigationOpen() ? 'Recolher navegação' : 'Mostrar navegação'
+                      "
+                      [attr.title]="navigationOpen() ? 'Recolher navegação' : 'Mostrar navegação'"
+                      [attr.aria-expanded]="navigationOpen()"
+                      aria-controls="board-navigation"
+                      (click)="navigationOpen.set(!navigationOpen())"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="20"
+                        height="20"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.7"
+                        aria-hidden="true"
+                      >
+                        <rect x="3" y="4" width="18" height="16" rx="2" />
+                        <path d="M9 4v16" />
+                      </svg>
+                    </button>
+                  </div>
+                  <header class="board-heading">
+                    <div>
+                      <p class="board-workspace-name">{{ currentWorkspaceName() }}</p>
+                      <h2>{{ selected.name }}</h2>
+                      <p>{{ selected.description }}</p>
+                    </div>
+                    <div class="board-heading-actions">
+                      @if (boardContent.participants().length; as count) {
+                        <button
+                          type="button"
+                          class="board-people"
+                          aria-haspopup="dialog"
+                          [attr.aria-label]="'Ver participantes do quadro (' + count + ')'"
+                          (click)="people.showModal()"
+                        >
+                          @for (
+                            person of boardContent.participants().slice(0, 3);
+                            track person.accountId
+                          ) {
+                            <span class="person-initial" aria-hidden="true">{{
+                              person.email.slice(0, 2).toUpperCase()
+                            }}</span>
+                          }
+                          <span>{{ count === 1 ? '1 pessoa' : count + ' pessoas' }}</span>
+                        </button>
+                      }
+                      <button
+                        type="button"
+                        class="board-icon board-settings-trigger"
+                        aria-label="Configurações do quadro"
+                        title="Configurações do quadro"
+                        aria-haspopup="dialog"
+                        (click)="settings.showModal()"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="20"
+                          height="20"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.7"
+                          aria-hidden="true"
+                        >
+                          <circle cx="12" cy="12" r="3" />
+                          <path
+                            d="M12 2v4m0 12v4M2 12h4m12 0h4M5 5l3 3m8 8 3 3m0-14-3 3m-8 8-3 3"
+                          />
+                          <circle cx="12" cy="12" r="8" />
+                        </svg>
+                      </button>
+                    </div>
+                  </header>
+                  <dialog #people class="board-settings" aria-labelledby="board-people-title">
+                    <header>
+                      <h3 id="board-people-title">Participantes do quadro</h3>
+                      <button type="button" (click)="people.close()">Fechar</button>
+                    </header>
+                    <ul class="board-people-list">
+                      @for (person of boardContent.participants(); track person.accountId) {
+                        <li>
+                          <span class="person-initial" aria-hidden="true">{{
+                            person.email.slice(0, 2).toUpperCase()
+                          }}</span
+                          >{{ person.email }}
+                        </li>
+                      }
+                    </ul>
+                    <a [routerLink]="sharingLink()">Gerenciar participantes</a>
+                  </dialog>
+                  <dialog
+                    #appearance
+                    class="board-settings"
+                    aria-labelledby="board-appearance-title"
+                  >
+                    <header>
+                      <h3 id="board-appearance-title">Aparência pessoal</h3>
+                      <button type="button" (click)="appearance.close()">Fechar</button>
+                    </header>
+                    <fieldset class="theme-options">
+                      <legend>Tema do quadro</legend>
+                      @for (option of themeOptions; track option.value) {
+                        <label
+                          ><input
+                            type="radio"
+                            name="board-theme"
+                            [checked]="theme() === option.value"
+                            (change)="setTheme(option.value)"
+                          />{{ option.label }}</label
+                        >
+                      }
+                    </fieldset>
+                  </dialog>
+                  <dialog #settings class="board-settings" aria-labelledby="board-settings-title">
+                    <header>
+                      <h3 id="board-settings-title">Configurações do quadro</h3>
+                      <button type="button" (click)="settings.close()">Fechar</button>
+                    </header>
+                    <h4>Aparência</h4>
+                    <label for="board-wallpaper">Foto de fundo nesta sessão</label>
+                    <input
+                      id="board-wallpaper"
+                      #photo
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/avif"
+                      (change)="setWallpaper(photo)"
+                    />
+                    <button type="button" (click)="resetWallpaper(); photo.value = ''">
+                      Restaurar fundo
+                    </button>
+                    @if (wallpaperMessage()) {
+                      <p role="status">{{ wallpaperMessage() }}</p>
+                    }
+                    <h4>Atividade e gestão</h4>
+                    <ng-container [ngTemplateOutlet]="boardContent.boardActions()" />
+                    <h4>Auditoria</h4>
+                    <app-history-panel
+                      title="Auditoria administrativa do quadro"
+                      [path]="path() + '/audit'"
+                      area="GOVERNANCE"
+                    />
+                    <app-history-panel
+                      title="Auditoria de conteúdo do quadro"
+                      [path]="path() + '/audit'"
+                      area="CONTENT"
+                    />
+                  </dialog>
+                  <app-board-content
+                    #boardContent
+                    [path]="path() + '/lists'"
+                    [accountId]="identity.account.id"
+                    (revoked)="clearBoard()"
+                  />
+                </div>
+              </div>
             }
           }
           @if (!boardId()) {
@@ -172,11 +421,87 @@ export class Workspaces {
     .resolvedOptions()
     .timeZone.replace(/^UTC$/, 'Etc/UTC');
 
+  private readonly workspaceMenu = viewChild<ElementRef<HTMLDetailsElement>>('workspaceMenu');
+
+  dismissWorkspaceMenu(target: EventTarget | null) {
+    const menu = this.workspaceMenu()?.nativeElement;
+    if (menu?.open && (!(target instanceof Node) || !menu.contains(target))) menu.open = false;
+  }
+
+  closeWorkspaceMenu(event: Event) {
+    const menu = this.workspaceMenu()?.nativeElement;
+    if (!menu?.open || !(event.target instanceof Node) || !menu.contains(event.target)) return;
+    menu.open = false;
+    menu.querySelector('summary')?.focus();
+  }
+
+  readonly boardWorkspaces = signal<Resource[]>([]);
+  readonly theme = signal<BoardTheme>(this.readTheme());
+  readonly themeOptions: { value: BoardTheme; label: string }[] = [
+    { value: 'light', label: 'Claro' },
+    { value: 'dark', label: 'Escuro' },
+    { value: 'system', label: 'Seguir o sistema' },
+  ];
+
+  currentWorkspaceName() {
+    return this.boardWorkspaces().find(({ id }) => id === this.workspaceId())?.name ?? 'Workspace';
+  }
+
+  private readTheme(): BoardTheme {
+    try {
+      const theme = localStorage.getItem(themeKey);
+      if (theme === 'dark' || theme === 'system') return theme;
+    } catch {
+      // The board can still render when browser storage is unavailable.
+    }
+    return 'light';
+  }
+
+  setTheme(theme: BoardTheme) {
+    this.theme.set(theme);
+    try {
+      localStorage.setItem(themeKey, theme);
+    } catch {
+      // Keep the preference for the current page.
+    }
+  }
+
+  readonly navigationOpen = signal(true);
+  readonly wallpaper = signal<string | null>(null);
+  readonly wallpaperMessage = signal('');
+  private wallpaperUrl: string | null = null;
+
+  setWallpaper(input: HTMLInputElement) {
+    const file = input.files?.[0];
+    if (!file) return;
+    if (
+      !['image/png', 'image/jpeg', 'image/webp', 'image/avif'].includes(file.type) ||
+      file.size > 12_000_000
+    ) {
+      this.wallpaperMessage.set('Escolha uma imagem PNG, JPEG, WebP ou AVIF de até 12 MB.');
+      input.value = '';
+      return;
+    }
+    this.resetWallpaper();
+    this.wallpaperUrl = URL.createObjectURL(file);
+    this.wallpaper.set('url("' + this.wallpaperUrl + '")');
+  }
+
+  resetWallpaper() {
+    if (this.wallpaperUrl) URL.revokeObjectURL(this.wallpaperUrl);
+    this.wallpaperUrl = null;
+    this.wallpaper.set(null);
+    this.wallpaperMessage.set('');
+  }
+
   constructor() {
+    inject(DestroyRef).onDestroy(() => this.resetWallpaper());
     effect((onCleanup) => {
       const path = this.path();
+      this.resetWallpaper();
       const authenticated = this.session.state() === 'authenticated' && this.session.identity();
       this.resources.set([]);
+      this.boardWorkspaces.set([]);
       this.board.set(null);
       this.lifecycle.set(null);
       this.accessible.set(false);
@@ -197,6 +522,12 @@ export class Workspaces {
           this.loading.set(false);
         },
       });
+      const workspaces = detail
+        ? this.http.get<Resource[]>('/api/workspaces', this.options).subscribe({
+            next: (result) => this.boardWorkspaces.set(result),
+            error: () => this.boardWorkspaces.set([]),
+          })
+        : null;
       const lifecycle = showLifecycle
         ? this.http.get<BoardLifecycle>(path + '/lifecycle', this.options).subscribe({
             next: (result) => this.lifecycle.set(result),
@@ -205,6 +536,7 @@ export class Workspaces {
         : null;
       onCleanup(() => {
         load.unsubscribe();
+        workspaces?.unsubscribe();
         lifecycle?.unsubscribe();
       });
     });

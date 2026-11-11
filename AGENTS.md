@@ -105,6 +105,11 @@ O repositório é um monorepo npm:
 - `infra/postgres`: provisionamento administrativo do PostgreSQL;
 - `scripts`: validações compartilhadas.
 
+Para alterações na apresentação e interação do quadro Angular, consulte também
+[DESIGN.md](DESIGN.md). Essa referência visual complementa os contratos de
+produto, autorização e colaboração, respeitando as decisões aprovadas e o
+estado do aceite registrado em `docs/estado-do-projeto.md`.
+
 Preserve o monólito modular aprovado. Módulos devem expor contratos e casos de
 uso explícitos. Controladores não devem acessar diretamente estruturas internas
 de outros módulos.

@@ -49,3 +49,32 @@ body {
 .skip-link:focus {
   top: 1rem;
 }
+
+.board-page :focus-visible {
+  outline-color: var(--board-brand, #2448d4);
+}
+
+.board-page dialog :is(button, input, select, textarea) {
+  min-height: 2.25rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--board-line, #d5deef);
+  border-radius: 0.45rem;
+  color: var(--board-ink, #19233e);
+  background: var(--board-surface, white);
+  font: inherit;
+}
+
+.board-page dialog button {
+  margin: 0.2rem 0.15rem 0.2rem 0;
+  background: var(--board-soft, #e3eaff);
+  cursor: pointer;
+}
+
+.board-page dialog button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.board-page dialog textarea {
+  width: 100%;
+}

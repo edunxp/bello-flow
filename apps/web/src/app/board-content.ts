@@ -1,6 +1,25 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Component, effect, inject, input, output, signal } from '@angular/core';
-import { catchError, EMPTY, exhaustMap, firstValueFrom, throwError, timer } from 'rxjs';
+import {
+  Component,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+  untracked,
+  TemplateRef,
+  viewChild,
+} from '@angular/core';
+import {
+  catchError,
+  EMPTY,
+  exhaustMap,
+  firstValueFrom,
+  of,
+  switchMap,
+  throwError,
+  timer,
+} from 'rxjs';
 
 import { backgroundHeaders, BOARD_REALTIME } from './board-realtime';
 import { CardTransfer } from './card-transfer';
@@ -61,50 +80,24 @@ interface DragItem {
 @Component({
   selector: 'app-board-content',
   imports: [CardComments, CardTransfer, HistoryPanel],
-  styles: `
-    section {
-      margin-block: 1.25rem;
-    }
-    form {
-      display: grid;
-      gap: 0.4rem;
-      margin-block: 0.75rem;
-    }
-    textarea {
-      min-height: 5rem;
-    }
-    .label-color {
-      display: inline-block;
-      width: 1em;
-      height: 1em;
-      border: 1px solid currentColor;
-    }
-    .drop-zone {
-      padding: 0.75rem;
-      border: 1px dashed currentColor;
-    }
-    .description {
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-    h3,
-    h4 {
-      overflow-wrap: anywhere;
-    }
-  `,
+  styleUrl: './board-content.scss',
   template: `
     @if (message()) {
       <p role="status">{{ message() }}</p>
     }
-    @if (content(); as board) {
-      <app-history-panel title="Atividades do quadro" [path]="boardPath() + '/feed'" />
-      @if (board.archived) {
-        <p>Quadro arquivado</p>
+    <ng-template #boardActions>
+      @if (content(); as board) {
+        <app-history-panel title="Atividades do quadro" [path]="boardPath() + '/feed'" />
+        @if (board.canArchive) {
+          <button type="button" [disabled]="saving()" (click)="changeBoardArchive(board)">
+            {{ board.archived ? 'Restaurar quadro' : 'Arquivar quadro' }}
+          </button>
+        }
       }
-      @if (board.canArchive) {
-        <button type="button" [disabled]="saving()" (click)="changeBoardArchive(board)">
-          {{ board.archived ? 'Restaurar quadro' : 'Arquivar quadro' }}
-        </button>
+    </ng-template>
+    @if (content(); as board) {
+      @if (board.archived) {
+        <p class="board-status">Quadro arquivado</p>
       }
       @if (board.archivedLists?.length) {
         <button
@@ -115,348 +108,448 @@ interface DragItem {
           Listas arquivadas ({{ board.archivedLists?.length }})
         </button>
       }
-      @for (
-        list of showArchivedLists() ? board.lists.concat(board.archivedLists ?? []) : board.lists;
-        track list.id
-      ) {
-        @let editableList = board.editable && !list.archived;
-        <section [attr.aria-label]="list.name">
-          <h3>{{ list.name }}</h3>
-          @if (list.archived) {
-            <p>Lista arquivada</p>
-          }
-          @if (board.editable) {
-            <button type="button" [disabled]="saving()" (click)="changeListArchive(list)">
-              {{ list.archived ? 'Restaurar lista' : 'Arquivar lista' }}
-            </button>
-          }
-          @if (editableList) {
-            <button
-              type="button"
-              draggable="true"
-              (dragstart)="startDrag($event, list)"
-              (dragend)="drag.set(null)"
-              (dragover)="allowDrop($event, 'LIST')"
-              (drop)="drop($event, 'LIST', null, list.id)"
-            >
-              Arrastar lista {{ list.name }}
-            </button>
-            <button
-              type="button"
-              [disabled]="$first || saving()"
-              (click)="moveStep(list, undefined, -1)"
-            >
-              Subir lista
-            </button>
-            <button
-              type="button"
-              [disabled]="$index >= board.lists.length - 1 || saving()"
-              (click)="moveStep(list, undefined, 1)"
-            >
-              Descer lista
-            </button>
-          }
-          @if (editableList) {
-            <details>
-              <summary>Renomear lista</summary>
-              <form (submit)="save($event, '/' + list.id, { name: rename.value }, false)">
-                <label [attr.for]="'name-' + list.id">Novo nome da lista</label>
-                <input [id]="'name-' + list.id" #rename [value]="list.name" required />
-                <button [disabled]="saving()">Salvar nome</button>
-              </form>
-            </details>
-          }
-          @if (list.archivedCards?.length) {
-            <button
-              type="button"
-              [attr.aria-expanded]="showArchived() === list.id"
-              (click)="showArchived.set(showArchived() === list.id ? null : list.id)"
-            >
-              Cartões arquivados ({{ list.archivedCards?.length }})
-            </button>
-          }
-          @for (
-            card of showArchived() === list.id
-              ? list.cards.concat(list.archivedCards ?? [])
-              : list.cards;
-            track card.id
-          ) {
-            @let editableCard = editableList && !card.archived;
-            <article>
-              <h4>{{ card.title }}</h4>
-              @if (card.archived) {
-                <p>Cartão arquivado</p>
-              }
-              <p class="description">{{ card.description }}</p>
-              <p>
-                @if (card.completedAt) {
-                  Concluído em {{ completionTime(card.completedAt, board.timeZone) }}
-                  @if (card.completedById === accountId()) {
-                    por você
-                  }
-                } @else if (card.overdue) {
-                  Pendente · Atrasado
-                } @else {
-                  Pendente
-                }
-              </p>
-              @if (card.startDate) {
-                <p>
-                  Início: <time [attr.datetime]="card.startDate">{{ card.startDate }}</time>
-                </p>
-              }
-              @if (card.dueDate) {
-                <p>
-                  Vencimento: <time [attr.datetime]="card.dueDate">{{ card.dueDate }}</time> ({{
-                    board.timeZone
-                  }})
-                </p>
-              }
-              <button
-                type="button"
-                [attr.aria-expanded]="commentsCard() === card.id"
-                (click)="commentsCard.set(commentsCard() === card.id ? null : card.id)"
-              >
-                Comentários
-              </button>
-              @if (commentsCard() === card.id) {
-                <app-card-comments
-                  [path]="path() + '/' + list.id + '/cards/' + card.id + '/comments'"
-                  [cardId]="card.id"
-                  [revision]="board.syncRevision"
-                />
-              }
-              <app-history-panel
-                title="Atividades do cartão"
-                [path]="boardPath() + '/cards/' + card.id + '/feed'"
-              />
-              @if (editableCard) {
-                <app-card-transfer
-                  [cardId]="card.id"
-                  [boardPath]="boardPath()"
-                  [path]="path() + '/' + list.id + '/cards/' + card.id + '/transfer'"
-                  (moved)="reloadAfterTransfer()"
-                />
-              }
-              <h5>Etiquetas</h5>
-              <ul>
-                @for (label of card.labels ?? []; track label.id) {
-                  <li>
-                    @if (label.color) {
-                      <span
-                        class="label-color"
-                        [style.backgroundColor]="label.color"
-                        aria-hidden="true"
-                      ></span>
-                    }
-                    {{ label.name }}
-                    @if (editableCard) {
-                      <button
-                        type="button"
-                        [disabled]="saving()"
-                        [attr.aria-label]="'Remover etiqueta ' + label.name"
-                        (click)="changeLabel(list, card, label.id, false)"
-                      >
-                        Remover
-                      </button>
-                    }
-                  </li>
-                } @empty {
-                  <li>Sem etiquetas.</li>
-                }
-              </ul>
-              @if (editableCard && board.availableLabels?.length) {
-                <form (submit)="applyLabel($event, list, card, labelChoice.value)">
-                  <label [attr.for]="'label-' + card.id">Adicionar etiqueta</label>
-                  <select [id]="'label-' + card.id" #labelChoice required>
-                    <option value="">Escolher etiqueta</option>
-                    @for (label of board.availableLabels; track label.id) {
-                      @if (!hasLabel(card, label.id)) {
-                        <option [value]="label.id">{{ label.name }}</option>
-                      }
-                    }
-                  </select>
-                  <button [disabled]="saving()">Aplicar etiqueta</button>
-                </form>
-              }
-              <h5>Responsáveis</h5>
-              <ul>
-                @for (person of card.assignees ?? []; track person.accountId) {
-                  <li>
-                    {{ person.email }}
-                    @if (editableCard) {
-                      <button
-                        type="button"
-                        [disabled]="saving()"
-                        [attr.aria-label]="'Remover responsável ' + person.email"
-                        (click)="changeAssignee(list, card, person.accountId, false)"
-                      >
-                        Remover
-                      </button>
-                    }
-                  </li>
-                } @empty {
-                  <li>Sem responsáveis.</li>
-                }
-              </ul>
-              @if (editableCard && board.eligibleAssignees?.length) {
-                <form (submit)="addAssignee($event, list, card, candidate.value)">
-                  <label [attr.for]="'assignee-' + card.id">Adicionar responsável</label>
-                  <select [id]="'assignee-' + card.id" #candidate required>
-                    <option value="">Escolher participante</option>
-                    @for (person of board.eligibleAssignees; track person.accountId) {
-                      @if (!hasAssignee(card, person.accountId)) {
-                        <option [value]="person.accountId">{{ person.email }}</option>
-                      }
-                    }
-                  </select>
-                  <button [disabled]="saving()">Atribuir</button>
-                </form>
-              }
-              @if (editableCard) {
+      <div class="board-lanes" aria-label="Listas do quadro">
+        @for (
+          list of showArchivedLists() ? board.lists.concat(board.archivedLists ?? []) : board.lists;
+          track list.id
+        ) {
+          @let editableList = board.editable && !list.archived;
+          <section class="lane" [attr.aria-label]="list.name">
+            <header class="lane-header">
+              <span class="lane-dot" aria-hidden="true"></span>
+              <h3>{{ list.name }}</h3>
+              <span>{{ list.cards.length }}</span>
+              @if (editableList) {
                 <button
+                  class="list-drag"
                   type="button"
                   draggable="true"
-                  (dragstart)="startDrag($event, list, card)"
+                  [attr.aria-label]="'Arrastar lista ' + list.name"
+                  (dragstart)="startDrag($event, list)"
                   (dragend)="drag.set(null)"
-                  (dragover)="allowDrop($event, 'CARD')"
-                  (drop)="drop($event, 'CARD', list, card.id)"
+                  (dragover)="allowDrop($event, 'LIST')"
+                  (drop)="drop($event, 'LIST', null, list.id)"
                 >
-                  Arrastar cartão {{ card.title }}
+                  ⠿
                 </button>
+              }
+            </header>
+            <details class="lane-options">
+              <summary aria-label="Opções da lista" title="Opções da lista">…</summary>
+              @if (list.archived) {
+                <p>Lista arquivada</p>
+              }
+              @if (board.editable) {
+                <button type="button" [disabled]="saving()" (click)="changeListArchive(list)">
+                  {{ list.archived ? 'Restaurar lista' : 'Arquivar lista' }}
+                </button>
+              }
+              @if (editableList) {
                 <button
                   type="button"
                   [disabled]="$first || saving()"
-                  (click)="moveStep(list, card, -1)"
+                  (click)="moveStep(list, undefined, -1)"
                 >
-                  Subir cartão
+                  Subir lista
                 </button>
                 <button
                   type="button"
-                  [disabled]="$index >= list.cards.length - 1 || saving()"
-                  (click)="moveStep(list, card, 1)"
+                  [disabled]="$index >= board.lists.length - 1 || saving()"
+                  (click)="moveStep(list, undefined, 1)"
                 >
-                  Descer cartão
+                  Descer lista
                 </button>
-                @if (board.lists.length > 1) {
-                  <label [attr.for]="'move-' + card.id">Mover cartão para</label>
-                  <select [id]="'move-' + card.id" #destination>
-                    @for (other of board.lists; track other.id) {
-                      @if (other.id !== list.id) {
-                        <option [value]="other.id">{{ other.name }}</option>
-                      }
-                    }
-                  </select>
-                  <button
-                    type="button"
-                    [disabled]="saving()"
-                    (click)="moveToList(list, card, destination.value)"
-                  >
-                    Mover cartão
-                  </button>
-                }
-                <button
-                  type="button"
-                  [disabled]="saving()"
-                  (click)="updateSchedule(list, card, { completed: !card.completedAt })"
-                >
-                  {{ card.completedAt ? 'Reabrir cartão' : 'Concluir cartão' }}
-                </button>
-                <details>
-                  <summary>Editar datas</summary>
-                  <form (submit)="saveDates($event, list, card, start.value, due.value)">
-                    <label [attr.for]="'start-' + card.id">Data de início</label>
-                    <input
-                      type="date"
-                      [id]="'start-' + card.id"
-                      #start
-                      [value]="card.startDate ?? ''"
-                      max="9999-12-31"
-                    />
-                    <label [attr.for]="'due-' + card.id">Data de vencimento</label>
-                    <input
-                      type="date"
-                      [id]="'due-' + card.id"
-                      #due
-                      [value]="card.dueDate ?? ''"
-                      max="9999-12-31"
-                    />
-                    <button [disabled]="saving()">Salvar datas</button>
-                  </form>
-                </details>
-                <details>
-                  <summary>Editar cartão</summary>
-                  <form
-                    (submit)="
-                      save(
-                        $event,
-                        '/' + list.id + '/cards/' + card.id,
-                        cardChanges(card, title.value, description.value),
-                        false
-                      )
-                    "
-                  >
-                    <label [attr.for]="'title-' + card.id">Título do cartão</label>
-                    <input [id]="'title-' + card.id" #title [value]="card.title" required />
-                    <label [attr.for]="'description-' + card.id">Descrição do cartão</label>
-                    <textarea
-                      [id]="'description-' + card.id"
-                      #description
-                      [value]="card.description ?? ''"
-                    ></textarea>
-                    <button [disabled]="saving()">Salvar cartão</button>
-                  </form>
-                </details>
               }
               @if (editableList) {
-                <button type="button" [disabled]="saving()" (click)="changeArchive(list, card)">
-                  {{ card.archived ? 'Restaurar cartão' : 'Arquivar cartão' }}
-                </button>
-              } @else if (board.editable && list.archived && board.lists.length) {
-                <form (submit)="restoreInList($event, list, card, restoreTarget.value)">
-                  <label [attr.for]="'restore-' + card.id">Restaurar em lista ativa</label>
-                  <select [id]="'restore-' + card.id" #restoreTarget required>
-                    <option value="">Escolher lista ativa</option>
-                    @for (target of board.lists; track target.id) {
-                      <option [value]="target.id">{{ target.name }}</option>
-                    }
-                  </select>
-                  <button [disabled]="saving()">Restaurar cartão</button>
-                </form>
+                <details>
+                  <summary>Renomear lista</summary>
+                  <form (submit)="save($event, '/' + list.id, { name: rename.value }, false)">
+                    <label [attr.for]="'name-' + list.id">Novo nome da lista</label>
+                    <input [id]="'name-' + list.id" #rename [value]="list.name" required />
+                    <button [disabled]="saving()">Salvar nome</button>
+                  </form>
+                </details>
               }
-            </article>
-          }
-          @if (editableList) {
-            @if (drag()?.kind === 'CARD') {
-              <div
-                class="drop-zone"
-                (dragover)="allowDrop($event, 'CARD')"
-                (drop)="drop($event, 'CARD', list, null)"
-              >
-                Soltar no fim de {{ list.name }}
-              </div>
+              @if (list.archivedCards?.length) {
+                <button
+                  type="button"
+                  [attr.aria-expanded]="showArchived() === list.id"
+                  (click)="showArchived.set(showArchived() === list.id ? null : list.id)"
+                >
+                  Cartões arquivados ({{ list.archivedCards?.length }})
+                </button>
+              }
+            </details>
+            @for (
+              card of showArchived() === list.id
+                ? list.cards.concat(list.archivedCards ?? [])
+                : list.cards;
+              track card.id
+            ) {
+              @let editableCard = editableList && !card.archived;
+              <article class="board-card">
+                @if (card.labels?.length || card.completedAt) {
+                  <div class="card-tags">
+                    @for (label of card.labels ?? []; track label.id) {
+                      <span class="card-tag">{{ label.name }}</span>
+                    }
+                    @if (card.completedAt) {
+                      <span class="card-tag completed">Concluído</span>
+                    }
+                  </div>
+                }
+                <h4>
+                  <button
+                    class="card-title"
+                    type="button"
+                    aria-haspopup="dialog"
+                    (click)="openCard(cardDialog, card.id)"
+                  >
+                    {{ card.title }}
+                  </button>
+                </h4>
+                @if (card.description) {
+                  <p class="card-excerpt">{{ card.description }}</p>
+                }
+                @if (card.dueDate || card.assignees?.length || card.overdue) {
+                  <div class="card-summary">
+                    @if (card.dueDate) {
+                      <time [attr.datetime]="card.dueDate">{{ card.dueDate }}</time>
+                    }
+                    @if (card.overdue) {
+                      <span class="overdue">Atrasado</span>
+                    }
+                    @for (person of card.assignees ?? []; track person.accountId) {
+                      <span
+                        class="card-person"
+                        [attr.aria-label]="person.email"
+                        [title]="person.email"
+                        >{{ person.email.slice(0, 2).toUpperCase() }}</span
+                      >
+                    }
+                  </div>
+                }
+                @if (editableCard) {
+                  <button
+                    class="card-drag"
+                    type="button"
+                    draggable="true"
+                    (dragstart)="startDrag($event, list, card)"
+                    (dragend)="drag.set(null)"
+                    (dragover)="allowDrop($event, 'CARD')"
+                    (drop)="drop($event, 'CARD', list, card.id)"
+                    [attr.aria-label]="'Arrastar cartão ' + card.title"
+                    title="Arrastar cartão"
+                  >
+                    ⠿
+                  </button>
+                }
+                <dialog
+                  #cardDialog
+                  class="card-dialog"
+                  [attr.aria-labelledby]="'dialog-title-' + card.id"
+                  (close)="commentsCard.set(null)"
+                >
+                  <header class="dialog-header">
+                    <h2 [id]="'dialog-title-' + card.id">{{ card.title }}</h2>
+                    <button type="button" class="quiet-button" (click)="cardDialog.close()">
+                      Fechar
+                    </button>
+                  </header>
+                  @if (loadedCards().has(card.id)) {
+                    <div class="dialog-columns">
+                      <div class="dialog-main">
+                        @if (card.archived) {
+                          <p>Cartão arquivado</p>
+                        }
+                        <p class="description">{{ card.description }}</p>
+                        <p>
+                          @if (card.completedAt) {
+                            Concluído em {{ completionTime(card.completedAt, board.timeZone) }}
+                            @if (card.completedById === accountId()) {
+                              por você
+                            }
+                          } @else if (card.overdue) {
+                            Pendente · Atrasado
+                          } @else {
+                            Pendente
+                          }
+                        </p>
+                        @if (card.startDate) {
+                          <p>
+                            Início:
+                            <time [attr.datetime]="card.startDate">{{ card.startDate }}</time>
+                          </p>
+                        }
+                        @if (card.dueDate) {
+                          <p>
+                            Vencimento:
+                            <time [attr.datetime]="card.dueDate">{{ card.dueDate }}</time> ({{
+                              board.timeZone
+                            }})
+                          </p>
+                        }
+                        @if (editableCard) {
+                          <app-card-transfer
+                            [cardId]="card.id"
+                            [boardPath]="boardPath()"
+                            [path]="path() + '/' + list.id + '/cards/' + card.id + '/transfer'"
+                            (moved)="reloadAfterTransfer()"
+                          />
+                        }
+                        <h5>Etiquetas</h5>
+                        <ul>
+                          @for (label of card.labels ?? []; track label.id) {
+                            <li>
+                              @if (label.color) {
+                                <span
+                                  class="label-color"
+                                  [style.backgroundColor]="label.color"
+                                  aria-hidden="true"
+                                ></span>
+                              }
+                              {{ label.name }}
+                              @if (editableCard) {
+                                <button
+                                  type="button"
+                                  [disabled]="saving()"
+                                  [attr.aria-label]="'Remover etiqueta ' + label.name"
+                                  (click)="changeLabel(list, card, label.id, false)"
+                                >
+                                  Remover
+                                </button>
+                              }
+                            </li>
+                          } @empty {
+                            <li>Sem etiquetas.</li>
+                          }
+                        </ul>
+                        @if (editableCard && board.availableLabels?.length) {
+                          <form (submit)="applyLabel($event, list, card, labelChoice.value)">
+                            <label [attr.for]="'label-' + card.id">Adicionar etiqueta</label>
+                            <select [id]="'label-' + card.id" #labelChoice required>
+                              <option value="">Escolher etiqueta</option>
+                              @for (label of board.availableLabels; track label.id) {
+                                @if (!hasLabel(card, label.id)) {
+                                  <option [value]="label.id">{{ label.name }}</option>
+                                }
+                              }
+                            </select>
+                            <button [disabled]="saving()">Aplicar etiqueta</button>
+                          </form>
+                        }
+                        <h5>Responsáveis</h5>
+                        <ul>
+                          @for (person of card.assignees ?? []; track person.accountId) {
+                            <li>
+                              {{ person.email }}
+                              @if (editableCard) {
+                                <button
+                                  type="button"
+                                  [disabled]="saving()"
+                                  [attr.aria-label]="'Remover responsável ' + person.email"
+                                  (click)="changeAssignee(list, card, person.accountId, false)"
+                                >
+                                  Remover
+                                </button>
+                              }
+                            </li>
+                          } @empty {
+                            <li>Sem responsáveis.</li>
+                          }
+                        </ul>
+                        @if (editableCard && board.eligibleAssignees?.length) {
+                          <form (submit)="addAssignee($event, list, card, candidate.value)">
+                            <label [attr.for]="'assignee-' + card.id">Adicionar responsável</label>
+                            <select [id]="'assignee-' + card.id" #candidate required>
+                              <option value="">Escolher participante</option>
+                              @for (person of board.eligibleAssignees; track person.accountId) {
+                                @if (!hasAssignee(card, person.accountId)) {
+                                  <option [value]="person.accountId">{{ person.email }}</option>
+                                }
+                              }
+                            </select>
+                            <button [disabled]="saving()">Atribuir</button>
+                          </form>
+                        }
+                        @if (editableCard) {
+                          <button
+                            type="button"
+                            [disabled]="$first || saving()"
+                            (click)="moveStep(list, card, -1)"
+                          >
+                            Subir cartão
+                          </button>
+                          <button
+                            type="button"
+                            [disabled]="$index >= list.cards.length - 1 || saving()"
+                            (click)="moveStep(list, card, 1)"
+                          >
+                            Descer cartão
+                          </button>
+                          @if (board.lists.length > 1) {
+                            <label [attr.for]="'move-' + card.id">Mover cartão para</label>
+                            <select [id]="'move-' + card.id" #destination>
+                              @for (other of board.lists; track other.id) {
+                                @if (other.id !== list.id) {
+                                  <option [value]="other.id">{{ other.name }}</option>
+                                }
+                              }
+                            </select>
+                            <button
+                              type="button"
+                              [disabled]="saving()"
+                              (click)="moveToList(list, card, destination.value)"
+                            >
+                              Mover cartão
+                            </button>
+                          }
+                          <button
+                            type="button"
+                            [disabled]="saving()"
+                            (click)="updateSchedule(list, card, { completed: !card.completedAt })"
+                          >
+                            {{ card.completedAt ? 'Reabrir cartão' : 'Concluir cartão' }}
+                          </button>
+                          <details>
+                            <summary>Editar datas</summary>
+                            <form (submit)="saveDates($event, list, card, start.value, due.value)">
+                              <label [attr.for]="'start-' + card.id">Data de início</label>
+                              <input
+                                type="date"
+                                [id]="'start-' + card.id"
+                                #start
+                                [value]="card.startDate ?? ''"
+                                max="9999-12-31"
+                              />
+                              <label [attr.for]="'due-' + card.id">Data de vencimento</label>
+                              <input
+                                type="date"
+                                [id]="'due-' + card.id"
+                                #due
+                                [value]="card.dueDate ?? ''"
+                                max="9999-12-31"
+                              />
+                              <button [disabled]="saving()">Salvar datas</button>
+                            </form>
+                          </details>
+                          <details>
+                            <summary>Editar cartão</summary>
+                            <form
+                              (submit)="
+                                save(
+                                  $event,
+                                  '/' + list.id + '/cards/' + card.id,
+                                  cardChanges(card, title.value, description.value),
+                                  false
+                                )
+                              "
+                            >
+                              <label [attr.for]="'title-' + card.id">Título do cartão</label>
+                              <input
+                                [id]="'title-' + card.id"
+                                #title
+                                [value]="card.title"
+                                required
+                              />
+                              <label [attr.for]="'description-' + card.id"
+                                >Descrição do cartão</label
+                              >
+                              <textarea
+                                [id]="'description-' + card.id"
+                                #description
+                                [value]="card.description ?? ''"
+                              ></textarea>
+                              <button [disabled]="saving()">Salvar cartão</button>
+                            </form>
+                          </details>
+                        }
+                        @if (editableList) {
+                          <button
+                            type="button"
+                            [disabled]="saving()"
+                            (click)="changeArchive(list, card)"
+                          >
+                            {{ card.archived ? 'Restaurar cartão' : 'Arquivar cartão' }}
+                          </button>
+                        } @else if (board.editable && list.archived && board.lists.length) {
+                          <form (submit)="restoreInList($event, list, card, restoreTarget.value)">
+                            <label [attr.for]="'restore-' + card.id"
+                              >Restaurar em lista ativa</label
+                            >
+                            <select [id]="'restore-' + card.id" #restoreTarget required>
+                              <option value="">Escolher lista ativa</option>
+                              @for (target of board.lists; track target.id) {
+                                <option [value]="target.id">{{ target.name }}</option>
+                              }
+                            </select>
+                            <button [disabled]="saving()">Restaurar cartão</button>
+                          </form>
+                        }
+                      </div>
+                      <aside class="dialog-activity" aria-label="Comentários e atividade">
+                        <h3>Comentários e atividade</h3>
+                        <button
+                          type="button"
+                          [attr.aria-expanded]="commentsCard() === card.id"
+                          (click)="commentsCard.set(commentsCard() === card.id ? null : card.id)"
+                        >
+                          Comentários
+                        </button>
+                        @if (commentsCard() === card.id) {
+                          <app-card-comments
+                            [path]="path() + '/' + list.id + '/cards/' + card.id + '/comments'"
+                            [cardId]="card.id"
+                            [revision]="board.syncRevision"
+                          />
+                        }
+                        <app-history-panel
+                          title="Atividades do cartão"
+                          [path]="boardPath() + '/cards/' + card.id + '/feed'"
+                        />
+                      </aside>
+                    </div>
+                  }
+                </dialog>
+              </article>
             }
-            <form
-              (submit)="
-                save(
-                  $event,
-                  '/' + list.id + '/cards',
-                  { title: newTitle.value, description: newDescription.value },
-                  true
-                )
-              "
-            >
-              <label [attr.for]="'new-title-' + list.id">Título do novo cartão</label>
-              <input [id]="'new-title-' + list.id" #newTitle required />
-              <label [attr.for]="'new-description-' + list.id">Descrição do novo cartão</label>
-              <textarea [id]="'new-description-' + list.id" #newDescription></textarea>
-              <button [disabled]="saving()">Criar cartão</button>
-            </form>
-          }
-        </section>
-      } @empty {
-        <p>Este quadro ainda não tem listas.</p>
-      }
+            @if (editableList) {
+              @if (drag()?.kind === 'CARD') {
+                <div
+                  class="drop-zone"
+                  (dragover)="allowDrop($event, 'CARD')"
+                  (drop)="drop($event, 'CARD', list, null)"
+                >
+                  Soltar no fim de {{ list.name }}
+                </div>
+              }
+              <details class="add-card">
+                <summary [attr.aria-label]="'Adicionar cartão em ' + list.name">
+                  + Adicionar
+                </summary>
+                <form
+                  (submit)="
+                    save(
+                      $event,
+                      '/' + list.id + '/cards',
+                      { title: newTitle.value, description: newDescription.value },
+                      true
+                    )
+                  "
+                >
+                  <label [attr.for]="'new-title-' + list.id">Título do novo cartão</label>
+                  <input [id]="'new-title-' + list.id" #newTitle required />
+                  <label [attr.for]="'new-description-' + list.id">Descrição do novo cartão</label>
+                  <textarea [id]="'new-description-' + list.id" #newDescription></textarea>
+                  <button [attr.aria-disabled]="saving() ? true : null">Criar cartão</button>
+                </form>
+              </details>
+            }
+          </section>
+        } @empty {
+          <p>Este quadro ainda não tem listas.</p>
+        }
+      </div>
       @if (board.editable) {
         @if (drag()?.kind === 'LIST') {
           <div
@@ -467,11 +560,14 @@ interface DragItem {
             Soltar no fim do quadro
           </div>
         }
-        <form (submit)="save($event, '', { name: name.value }, true)">
-          <label for="new-list-name">Nome da nova lista</label>
-          <input id="new-list-name" #name required />
-          <button [disabled]="saving()">Criar lista</button>
-        </form>
+        <details class="add-list">
+          <summary>+ Nova lista</summary>
+          <form (submit)="save($event, '', { name: name.value }, true)">
+            <label for="new-list-name">Nome da nova lista</label>
+            <input id="new-list-name" #name required />
+            <button [attr.aria-disabled]="saving() ? true : null">Criar lista</button>
+          </form>
+        </details>
       }
     }
   `,
@@ -484,15 +580,23 @@ export class BoardContent {
   readonly message = signal('');
   readonly saving = signal(false);
   readonly commentsCard = signal<string | null>(null);
+  readonly loadedCards = signal<ReadonlySet<string>>(new Set());
   readonly showArchived = signal<string | null>(null);
   readonly showArchivedLists = signal(false);
   readonly drag = signal<DragItem | null>(null);
+  readonly participants = signal<Assignee[]>([]);
+  readonly boardActions = viewChild<TemplateRef<unknown>>('boardActions');
   private readonly http = inject(HttpClient);
   private readonly connectRealtime = inject(BOARD_REALTIME);
   private readonly options = { headers: { 'X-Bello-Flow-Request': '1' }, timeout: 15000 };
   private readonly readOptions = { ...this.options, headers: backgroundHeaders };
   private readonly reload = signal(0);
   private accessLost = false;
+
+  openCard(dialog: HTMLDialogElement, cardId: string) {
+    this.loadedCards.update((cards) => new Set([...cards, cardId]));
+    dialog.showModal();
+  }
 
   boardPath() {
     return this.path().slice(0, -'/lists'.length);
@@ -504,6 +608,22 @@ export class BoardContent {
   }
 
   constructor() {
+    effect((onCleanup) => {
+      const board = this.content();
+      const path = this.boardPath() + '/members';
+      if (!board?.canArchive) {
+        this.participants.set([]);
+        return;
+      }
+      const refresh = untracked(() => this.participants().length) ? timer(250) : of(0);
+      const request = refresh
+        .pipe(switchMap(() => this.http.get<{ members: Assignee[] }>(path, this.readOptions)))
+        .subscribe({
+          next: ({ members }) => this.participants.set(members),
+          error: () => this.participants.set([]),
+        });
+      onCleanup(() => request.unsubscribe());
+    });
     effect((onCleanup) => {
       this.reload();
       if (this.accessLost) return;
@@ -877,6 +997,12 @@ export class BoardContent {
       if (create) {
         if (sessionStorage.getItem(key) === operationId) sessionStorage.removeItem(key);
         form.reset();
+        const disclosure = form.closest('details');
+        if (disclosure?.open) {
+          const returnFocus = disclosure.contains(form.ownerDocument.activeElement);
+          disclosure.open = false;
+          if (returnFocus) disclosure.querySelector('summary')?.focus();
+        }
       }
       this.reload.update((value) => value + 1);
     } catch (error) {
