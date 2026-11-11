@@ -9,26 +9,28 @@ corrente, devem apontar para este registro em vez de duplicar o estado operacion
 
 ## Fase atual
 
-- **Base — VERIFICADO:** `main` e `origin/main` coincidem em
-  `29f9bb4cd60748e2a22ea0c5634744b7c50ab075` (BEL-014).
-  O [CI final 42818943419](https://github.com/edunxp/bello-flow/actions/runs/42818943419)
-  concluiu com sucesso na tentativa 1 para push nesse SHA.
-- **Ciclo — VERIFICADO:** `work/fases-finais-mvp` reúne BEL-011, BEL-031,
-  BEL-032 e prontidão isolada. `BASE_MAIN_SHA=29f9bb4cd60748e2a22ea0c5634744b7c50ab075`.
-  Risco alto por concorrência, histórico e privilégios. A alteração autorizada
-  de acesso é EXECUTE em consulta formal para `bello_runtime` e em expurgo
-  para `bello_audit_maintenance`, com os privilégios diretos existentes preservados.
-- **Escopo implementado — VERIFICADO:** movimento entre quadros ativos do mesmo
-  Workspace com prévia e confirmação, feed de quadro e cartão, auditoria formal
-  separada por escopo com redação histórica, executor de retenção e prontidão HTTP.
-  O ensaio descartável verificou backup-base, restauração por WAL, vínculo,
+- **Base publicada — VERIFICADO:** `main` e `origin/main` estão em
+  `57ba87d92b1e06f882afd5b311d2fc864c48ce89`. O layout do quadro recebeu aceite
+  visual do responsável e foi integrado por fast-forward. O
+  [CI final 42938681322](https://github.com/edunxp/bello-flow/actions/runs/42938681322)
+  foi aprovado na tentativa 1 para push na `main`, com `Quality`,
+  `API integration`, `Browser E2E` e `Required` concluídos com sucesso.
+- **Marco anterior — VERIFICADO:** movimento entre quadros do mesmo Workspace,
+  feed de quadro/cartão, auditoria formal, retenção da auditoria e prontidão HTTP
+  foram integrados em `ce5ad3fae0c46f3ed4017a021556af57558af3b6`, com
+  [CI final 42825545245](https://github.com/edunxp/bello-flow/actions/runs/42825545245)
+  aprovado. O ensaio descartável comprovou backup-base, restauração por WAL,
   sessão revogada, auditoria, expurgo e conexão separada de manutenção.
-- **Validação local — VERIFICADO:** gate completo com 873 testes de API e
-  111 de web, cobertura acima de 90% em todas as métricas, e homologação
-  Chromium/PostgreSQL com contas sintéticas. A prova de movimento concorrente
-  confirmou um único sucesso, repetição idempotente, preservação das relações
-  e proteção do histórico. Revisão independente concluída com ajustes
-  incorporados. Registro pré-commit, aguardando publicação e CI da branch.
+- **Últimas validações locais — VERIFICADO:** 873 testes da API, 116 da web,
+  cobertura acima de 90% nas quatro métricas e 21 cenários completos em
+  Chromium/PostgreSQL descartável aprovados. As capturas finais conferiram
+  quadro e cartão em claro/escuro e largura móvel de 360 px. Persistem os dois
+  avisos de orçamento de estilos. As medições comprovaram redução de elementos
+  renderizados e consultas de participantes; ganho de latência ainda não foi
+  demonstrado de forma estável.
+- **Situação funcional — VERIFICADO:** o núcleo Kanban entregue não encerra os
+  28 requisitos essenciais. A inspeção abaixo identifica recortes funcionais
+  ainda ausentes nos caminhos normais da aplicação.
 - **Operação real — NÃO VERIFICADO:** hospedagem, backups externos, retenção
   operacional, agendamento, alertas e envio Resend dependem das autorizações
   específicas e evidências das pendências aplicáveis.
@@ -36,10 +38,56 @@ corrente, devem apontar para este registro em vez de duplicar o estado operacion
 Procedimentos: [homologação local](operacao/homologacao-local.md),
 [ensaio de recuperação local](operacao/ensaio-recuperacao-local.md) e
 [validação E2E](operacao/validacao-autenticacao-e2e.md).
-Integração na main exige autorização posterior para o SHA final aprovado no CI
-e na revisão independente.
+As seções históricas preservam evidências e limites registrados em cada
+incremento. Declarações antigas de preparação local ou etapa seguinte devem ser
+lidas nesse contexto; o estado corrente e a prioridade recomendada ficam aqui.
 
-## Avaliação local do layout do quadro
+## Próxima necessidade funcional do MVP
+
+- **Lacuna — VERIFICADO:** BEL-038 exige criação administrada de contas,
+  verificação inicial de e-mail, desativação/reativação e atribuições globais.
+  Login, recuperação e bootstrap da primeira administração já possuem
+  implementação. As rotas de autenticação e a configuração Angular ainda não
+  oferecem o fluxo de gestão de contas nem a verificação inicial. O
+  provisionador de conta da homologação cria somente dados sintéticos em banco
+  descartável e não implementa cadastro operacional de usuários.
+- **Próxima entrega recomendada — INFERIDO:** priorizar o recorte de criação
+  de conta por Administrador Global e verificação inicial do e-mail, para
+  permitir a entrada de usuários reais já elegíveis à participação. O resultado
+  esperado é cadastrar uma conta, confirmar seu e-mail e permitir login e
+  inclusão explícita em Workspace/quadro. O requisito está aprovado por DEC-020
+  e DEC-021; o fluxo específico de primeiro acesso e seus contratos técnicos
+  precisam ser delimitados antes da implementação.
+- **Outros recortes ainda ausentes — VERIFICADO:** edição de nome/descrição de
+  Workspace e quadro (BEL-034/BEL-001), alteração de papéis e remoção de
+  participantes do Workspace (BEL-035/BEL-036) e configuração/descoberta de
+  quadros visíveis no Workspace (BEL-029). As rotas atuais criam e consultam
+  os recursos, incluem participantes e alteram papéis/removem participantes de
+  quadro; esses caminhos não completam os recortes acima.
+- **Limite desta inspeção:** as lacunas foram confrontadas com os requisitos,
+  as rotas HTTP, as telas Angular e os serviços relacionados. Este registro
+  orienta a próxima priorização e não é uma declaração de conclusão dos demais
+  requisitos nem uma autorização para implementar novos fluxos.
+
+Fontes: [escopo do MVP](produto/escopo-mvp.md#requisitos-essenciais),
+[requisitos funcionais](produto/requisitos-funcionais.md),
+[DEC-020 e DEC-021](produto/decisoes-funcionais.md#dec-020--identidade-administrada),
+[rotas Angular](../apps/web/src/app/app.config.ts),
+[autenticação HTTP](../apps/api/src/auth/auth.controller.ts),
+[rotas de Workspace/quadro](../apps/api/src/workspaces/workspace.controller.ts) e
+[conta sintética](../scripts/e2e/local-account.mjs).
+
+## Ciclo documental corrente
+
+- **Escopo:** consolidar a integração e o aceite já concluídos e registrar a
+  próxima necessidade funcional, preservando requisitos e pendências aprovados.
+- **Branch:** `work/estado-mvp-documentacao`.
+- **BASE_MAIN_SHA:** `57ba87d92b1e06f882afd5b311d2fc864c48ce89`.
+- **Risco:** baixo, restrito à correção factual e à distinção entre evidência,
+  recomendação de prioridade e aprovação de implementação.
+- **Estado:** atualização documental local em preparação para commit e publicação.
+
+## Layout do quadro — integrado e aprovado
 
 - **Base — VERIFICADO:** `BASE_MAIN_SHA=ce5ad3fae0c46f3ed4017a021556af57558af3b6`,
   integrada à main e aprovada no [CI 42825545245](https://github.com/edunxp/bello-flow/actions/runs/42825545245).
@@ -54,7 +102,7 @@ e na revisão independente.
   A comparação com a prova de conceito motivou mover participantes para o
   cabeçalho e atividade/arquivamento para a engrenagem, recolher a criação de
   lista e recuperar descrição e rodapé nos cartões. O aceite visual pelo
-  responsável permanece pendente.
+  responsável e a integração foram concluídos, conforme a fase atual.
 
 - **Homologação do contrato — VERIFICADO em Chromium:** cenário sintético
   conforme o [DESIGN.md](../DESIGN.md), com quatro listas em 898 × 675 px e
@@ -64,8 +112,7 @@ e na revisão independente.
   lista preservou o texto para nova tentativa. Foram verificados os temas,
   a restauração do fundo e o acesso de leitura aos cartões.
 
-
-- **Revisão Angular do quadro — implementação local:** os detalhes de cada
+- **Revisão Angular do quadro — integrada:** os detalhes de cada
   cartão são montados na primeira abertura. O conteúdo permanece montado após
   fechar, preservando rascunhos ao reabrir. O cabeçalho e o botão de fechar
   continuam disponíveis para o foco nativo da janela. Atualizações próximas
@@ -86,14 +133,14 @@ e na revisão independente.
   As duas execuções anteriores
   excederam os cinco segundos do teste de inicialização da API; os limites de
   aprovação foram mantidos. Persistem os avisos de orçamento de estilos de
-  `board-content.scss` e `workspaces-board.scss`. Correções locais na branch
-  `work/layout-quadro`; aceite visual e publicação do conjunto permanecem pendentes.
+  `board-content.scss` e `workspaces-board.scss`. O conjunto foi publicado na
+  branch `work/layout-quadro` e integrado à `main` após aprovação do responsável.
 - **Consolidação para publicação:** o AGENTS.md passa a referenciar o DESIGN.md
   nas tarefas de apresentação do quadro. Os controles das janelas usam os tokens
   de cor e espaçamento do quadro, inclusive nos componentes filhos, com foco
   visível nos temas claro e escuro. A revisão visual utiliza seis capturas
   sintéticas de quadro e cartão em desktop e tela de 360 px. O aceite visual
-  pelo responsável permanece pendente.
+  pelo responsável e a integração estão concluídos.
 
 ## Etapas concluídas
 
@@ -383,7 +430,7 @@ automática:
 2. F1-B.4.5.11 — Frontend e Prontidão Ponta a Ponta: somente o recorte de
    interface descrito acima foi autorizado; prontidão operacional permanece futura.
 
-### Sequência recomendada de execução — não aprovada como contrato específico
+### Sequência histórica de autenticação — não aprovada como contrato específico
 
 1. endpoints HTTP da recuperação de senha — concluídos na F1-B.4.5.10;
 2. interface Angular de autenticação e recuperação — integrada;
@@ -391,6 +438,8 @@ automática:
 4. retenção operacional por mecanismo administrativo simples; e
 5. prontidão produtiva e regressões finais.
 
+Essa sequência descreve o planejamento histórico de autenticação. A prioridade
+funcional corrente está em [próxima necessidade funcional](#próxima-necessidade-funcional-do-mvp).
 Essa ordem não renumera os identificadores históricos. A F1-B.4.5.9 continua sem
 contrato específico aprovado. Uma CLI administrativa, executada por agendamento
 simples com credencial de manutenção segregada, é a alternativa arquitetural
@@ -732,7 +781,7 @@ O **primeiro Kanban utilizável para validação interna** é um marco intermedi
 não o MVP concluído. O **MVP normativo completo** preserva os 28 requisitos
 essenciais de [escopo do MVP](produto/escopo-mvp.md#requisitos-essenciais).
 
-A sequência recomendada é:
+A sequência histórica do núcleo Kanban é:
 
 1. autenticação utilizável;
 2. Workspace e quadro;
@@ -746,6 +795,10 @@ A sequência recomendada é:
 Cada entrega vertical inclui, quando aplicável, Angular, API NestJS, PostgreSQL,
 autorização, auditoria e feed, testes automatizados e critérios verificáveis de
 aceitação. A sequência não autoriza antecipar requisitos de entregas posteriores.
+
+O núcleo Kanban dessa sequência foi entregue nos marcos registrados acima.
+O MVP completo ainda depende dos recortes funcionais e das evidências
+operacionais descritos na fase atual.
 
 ## Decisão técnica relevante
 
