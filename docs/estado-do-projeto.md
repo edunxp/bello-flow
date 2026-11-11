@@ -85,7 +85,6 @@ Fontes: [escopo do MVP](produto/escopo-mvp.md#requisitos-essenciais),
 - **BASE_MAIN_SHA:** `57ba87d92b1e06f882afd5b311d2fc864c48ce89`.
 - **Risco:** baixo, restrito à correção factual e à distinção entre evidência,
   recomendação de prioridade e aprovação de implementação.
-- **Estado:** atualização documental local em preparação para commit e publicação.
 
 ## Layout do quadro — integrado e aprovado
 
